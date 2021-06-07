@@ -1,0 +1,14 @@
+{% extends "global/Page.html" %}
+{% load otree static %}
+
+{% block title %}
+    Seconde partie 2/2
+{% endblock %}
+
+{% block content %}
+<p>Voici une liste de traits de caractère qui peuvent ou non vous correspondre. Veuillez indiquer dans quelle mesure vous pensez qu’ils vous correspondent.</p>
+   <b>Je me vois comme quelqu'un qui...</b>
+    {% include "./BFF_Likert.html" %}
+    {% next_button %}
+
+{% endblock %}

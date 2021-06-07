@@ -1,0 +1,42 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Première partie{% endblock %}
+
+{% block content %}
+<style>
+#suivant {
+    float: right;
+    margin-right:13cm;
+}
+</style>
+<p> Imaginez qu'un jeu vidéo existe, et qu'il puisse être défini en utilisant les mots suivants:</p>
+    <p>{{ WordsList_RTS_FR }}</p>
+
+    {% block scripts %}
+   <script> function myFunction() {
+  var x = document.getElementById("translation");
+  if (x.style.display === "none") {
+    x.style.display = "block";
+  } else {
+    x.style.display = "none";
+  }
+} </script>
+    {% endblock %}
+
+
+
+
+
+
+    {% formfields  %}
+        <p>Si vous le souhaitez, vous pouvez obtenir la traduction anglaise des mots présentés en cliquant sur le bouton ci-dessous :</p>
+<button type="button" class="btn btn-primary btn-large" onclick="myFunction()">Traduction</button>
+    <div id="translation" style="display:none">
+    <br>
+        <p>{{ WordsList_RTS }}</p>
+</div>
+<br>
+<button id="suivant" onclick ="Suivant()" class="btn btn-primary btn-large">Suivant</button>
+
+{% endblock %}

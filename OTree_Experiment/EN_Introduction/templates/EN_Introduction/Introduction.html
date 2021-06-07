@@ -1,0 +1,30 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Consent{% endblock %}
+
+{% block content %}
+
+    <p>The LaPEA, laboratory of Paris Descartes University, is responsible of the data processing according to the General Data Protection Regulation (GDPR) UE 2016/679 and according to the modified informatic law of January, 6 1978.</p>
+<p>As part of the questionnaire, you agree to transmit us: data about personal opinions, technical data (date and time of your connection via your device). Data collected in this study are anonymous.
+</p>
+
+<p>These data are necessary to: (i) enable the questionnaire, (ii) perform a statistical averaging of the responses, (iii)
+    ensure the security of our computer system against possible malicious acts.</p>
+
+    <p>Only the Laboratory of LaPEA (Paris Descartes University) can process the recollected data.</p>
+
+<u>How long do we keep the data:</u>
+    <ul>
+        <li> the data relating to the archiving of your results: 1 month</li>
+        <li> data relating to archiving your anonymised results for research purposes: 10 years.</li>
+    </ul>
+    <u>Your rights:</u>
+    <p>You have a right to access, modify, delete and oppose the processing of your personal data, in compliance with the 2016 EU GDPR and the Data Protection Act of 06/01/1978 as amended. You can exercise your rights by sending an email to tod.lubart@parisdescartes.fr. These rights are exclusively personal. We may ask you for proof of identity.</p>
+<em>I have read and understand the above statement.  I also understand that completion of the questionnaire is entirely voluntary and that I may stop responding if I wish at any time and for any reason by closing this window.</em></p>
+Would you agree to participate in this survey?
+<button id="suivant" onclick ="Suivant()" class="btn btn-primary btn-large" >Yes, I agree (Next)</button>
+    <button id="suivant" onclick="self.close()" class="btn btn-primary btn-large" >No, I decline (exit survey)</button>
+
+
+{% endblock %}

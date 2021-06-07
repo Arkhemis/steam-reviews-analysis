@@ -1,0 +1,13 @@
+{% extends "global/Page.html" %}
+{% load otree static %}
+
+{% block title %}
+    Seconde partie 3/3
+{% endblock %}
+
+{% block content %}
+<p>Avant de commencer, lisez la liste complète des valeurs. Choisissez celle qui est la plus importante pour vous et assignez un score à cette valeur. Puis choisissez celle qui est la plus opposée à vos valeurs ou la moins importante pour vous et assignez un score à cette valeur. Assignez ensuite un score à toutes les autres valeurs. </p>
+    {% include "./SVSS_Likert.html" %}
+    {% next_button %}
+
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Questionnaire de fin{% endblock %}
+
+{% block content %}
+
+    Veuillez répondre aux questions ci-dessous:
+    {% formfield player.Joueur %}
+    {% formfield player.Platform_1 %}
+    {% formfield player.Platform_2 %}
+    {% formfield player.Platform_3 %}
+    {% formfield player.Jeu_Favori %}
+    {% formfield player.Jeu_Justification %}
+
+{% next_button %}
+
+{% endblock %}

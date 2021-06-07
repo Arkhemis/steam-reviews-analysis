@@ -1,0 +1,15 @@
+{% extends "global/Page.html" %}
+{% load otree static %}
+
+{% block title %}
+    Second Part 2/2
+{% endblock %}
+
+{% block content %}
+<p>Here are a number of characteristics that may or may not apply to you.
+    Please answer for each statement to indicate the extent to which you agree or disagree with that statement. </p>
+   <b>I see Myself as Someone Who...</b>
+    {% include "./BFF_Likert.html" %}
+    {% next_button %}
+
+{% endblock %}

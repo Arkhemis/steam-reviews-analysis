@@ -1,0 +1,357 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Répartition du temps{% endblock %}
+
+{% block content %}
+<style>
+
+.input-group-text {
+  width: 100%; /* Width of the outside container */
+}
+.form-range {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 15px;
+  border-radius: 5px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.7;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+}
+
+.form-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #007bff;
+  cursor: pointer;
+}
+
+.form-range::-moz-range-thumb {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #007bff;
+  cursor: pointer;
+}
+</style>
+
+    <p>Imaginons maintenant que vous devez consacrer un temps de jeu, entre 0 et 120 minutes, pour <strong>chaque jeu</strong> décrit avec les mots des listes ci-dessous (par exemple, 117 minutes à la Liste 1, 102 minutes à la Liste 2, etc...).
+        Attribuez les minutes comme bon vous semble pour les 7 listes, en vous assurant d'attribuer une valeur différente pour chacune d'entre elles.</p>
+
+<script>
+function o(){
+    liveSend({'type': 'Total_Reset', 'value_reset': 0});
+}
+window.onload = o;
+</script>
+
+    <b>Liste 1 :</b>
+    <p>{{ WordsList_Souls_FR }}</p>
+    {% block scripts %}
+   <script> function myFunction() {
+  var x = document.getElementById("translation_souls");
+  if (x.style.display === "none") {
+    x.style.display = "block";
+  } else {
+    x.style.display = "none";
+  }
+} </script>
+    {% endblock %}
+
+
+        <p>Vous consacrez <span id="demo_souls"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_souls" name="myRange" min="0" style = "border-radius: 5px;" max = "120" step="1"  value="0" class="form-range"> &nbsp; 120</p>
+
+</div>
+
+
+
+<br>
+    <b>Liste 2:</b>
+    <p>{{ WordsList_Shooter_FR }}</p>
+
+
+   <script>
+
+       function myFunction2() {
+  var x_shooter = document.getElementById("translation_shooter");
+  if (x_shooter.style.display === "none") {
+    x_shooter.style.display = "block";
+  } else {
+    x_shooter.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_shooter"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_shooter" name="myRange" min="0" max = "120" step="1" value="0"  class="form-range">&nbsp; 120</p>
+
+</div>
+<br>
+    <b>Liste 3 :</b>
+    <p>{{ WordsList_Horror_FR  }}</p>
+
+    <script> function myFunction3() {
+  var x_horror = document.getElementById("translation_horror");
+  if (x_horror.style.display === "none") {
+    x_horror.style.display = "block";
+  } else {
+    x_horror.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_horror"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_horror" name="myRange" min="0" max = "120" step="1" value="0" class="form-range">&nbsp; 120</p>
+
+</div>
+<br>
+    <b>Liste 4 :</b>
+    <p>{{ WordsList_RTS_FR }}</p>
+
+    <script> function myFunction4() {
+  var x_rts = document.getElementById("translation_rts");
+  if (x_rts.style.display === "none") {
+    x_rts.style.display = "block";
+  } else {
+    x_rts.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_rts"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_rts" name="myRange" min="0" max = "120" step="1" value="0" class="form-range">&nbsp; 120</p>
+
+</div>
+<br>
+    <b>Liste 5 :</b>
+    <p>{{ WordsList_RPG_FR }}</p>
+
+    <script> function myFunction5() {
+  var x_rpg = document.getElementById("translation_rpg");
+  if (x_rpg.style.display === "none") {
+    x_rpg.style.display = "block";
+  } else {
+    x_rpg.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_rpg"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_rpg" name="myRange" min="0" max = "120" step="1" value="0" class="form-range">&nbsp; 120</p>
+
+</div>
+<br>
+    <b>Liste 6 :</b>
+    <p>{{ WordsList_Survival_FR }}</p>
+
+    <script> function myFunction6() {
+  var x_survival = document.getElementById("translation_survival");
+  if (x_survival.style.display === "none") {
+    x_survival.style.display = "block";
+  } else {
+    x_survival.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_survival"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_survival" name="myRange" min="0" max = "120" step="1" value="0" class="form-range">&nbsp; 120</p>
+
+</div>
+<br>
+    <b>Liste 7 :</b>
+    <p>{{ WordsList_Multiplayer_FR }}</p>
+
+    <script> function myFunction7() {
+  var x_multiplayer = document.getElementById("translation_multiplayer");
+  if (x_multiplayer.style.display === "none") {
+    x_multiplayer.style.display = "block";
+  } else {
+    x_multiplayer.style.display = "none";
+  }
+} </script>
+
+
+
+    <p>Vous consacrez <span id="demo_multiplayer"></span> minutes de votre temps à cette liste décrivant un jeu en particulier.
+<div class="input-group">
+    <p class="input-group-text">0 &nbsp;<input type="range" id="myRange_multiplayer" name="myRange" min="0" max = "120" step="1" value="0" class="form-range">&nbsp; 120</p>
+
+</div>
+
+
+<noscript> JavaScript is not enabled. To continue, please enable JavaScript.</noscript>
+
+<script type ="text/javascript">
+var slider_souls = document.getElementById("myRange_souls");
+var output_souls = document.getElementById("demo_souls");
+output_souls.innerHTML = slider_souls.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_souls.oninput = function() {
+  output_souls.innerHTML = this.value
+    liveSend({'type': 'Time_Souls', 'value': parseInt(slider_souls.value)});
+}
+// Shooter
+var slider_shooter = document.getElementById("myRange_shooter");
+var output_shooter = document.getElementById("demo_shooter");
+output_shooter.innerHTML = slider_shooter.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_shooter.oninput = function() {
+  output_shooter.innerHTML = this.value;
+  liveSend({'type': 'Time_Shooter', 'value2': parseInt(slider_shooter.value)});
+}
+// Horror
+var slider_horror = document.getElementById("myRange_horror");
+var output_horror = document.getElementById("demo_horror");
+
+output_horror.innerHTML = slider_horror.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_horror.oninput = function() {
+  output_horror.innerHTML = this.value;
+  liveSend({'type': 'Time_Horror', 'value3': parseInt(slider_horror.value)});
+}
+// RTS
+var slider_rts = document.getElementById("myRange_rts");
+var output_rts = document.getElementById("demo_rts");
+output_rts.innerHTML = slider_rts.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_rts.oninput = function() {
+  output_rts.innerHTML = this.value;
+  liveSend({'type': 'Time_RTS', 'value4': parseInt(slider_rts.value)});
+}
+// RPG
+var slider_rpg = document.getElementById("myRange_rpg");
+var output_rpg = document.getElementById("demo_rpg");
+output_rpg.innerHTML = slider_rpg.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_rpg.oninput = function() {
+  output_rpg.innerHTML = this.value;
+  liveSend({'type': 'Time_RPG', 'value5': parseInt(slider_rpg.value)});
+}
+// Survival
+var slider_survival = document.getElementById("myRange_survival");
+var output_survival = document.getElementById("demo_survival");
+output_survival.innerHTML = slider_survival.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_survival.oninput = function() {
+  output_survival.innerHTML = this.value;
+  liveSend({'type': 'Time_Survival', 'value6': parseInt(slider_survival.value)});
+}
+// Multiplayer
+var slider_multiplayer = document.getElementById("myRange_multiplayer");
+var output_multiplayer = document.getElementById("demo_multiplayer");
+output_multiplayer.innerHTML = slider_multiplayer.value; // Display the default slider value
+// Update the current slider value (each time you drag the slider handle)
+slider_multiplayer.oninput = function() {
+  output_multiplayer.innerHTML = this.value;
+  liveSend({'type': 'Time_Multiplayer', 'value7': parseInt(slider_multiplayer.value)});
+}
+var value_total = 0
+
+
+function liveRecv(data) {
+    var suivant = document.getElementById("suivant");
+    var error = document.getElementById("message");
+    var output_souls = document.getElementById("demo_souls").innerHTML;
+    var output_shooter = document.getElementById("demo_shooter").innerHTML;
+    var output_horror = document.getElementById("demo_horror").innerHTML;
+    var output_rts = document.getElementById("demo_rts").innerHTML;
+    var output_rpg = document.getElementById("demo_rpg").innerHTML;
+    var output_survival = document.getElementById("demo_survival").innerHTML;
+    var output_multiplayer = document.getElementById("demo_multiplayer").innerHTML;
+    var suivant = document.getElementById("suivant");
+    var error = document.getElementById("message");
+    if (output_souls === output_shooter ||
+        output_souls === output_horror ||
+        output_souls === output_rts ||
+        output_souls === output_rpg ||
+        output_souls === output_survival ||
+        output_souls === output_multiplayer ||
+        // next
+        output_shooter === output_souls ||
+        output_shooter === output_horror ||
+        output_shooter === output_rts ||
+        output_shooter === output_rpg ||
+        output_shooter === output_survival ||
+        output_shooter === output_multiplayer ||
+        // next
+        output_horror === output_souls ||
+        output_horror === output_shooter ||
+        output_horror === output_rts ||
+        output_horror === output_rpg ||
+        output_horror === output_survival ||
+        output_horror === output_multiplayer ||
+        // next
+        output_rts === output_souls ||
+        output_rts === output_shooter ||
+        output_rts === output_horror ||
+        output_rts === output_rpg ||
+        output_rts === output_survival ||
+        output_rts === output_multiplayer ||
+        // next
+        output_rpg === output_souls ||
+        output_rpg === output_shooter ||
+        output_rpg === output_horror ||
+        output_rpg === output_rts ||
+        output_rpg === output_survival ||
+        output_rpg === output_multiplayer ||
+        // next
+        output_survival === output_souls ||
+        output_survival === output_shooter ||
+        output_survival === output_horror ||
+        output_survival === output_rts ||
+        output_survival === output_rpg ||
+        output_survival === output_multiplayer ||
+        // next
+        output_multiplayer === output_souls ||
+        output_multiplayer === output_shooter ||
+        output_multiplayer === output_horror ||
+        output_multiplayer === output_rts ||
+        output_multiplayer === output_rpg ||
+        output_multiplayer === output_survival
+    ){
+     console.log("Ahll good")
+        error.innerHTML = "Vous avez attribué le même nombre de minutes à une ou plusieurs listes différentes. " +
+            "Le bouton Suivant apparaîtra dès que des valeurs différentes auront été attribuées " +
+            "pour chacune des listes."
+      suivant.style.display = "none";
+} else {
+        error.innerHTML = ""
+     suivant.style.display = "block";
+
+    }
+    }
+
+
+
+</script>
+
+<br>
+
+        Veuillez répondre aux questions ci-dessous:
+    {% formfield player.Time_Justify %}
+    {% formfield player.Autre_Justify %}
+
+<button id="suivant" onclick ="Suivant()" class="btn btn-primary btn-large" style="display:none">Suivant</button>
+<p id = "message"></p>
+
+{% endblock %}
+
+

@@ -1,0 +1,12 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Final Questionnaire{% endblock %}
+
+{% block content %}
+<p>Please answer the questions below:</p>
+
+{% formfields %}
+{% next_button %}
+
+{% endblock %}

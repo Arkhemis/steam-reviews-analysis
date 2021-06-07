@@ -1,0 +1,19 @@
+{% extends "global/Page.html" %}
+{% load otree %}
+
+{% block title %}Fin de l'expérience{% endblock %}
+
+{% block content %}
+
+
+
+    {% if player.Tirage == True %}
+        <h3>Tirage au sort :</h3>
+        <p>Voici votre code pour participer au tirage au sort: <strong>{{  code }}</strong>. Notez le précieusement.</p>  Le tirage au sort aura lieu le 30/05/2021 et
+        le lien pour entrer votre code, afin de savoir si vous avez gagné, sera disponible à cette adressse : <a href="https://docs.google.com/document/d/1-KsZNa-r2gGBK99GgGnllsXDR56-llPL4pXffee-tSY/edit?usp=sharing" target="_blank">https://docs.google.com/document/d/1-KsZNa-r2gGBK99GgGnllsXDR56-llPL4pXffee-tSY/edit?usp=sharing</a>
+    {% endif %}
+    <p></p>
+    Merci d'avoir participé à cette enquête ! Vous pouvez maintenant quitter celle-ci en fermant la fenêtre de votre navigateur.
+{% next_button %}
+
+{% endblock %}

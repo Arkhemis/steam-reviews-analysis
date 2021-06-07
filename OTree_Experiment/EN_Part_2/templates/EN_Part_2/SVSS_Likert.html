@@ -1,0 +1,52 @@
+<style>
+ td .form-check-input {
+     width: 100%;
+     vertical-align: middle;
+ }
+
+ .form-check-input {
+     position: relative;
+     margin: 0 auto;
+ }
+
+ td p {
+     text-align: center;
+     vertical-align: middle;
+ }
+td[colspan]:not([colspan="1"]) {
+    text-align: center;
+}
+</style>
+
+<table class="table table-bordered table-striped">
+    <tr>
+    <td>&nbsp;</td>
+    <td >Opposé à mes principes</td>
+    <td colspan="2">Pas important</td>
+    <td colspan="6">Important</td>
+        <td>D'importance suprême</td>
+  </tr>
+    {% for field in form %}
+        {% if forloop.counter0|divisibleby:"10"  %}
+            <tr>
+                <th></th>
+                {% for k, choice in Constants.choices_map_ssvs.items %}
+                <td class="font-weight-bold">
+                    <p>
+                        {{ choice }}
+                    </p>
+                </td>
+                {% endfor %}
+            </tr>
+        {% endif %}
+        <tr>
+            <td>{{ field.label }}</td>
+            {% for choice in field %}
+                <td>{{ choice.tag }}</td>
+            {% endfor %}
+
+        </tr>
+
+    {% endfor %}
+
+</table>
