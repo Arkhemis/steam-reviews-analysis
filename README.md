@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # M2 Eco-Psycho Thesis
 A repository containing all codes used in my M2 Thesis
 
@@ -33,3 +34,6 @@ Now, run the LDA_Model.py, preferably in a Jupyter Notebook (as to visualize the
 All codes used for my OTree experiment can be found in the corresponding directory.
 
 # Second experiment
+=======
+# M2_EcoPsycho_Thesis
+>>>>>>> Initial commit
