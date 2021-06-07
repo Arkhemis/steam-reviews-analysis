@@ -29,8 +29,7 @@ Run the check_ntopic_lda.py to evaluate the optimal number of topics through the
 
 Now, run the LDA_Model.py, preferably in a Jupyter Notebook (as to visualize the topics). The notebook can also be found here: https://colab.research.google.com/drive/1WRr_zDeYL5mpQDIWZqp6CDerUjye3eZx?usp=sharing
 
-![image](https://user-images.githubusercontent.com/80684272/121043539-031a5f00-c7b5-11eb-9ad1-28ca798cdcc1.png)
-
+<img src="https://user-images.githubusercontent.com/80684272/121043539-031a5f00-c7b5-11eb-9ad1-28ca798cdcc1.png" width=50% height=50%>
 
 ### OTree Experiment
 All codes used for my OTree experiment can be found in the corresponding directory.
