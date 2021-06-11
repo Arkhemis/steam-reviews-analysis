@@ -1,11 +1,6 @@
 # M2 Eco-Psycho Thesis
 A repository containing all codes used in my M2 Thesis
 
-## Table of contents
-* [General info](#general-info)
-* [Technologies](#technologies)
-* [Setup](#setup)
-
 ## General info
 This repository contains all repositories and codes used in my M2 Economy and Psychology Thesis project, in order to reproduce the results obtained.
 
