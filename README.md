@@ -11,7 +11,7 @@ This repository contains all repositories and codes used in my M2 Economy and Ps
 # Extracting reviews from Steam
 For both experiments, we used the similar dataset, which regroups all English reviews for every game that have been scraped from Steam as of December 2020. In order to collect the reviews, either run all scripts in https://github.com/Arkhemis/steam-crawler, as instructed in its corresponding readme.md, or download directly the needed dataset here:
 
-# First experiment
+# First step
 ### Pre-processing the data
 
 Run the pre_processing.py script, that will clean the reviews (removing stop-words, remove non-English reviews, non-alphabetics characters) and filter some of them out of the dataset (too short reviews, review left by an user with less than 2 hours of playtime, etc...).
