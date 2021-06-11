@@ -158,34 +158,11 @@ print(summary(wtplay_multiplayer))
 
 
 ####
-wtplay_souls_2 = glm(formula = WTPlay_Souls ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                       Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                     ,family = binomial, data = df)
-wtplay_shooter_2 = glm(formula = WTPlay_Shooter ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                         Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                       ,family = binomial, data = df)
-wtplay_puzzle_2 = glm(formula = WTPlay_Puzzle ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                        Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                      ,family = binomial, data = df)
-wtplay_rts_2 = glm(formula = WTPlay_RTS ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                     Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                   ,family = binomial, data = df)
-wtplay_rpg_2 = glm(formula = WTPlay_RPG ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                     Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                   ,family = binomial, data = df)
-wtplay_survival_2 = glm(formula = WTPlay_Survival ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                          Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                        ,family = binomial, data = df)
-wtplay_multiplayer_2 = glm(formula = WTPlay_Multiplayer ~ Age + OPE + AGR  + CON + NEU + EXT + Joueur_1.0 + Gender_Femme + 
-                             Joueur_1.0*OPE + Joueur_1.0*AGR + Joueur_1.0*CON + Joueur_1.0*NEU + Joueur_1.0*EXT 
-                           ,family = binomial, data = df)
-
 
 
 round(exp(coef(wtplay_souls)),3)
 round(exp(coef(wtplay_shooter)),3)
 round(exp(coef(wtplay_puzzle)),3)
-
 round(exp(coef(wtplay_rts)),3)
 round(exp(coef(wtplay_rpg)),3)
 round(exp(coef(wtplay_survival)),3)
