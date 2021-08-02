@@ -27,8 +27,6 @@ PARTICIPANT_FIELDS = ['Envie_WordsList_Souls', "Envie_WordsList_Shooter", "Envie
 
 # for security, best to set admin password in an environment variable
 ADMIN_PASSWORD = environ.get('OTREE_ADMIN_PASSWORD')
-ADMIN_PASSWORD = "passwordtropcomplexe"
-
 
 SECRET_KEY = 'blahblah'
 
