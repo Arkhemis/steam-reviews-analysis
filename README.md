@@ -14,7 +14,7 @@ For both experiments, we used the similar dataset, which regroups all English re
 # First step
 ### Pre-processing the data
 
-Run the pre_processing.py script, that will clean the reviews (removing stop-words, remove non-English reviews, non-alphabetics characters) and filter some of them out of the dataset (too short reviews, review left by an user with less than 2 hours of playtime, etc...).
+Run the pre_processing.py script, that will clean the reviews (removing stop-words, non-English reviews, non-alphabetics characters) and filter some of them out of the dataset (too short reviews, review left by an user with less than 2 hours of playtime, etc...).
 
 ### LDA Topic Modelling
 Run the check_ntopic_lda.py to evaluate the optimal number of topics through the number that would get the highest coherence score. Note this step is computational heavy, so it can takes a long time to complete, depending on the computational power of your computer. The optimal number of topic according to the used dataset, following Ockham's Law, should be of 14. 
@@ -31,4 +31,4 @@ All codes used for my OTree experiment can be found in the corresponding directo
 
 ### Statistical analysis
 
-All codes for the statistical analysis can be found in the corresponding directory. Note that the dataset are not included, for privacy reasons.
+All codes for the statistical analysis can be found in the corresponding directory. Note that the dataset is not included, for privacy reasons.
