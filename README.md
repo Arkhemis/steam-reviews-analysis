@@ -1,8 +1,5 @@
-# M2 Eco-Psycho Thesis
-A repository containing all codes used in my M2 Thesis
-
 ## General info
-This repository contains all repositories and codes used in my M2 Economy and Psychology Thesis project, in order to reproduce the results obtained.
+This repository contains all repositories and codes used in Personality and Video games project, in order to reproduce the results obtained.
 
 ### Requirements
 - Python 3.7
