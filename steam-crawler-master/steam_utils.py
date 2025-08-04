@@ -124,18 +124,26 @@ def get_game_reviews(appid, games_stats):
 def save_and_close(full_stats: pd.DataFrame, full_reviews: pd.DataFrame, engine):
     
     try: 
-        existing_reviews = pd.read_sql('select * from games', engine)
+        try:
+            existing_reviews = pd.read_sql('select * from games_reviews', engine)
+        except:
+            #TODO: Create the table
+            pass
         new_reviews_df = pd.DataFrame(full_reviews)
         combined = pd.concat([existing_reviews, new_reviews_df])
         combined.drop_duplicates(subset=['recommendationid'], keep='last', inplace=True)
-        combined.to_sql('games', engine, if_exists='replace', index=False)
+        combined.to_sql('games_reviews', engine, if_exists='replace', index=False)
         logging.info('Games reviews updated and loaded')
     except Exception as e:
         logging.error('Something wrong happened while loading reviews %s', e)
     
     try: 
         new_stats_df = pd.DataFrame(full_stats)
-        existing_stats = pd.read_sql('select * from games_stats', engine)
+        try:
+            existing_stats = pd.read_sql('select * from games_stats', engine)
+        except:
+            #TODO: Create the table
+            pass
         combined_stats = pd.concat([existing_stats, new_stats_df], ignore_index=True)
         combined_stats.drop_duplicates(subset=['appid'], keep='last', inplace=True)
         combined_stats.to_sql('games_stats', engine, if_exists='replace', index=False)
