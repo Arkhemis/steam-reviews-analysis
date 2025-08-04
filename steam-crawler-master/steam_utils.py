@@ -1,9 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import pandas as pd
 import logging
 import urllib3
 import time
+from models import Base, GamesReviews, GameReviewStats  # Import de vos modèles
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects.postgresql import insert
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -37,22 +40,41 @@ def process_games_review_data(review_stats, appid):
 
     return reviews_stats
 
+
+
+
+
 def get_game_reviews(appid, games_stats):
     
     """
     Process game reviews stats
     """
-
+    
 
     params["cursor"] = '*'
+    game_stat = None
     full_game_reviews = []
+    
+
     while True:
-        user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
-        user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
+        if games_stats is not None and 'updated_at' in games_stats:
         
+            updated_at = games_stats['updated_at']
+            if updated_at is not None and updated_at > datetime.now() - timedelta(days=1):
+                logging.info(f'Already checked {appid} today, skipping...')
+                break
+
+        user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
+
+        user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
+
+        if user_reviews['success'] == 2:
+            logging.warning(f"No reviews for appid {appid}")    
+            break
+             
         if user_reviews is None:
-                    logging.warning(f"Failed to get reviews for appid {appid}") 
-                    break
+            logging.warning(f"Failed to get reviews for appid {appid}") 
+            break
 
         if 'query_summary' not in user_reviews:
             logging.warning(f"Invalid response structure for appid {appid}")
@@ -61,11 +83,14 @@ def get_game_reviews(appid, games_stats):
         if params["cursor"] == '*':
             query_summary = user_reviews["query_summary"]
             current_reviews = query_summary['total_reviews']
-            if appid in games_stats and current_reviews == games_stats[appid]:
+            if games_stats is not None and current_reviews == games_stats['total_reviews']:
                 logging.info(f"App {appid}: same review count ({current_reviews}), skipping")
-                return [], []
+                break
             else:
-                logging.info(f"App {appid}: reviews changed ({games_stats.get('appid', 0)} -> {current_reviews})")
+                if games_stats is not None:
+                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', pd.NA)} -> {current_reviews})")
+                else:
+                    logging.info(f"App {appid}: reviews are missing")
                 game_stat = process_games_review_data(query_summary, appid)
 
         page_review = []
@@ -81,8 +106,12 @@ def get_game_reviews(appid, games_stats):
             # Données review principales
             review_text = review.get('review', pd.NA)
             voted_up = review.get('voted_up', False)
-            votes_up = review.get('votes_up', 0)
-            votes_funny = review.get('votes_funny', 0)
+            votes_up = review.get("votes_up", 0)
+            if votes_up > 100000: #highly unlikely
+                votes_up = 0
+            votes_funny = review.get("votes_funny", 0)
+            if votes_funny > 100000: #highly unlikely
+                votes_funny = 0
             weighted_vote_score = review.get('weighted_vote_score', 0.0)
             steam_purchase = review.get('steam_purchase', True)  # Par défaut True
             received_for_free = review.get('received_for_free', False)
@@ -118,35 +147,39 @@ def get_game_reviews(appid, games_stats):
         else:
             break
 
-    time.sleep(0.5)
+    
     return full_game_reviews, game_stat
 
-def save_and_close(full_stats: pd.DataFrame, full_reviews: pd.DataFrame, engine):
+def save_and_close(full_stats: list, full_reviews: list, engine):
+    Session = sessionmaker(bind=engine)
+    session = Session()
     
-    try: 
-        try:
-            existing_reviews = pd.read_sql('select * from games_reviews', engine)
-        except:
-            #TODO: Create the table
-            pass
-        new_reviews_df = pd.DataFrame(full_reviews)
-        combined = pd.concat([existing_reviews, new_reviews_df])
-        combined.drop_duplicates(subset=['recommendationid'], keep='last', inplace=True)
-        combined.to_sql('games_reviews', engine, if_exists='replace', index=False)
-        logging.info('Games reviews updated and loaded')
+    full_reviews = pd.DataFrame(full_reviews).to_dict(orient='records')
+    try:
+        # UPSERT pour les reviews
+        for review_data in full_reviews:
+            stmt = insert(GamesReviews).values(**review_data)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['appid', 'recommendationid'],
+                set_={key: stmt.excluded[key] for key in review_data.keys() if key != 'recommendationid'}
+            )
+            session.execute(stmt)
+        
+        # UPSERT pour les stats
+        for stat_data in full_stats:
+            stmt = insert(GameReviewStats).values(**stat_data)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['appid'],
+                set_={key: stmt.excluded[key] for key in stat_data.keys() if key != 'appid'}
+            )
+            session.execute(stmt)
+        
+        session.commit()
+        logging.info(f'Upserted {len(full_reviews)} reviews and {len(full_stats)} stats')
+        
     except Exception as e:
-        logging.error('Something wrong happened while loading reviews %s', e)
-    
-    try: 
-        new_stats_df = pd.DataFrame(full_stats)
-        try:
-            existing_stats = pd.read_sql('select * from games_stats', engine)
-        except:
-            #TODO: Create the table
-            pass
-        combined_stats = pd.concat([existing_stats, new_stats_df], ignore_index=True)
-        combined_stats.drop_duplicates(subset=['appid'], keep='last', inplace=True)
-        combined_stats.to_sql('games_stats', engine, if_exists='replace', index=False)
-        logging.info('Games review stats updated and loaded')
-    except Exception as e:
-        logging.error('Something wrong happened while loading reviews stats %s', e)
+        session.rollback()
+        logging.error(f'Error during upsert: {e}')
+        raise
+    finally:
+        session.close()
