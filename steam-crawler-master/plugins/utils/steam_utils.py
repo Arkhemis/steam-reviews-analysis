@@ -10,7 +10,8 @@ from sqlalchemy.dialects.postgresql import insert
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-logging.getLogger("urllib3").setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.DEBUG)
+
 
 params = {
         'json':1,
@@ -65,6 +66,7 @@ def get_game_reviews(appid, games_stats):
                 logging.debug(f'Already checked {appid} recently, skipping...') #Clutters the log otherwise 
                 # Retourner les stats existantes
                 should_skip = True
+                games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 return [], games_stats, should_skip
 
         user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
@@ -94,6 +96,7 @@ def get_game_reviews(appid, games_stats):
             if games_stats is not None and current_reviews <= games_stats.get('total_reviews', 0):
                 logging.info(f"App {appid}: same review count ({current_reviews}), skipping")
                 should_skip = True
+                games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
             else:
                 if games_stats is not None:

@@ -11,6 +11,9 @@ from airflow.decorators import dag, task
 
 engine = sqlalchemy.create_engine("postgresql://user:password@postgres:5432/steamreviews")
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 @dag(
     dag_id='dag_steam_reviews',
     start_date=datetime(year=2025, month=7, day=8, hour=9, minute=0),
