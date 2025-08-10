@@ -80,6 +80,7 @@ def steam_reviews_etl():
                     reviews, stats, should_skip = get_game_reviews(appid, stats_row)
                     
                     if should_skip:
+                        full_stats.append(stats)
                         continue
 
                     if reviews or stats: 
