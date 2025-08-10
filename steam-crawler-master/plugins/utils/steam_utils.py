@@ -4,17 +4,17 @@ import pandas as pd
 import logging
 import urllib3
 import time
-from models import Base, GamesReviews, GameReviewStats  # Import de vos modèles
+from utils.models import Base, GamesReviews, GameReviewStats  # Import de vos modèles
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.DEBUG)
 
 params = {
         'json':1,
-        #'language': 'english',
+        'language': 'all', #fetch all languages
         'cursor': '*',                                  
         'num_per_page': 100,
         'filter': 'recent'
@@ -45,54 +45,64 @@ def process_games_review_data(review_stats, appid):
 
 
 def get_game_reviews(appid, games_stats):
+    # Stats par défaut pour tous les cas
+    default_game_stat = {
+        'appid': appid,
+        'review_score': 0,
+        'total_positive': 0,
+        'total_negative': 0,
+        'total_reviews': 0,
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
     
-    """
-    Process game reviews stats
-    """
-    
-
-    params["cursor"] = '*'
-    game_stat = None
     full_game_reviews = []
-    
-
+    params["cursor"] = '*'
+    should_skip = False
     while True:
         if games_stats is not None and 'updated_at' in games_stats:
-        
             updated_at = games_stats['updated_at']
-            if updated_at is not None and updated_at > datetime.now() - timedelta(days=1):
-                logging.info(f'Already checked {appid} today, skipping...')
-                break
+            if updated_at is not None and updated_at > datetime.now() - timedelta(days=7):
+                logging.debug(f'Already checked {appid} recently, skipping...') #Clutters the log otherwise 
+                # Retourner les stats existantes
+                should_skip = True
+                return [], games_stats, should_skip
 
         user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
-
         user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
 
         if user_reviews['success'] == 2:
             logging.warning(f"No reviews for appid {appid}")    
-            break
-             
+            return [], default_game_stat, should_skip
+        
         if user_reviews is None:
             logging.warning(f"Failed to get reviews for appid {appid}") 
-            break
-
+            return [], default_game_stat, should_skip
+        
         if 'query_summary' not in user_reviews:
             logging.warning(f"Invalid response structure for appid {appid}")
-            break
+            return [], default_game_stat, should_skip
 
         if params["cursor"] == '*':
             query_summary = user_reviews["query_summary"]
             current_reviews = query_summary['total_reviews']
-            if games_stats is not None and current_reviews == games_stats['total_reviews']:
+            
+            if current_reviews == 0:
+                logging.info(f"0 reviews found for {appid}")
+                return [], default_game_stat, should_skip
+
+                
+            if games_stats is not None and current_reviews <= games_stats.get('total_reviews', 0):
                 logging.info(f"App {appid}: same review count ({current_reviews}), skipping")
-                break
+                should_skip = True
+                return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
             else:
                 if games_stats is not None:
-                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', pd.NA)} -> {current_reviews})")
+                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {current_reviews})")
                 else:
                     logging.info(f"App {appid}: reviews are missing")
+                    
                 game_stat = process_games_review_data(query_summary, appid)
-
+        
         page_review = []
         # extract each review in the response of the API call
         for review in user_reviews["reviews"]:
@@ -148,7 +158,7 @@ def get_game_reviews(appid, games_stats):
             break
 
     
-    return full_game_reviews, game_stat
+    return full_game_reviews, game_stat, should_skip
 
 def save_and_close(full_stats: list, full_reviews: list, engine):
     Session = sessionmaker(bind=engine)

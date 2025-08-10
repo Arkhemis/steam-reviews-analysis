@@ -14,11 +14,8 @@ engine = sqlalchemy.create_engine("postgresql://user:password@localhost:5434/ste
 
 def init_games_df():
     try:
-        games = pd.read_sql('select steam_app_id from games', engine)
-        if len(games) == 0:
-            games = pd.read_csv('games_rows.csv')
-            games.to_sql('games', engine, if_exists='replace')
-            logging.info('Games data loaded in db.')
+        games = pd.read_sql('select steam_app_id, first_release_date from games', engine)
+        print(games)
     except:
         logging.error('Table games does not exist. Trying to parse it from the data')
         try:
@@ -30,6 +27,7 @@ def init_games_df():
             logging.error('Games base data cannot be found. Stopping the script.')
             sys.exit()
             raise
+    games = games[games['first_release_date'] <= datetime.today().date()]    
     return games
 
 def init_game_reviews_stats():
@@ -40,7 +38,7 @@ def init_game_reviews_stats():
         games_stats = pd.DataFrame()
     return games_stats
 
-max_games = 100
+max_games = 500
 processed_games = 0
 full_stats, full_reviews = [], []
 
@@ -61,20 +59,24 @@ with logging_redirect_tqdm():
                 logging.error('An error occured while saving the data: %s', e)
                 chime.error()
                 sys.exit()
-        logging.debug(f"{processed_games=}")
+        #logging.info(f"{processed_games=}")
         try:
             try:
-                stats_row = games_reviews_stats_df[games_reviews_stats_df['appid'] == appid].iloc[0]
+                stats_row = games_reviews_stats_df[games_reviews_stats_df['appid'] == appid].iloc[0].to_dict()  # ✅
             except:
                 stats_row = None
-            reviews, stats = get_game_reviews(appid, stats_row)
+            reviews, stats, should_skip = get_game_reviews(appid, stats_row)
             
-            if reviews:
+            if should_skip:
+                continue
+
+            if reviews or stats: 
                 full_stats.append(stats)
-                full_reviews.extend(reviews)
+                if reviews:  # Seulement ajouter les reviews s'il y en a
+                    full_reviews.extend(reviews)
                 processed_games += 1
             else:
-                continue
+                continue  # Ce cas ne devrait plus arriver
         except Exception as e:
             logging.error(f"Error processing appid {appid}: {e}")
             continue
