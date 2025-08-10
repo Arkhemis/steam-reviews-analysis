@@ -8,9 +8,10 @@ from utils.models import Base, GamesReviews, GameReviewStats  # Import de vos mo
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-logging.getLogger().setLevel(logging.DEBUG)
+
 
 
 params = {
@@ -63,7 +64,7 @@ def get_game_reviews(appid, games_stats):
         if games_stats is not None and 'updated_at' in games_stats:
             updated_at = games_stats['updated_at']
             if updated_at is not None and updated_at > datetime.now() - timedelta(days=7):
-                logging.debug(f'Already checked {appid} recently, skipping...') #Clutters the log otherwise 
+                logging.debug(f'Already checked {appid} recently ({updated_at}), skipping...') #Clutters the log otherwise 
                 # Retourner les stats existantes
                 should_skip = True
                 games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -94,7 +95,7 @@ def get_game_reviews(appid, games_stats):
 
                 
             if games_stats is not None and current_reviews <= games_stats.get('total_reviews', 0):
-                logging.info(f"App {appid}: same review count ({current_reviews}), skipping")
+                logging.info(f"App {appid}: same review count ({current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
                 should_skip = True
                 games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
