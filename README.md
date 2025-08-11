@@ -1,3 +1,15 @@
+I'm in the process of rewriting the whole code from scratch, so the below documentation will probably be obsolete. Stay tuned for fresh results on [steam.reviews](http://steam.reviews/)!
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------
 ## General info
 This repository contains all repositories and codes used in Personality and Video games project, in order to reproduce the results obtained.
 
