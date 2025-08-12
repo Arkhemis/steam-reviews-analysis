@@ -105,16 +105,13 @@ def igdb_etl():
             if pd.isna(row['appid']):
                 continue
             release_date = None
-            if pd.notna(row.get('first_release_date')):
-                try:
-                    # Si c'est une string, la parser
-                    if isinstance(row['first_release_date'], str):
-                        release_date = datetime.strptime(row['first_release_date'], '%Y-%m-%d %H:%M:%S').date()
-                    # Si c'est déjà un datetime
-                    elif hasattr(row['first_release_date'], 'date'):
-                        release_date = row['first_release_date'].date()
-                except (ValueError, AttributeError):
-                    release_date = None
+
+            try:
+                release_date_raw = row.get('first_release_date')
+                release_date = datetime.strptime(release_date_raw, '%Y-%m-%d %H:%M:%S').date()
+            except (ValueError, AttributeError, TypeError, OSError):
+                release_date = None
+
             try:
                 game = GameTable(
                     slug=row['slug'],
