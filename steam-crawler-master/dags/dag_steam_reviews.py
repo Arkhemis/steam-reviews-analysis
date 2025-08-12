@@ -17,7 +17,7 @@ logger.setLevel(logging.DEBUG)
 @dag(
     dag_id='dag_steam_reviews',
     start_date=datetime(year=2025, month=7, day=8, hour=9, minute=0),
-    schedule=None,
+    schedule="@daily",
     catchup=False,
     max_active_runs=1
 )
