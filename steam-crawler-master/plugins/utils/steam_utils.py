@@ -7,7 +7,7 @@ import time
 from utils.models import Base, GamesReviews, GameReviewStats  # Import de vos modèles
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
-
+import json
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -56,10 +56,11 @@ def get_game_reviews(appid, games_stats):
         'total_reviews': 0,
         'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
-    
+    max_retries = 3
     full_game_reviews = []
     params["cursor"] = '*'
     should_skip = False
+    review_count = 0
     while True:
         if games_stats is not None and 'updated_at' in games_stats:
             updated_at = games_stats['updated_at']
@@ -70,8 +71,18 @@ def get_game_reviews(appid, games_stats):
                 games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 return [], games_stats, should_skip
 
-        user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
-        user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
+                user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
+                break
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+                logging.warning(f"Error for appid {appid} (attempt {retry_count}/{max_retries}): {e}")
+
+                if retry_count >= max_retries:
+                    logging.error(f"Max retries reached for appid {appid}")
+                    return [], default_game_stat, True
 
         if user_reviews['success'] == 2:
             logging.warning(f"No reviews for appid {appid}")    
@@ -87,26 +98,29 @@ def get_game_reviews(appid, games_stats):
 
         if params["cursor"] == '*':
             query_summary = user_reviews["query_summary"]
-            current_reviews = query_summary['total_reviews']
+            total_current_reviews = query_summary['total_reviews']
             
-            if current_reviews == 0:
+            if total_current_reviews == 0:
                 logging.info(f"0 reviews found for {appid}")
                 return [], default_game_stat, should_skip
+            elif total_current_reviews > 100000:
+                logging.info(f"Oof. What a big game. Containing {total_current_reviews} reviews!")
 
                 
-            if games_stats is not None and current_reviews <= games_stats.get('total_reviews', 0):
-                logging.info(f"App {appid}: same review count ({current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
+            if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
+                logging.info(f"App {appid}: same review count ({total_current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
                 should_skip = True
                 games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
             else:
                 if games_stats is not None:
-                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {current_reviews})")
+                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
                 else:
                     logging.info(f"App {appid}: reviews are missing")
                     
                 game_stat = process_games_review_data(query_summary, appid)
         
+
         page_review = []
         # extract each review in the response of the API call
         for review in user_reviews["reviews"]:
@@ -155,13 +169,22 @@ def get_game_reviews(appid, games_stats):
             }
             page_review.append(reviews_dict)
         full_game_reviews.extend(page_review)
+
+        review_count += 1  
+        
+
+        if review_count > 0 and review_count % 1000 == 0:  
+            logging.info(f"Big game {appid}: processed {review_count * 100} reviews so far, sleeping...")
+            time.sleep(120)
+            logging.info(f"Wake up mate!")
+
         if ('cursor' in user_reviews and user_reviews["cursor"] != params["cursor"]):
             logging.debug('More than one cursor detected')
             params["cursor"] = user_reviews["cursor"]
         else:
             break
 
-    
+        
     return full_game_reviews, game_stat, should_skip
 
 def save_and_close(full_stats: list, full_reviews: list, engine):
