@@ -105,8 +105,6 @@ def get_game_reviews(appid, games_stats):
             if total_current_reviews == 0:
                 logging.info(f"0 reviews found for {appid}")
                 return [], default_game_stat, should_skip
-            elif total_current_reviews > 100000:
-                logging.info(f"Oof. What a big game. Containing {total_current_reviews} reviews!")
 
                 
             if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
@@ -118,7 +116,7 @@ def get_game_reviews(appid, games_stats):
                 if games_stats is not None:
                     logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
                 else:
-                    logging.info(f"App {appid}: reviews are missing")
+                    logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
                     
                 game_stat = process_games_review_data(query_summary, appid)
         
@@ -203,13 +201,14 @@ def get_game_reviews(appid, games_stats):
 
         if review_count > 0 and review_count % 1000 == 0:  
             logging.info(f"Big game {appid}: processed {review_count * 100} reviews so far, sleeping...")
-            time.sleep(120)
-            logging.info(f"Wake up mate!")
+            time.sleep(60)
 
         if ('cursor' in user_reviews and user_reviews["cursor"] != params["cursor"]):
             logging.debug('More than one cursor detected')
             params["cursor"] = user_reviews["cursor"]
         else:
+            if total_current_reviews > 100000:
+                time.sleep(60) 
             break
 
         
