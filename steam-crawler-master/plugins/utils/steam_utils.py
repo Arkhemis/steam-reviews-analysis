@@ -135,7 +135,7 @@ def get_game_reviews(appid, games_stats):
 
             
             # Données review principales
-            review_text = review.get('review', pd.NA)
+            review_text = review.get('review', None) #Shouldn't happen either
             voted_up = review.get('voted_up', False)
             votes_up = review.get("votes_up", 0)
             if votes_up > 100000: #highly unlikely
@@ -147,20 +147,20 @@ def get_game_reviews(appid, games_stats):
             steam_purchase = review.get('steam_purchase', True)  # Par défaut True
             received_for_free = review.get('received_for_free', False)
             written_during_early_access = review.get('written_during_early_access', False)
-            language = review.get('language', pd.NA)
+            language = review.get('language', None)
             primarily_steam_deck = review.get('primarily_steam_deck', False)
 
-            timestamp_created = review.get('timestamp_created', pd.NA)
-            if timestamp_created is not pd.NA:
+            timestamp_created = review.get('timestamp_created', None)
+            if timestamp_created is not None:
                 timestamp_created = datetime.fromtimestamp(timestamp_created).date()
 
-            timestamp_updated = review.get('timestamp_updated', pd.NA)
-            if timestamp_updated is not pd.NA:
+            timestamp_updated = review.get('timestamp_updated', None)
+            if timestamp_updated is not None:
                 timestamp_updated = datetime.fromtimestamp(timestamp_updated).date()
 
-            developer_response = review.get('developer_response', pd.NA)
-            timestamp_dev_responded = review.get('timestamp_dev_responded', pd.NA)
-            if timestamp_dev_responded is not pd.NA:
+            developer_response = review.get('developer_response', None)
+            timestamp_dev_responded = review.get('timestamp_dev_responded', None)
+            if timestamp_dev_responded is not None:
                 timestamp_dev_responded = datetime.fromtimestamp(timestamp_dev_responded).date()
             
             
@@ -216,35 +216,64 @@ def get_game_reviews(appid, games_stats):
     return full_game_reviews, game_stat, should_skip
 
 def save_and_close(full_stats: list, full_reviews: list, engine):
+    """
+    Performs a bulk upsert in chunks for very large datasets.
+    """
+    chunk_size: int = 10000
+    if not full_reviews and not full_stats:
+        logging.info("No new data to save.")
+        return
+
+    logging.info("Starting data bulk upsert to db in chunks...")
     Session = sessionmaker(bind=engine)
     session = Session()
-    
-    full_reviews = pd.DataFrame(full_reviews).to_dict(orient='records')
+
     try:
-        # UPSERT pour les reviews
-        for review_data in full_reviews:
-            stmt = insert(GamesReviews).values(**review_data)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['appid', 'recommendationid'],
-                set_={key: stmt.excluded[key] for key in review_data.keys() if key != 'recommendationid'}
-            )
-            session.execute(stmt)
-        
-        # UPSERT pour les stats
-        for stat_data in full_stats:
-            stmt = insert(GameReviewStats).values(**stat_data)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['appid'],
-                set_={key: stmt.excluded[key] for key in stat_data.keys() if key != 'appid'}
-            )
-            session.execute(stmt)
-        
+        # UPSERT en masse pour les reviews
+        if full_reviews:
+            logging.info(f"Processing {len(full_reviews)} reviews in chunks of {chunk_size}...")
+            # Pas besoin de DataFrame ici, on peut travailler directement sur la liste
+            for i in range(0, len(full_reviews), chunk_size):
+                chunk = full_reviews[i:i + chunk_size]
+                
+                stmt_reviews = insert(GamesReviews).values(chunk)
+                update_columns_reviews = {
+                    key: stmt_reviews.excluded[key] 
+                    for key in chunk[0].keys() if key not in ['appid', 'recommendationid']
+                }
+                stmt_reviews = stmt_reviews.on_conflict_do_update(
+                    index_elements=['appid', 'recommendationid'],
+                    set_=update_columns_reviews
+                )
+                session.execute(stmt_reviews)
+                logging.info(f"  Upserted chunk {i//chunk_size + 1}/{(len(full_reviews)-1)//chunk_size + 1}")
+
+            logging.info(f'Finished upserting {len(full_reviews)} reviews.')
+
+
+        if full_stats:
+            logging.info(f"Processing {len(full_stats)} stats in chunks of {chunk_size}...")
+            for i in range(0, len(full_stats), chunk_size):
+                chunk = full_stats[i:i + chunk_size]
+                stmt_stats = insert(GameReviewStats).values(chunk)
+                update_columns_stats = {
+                    key: stmt_stats.excluded[key] 
+                    for key in chunk[0].keys() if key != 'appid'
+                }
+                stmt_stats = stmt_stats.on_conflict_do_update(
+                    index_elements=['appid'],
+                    set_=update_columns_stats
+                )
+                session.execute(stmt_stats)
+
+            logging.info(f'Finished upserting {len(full_stats)} stats.')
+
         session.commit()
-        logging.info(f'Upserted {len(full_reviews)} reviews and {len(full_stats)} stats')
-        
+        logging.info("Database transaction committed successfully.")
+
     except Exception as e:
-        session.rollback()
-        logging.error(f'Error during upsert: {e}')
+        logging.error(f"An error occurred during database upsert: {e}")
+        session.rollback() # Annule toute la transaction en cas d'erreur
         raise
     finally:
         session.close()

@@ -63,7 +63,7 @@ def steam_reviews_etl():
 
     @task()
     def process_reviews(games_df, games_reviews_stats_df):
-        max_games = 250
+        max_games = 100
         processed_games = 0
         full_stats, full_reviews = [], []
 
@@ -79,7 +79,7 @@ def steam_reviews_etl():
                         time.sleep(150)
                     except Exception as e:
                         logging.error('An error occured while saving the data: %s', e)
-                        sys.exit()
+                        # sys.exit()
                 try:
                     try:
                         stats_row = games_reviews_stats_df[games_reviews_stats_df['appid'] == appid].iloc[0].to_dict()  # ✅
