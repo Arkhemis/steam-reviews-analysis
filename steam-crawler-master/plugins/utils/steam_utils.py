@@ -8,6 +8,8 @@ from utils.models import Base, GamesReviews, GameReviewStats  # Import de vos mo
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
 import json
+from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm import tqdm
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -200,7 +202,7 @@ def get_game_reviews(appid, games_stats):
         
 
         if review_count > 0 and review_count % 1000 == 0:  
-            logging.info(f"Big game {appid}: processed {review_count * 100} reviews so far, sleeping...")
+            logging.info(f"Big game {appid}: processed {len(full_game_reviews)} reviews so far, sleeping...")
             time.sleep(60)
 
         if ('cursor' in user_reviews and user_reviews["cursor"] != params["cursor"]):
@@ -208,6 +210,7 @@ def get_game_reviews(appid, games_stats):
             params["cursor"] = user_reviews["cursor"]
         else:
             if total_current_reviews > 100000:
+                logging.info(f"Finished processing reviews for this game. Sleeping before resuming...")
                 time.sleep(60) 
             break
 
@@ -232,22 +235,22 @@ def save_and_close(full_stats: list, full_reviews: list, engine):
         if full_reviews:
             logging.info(f"Processing {len(full_reviews)} reviews in chunks of {chunk_size}...")
             # Pas besoin de DataFrame ici, on peut travailler directement sur la liste
-            for i in range(0, len(full_reviews), chunk_size):
-                chunk = full_reviews[i:i + chunk_size]
-                
-                stmt_reviews = insert(GamesReviews).values(chunk)
-                update_columns_reviews = {
-                    key: stmt_reviews.excluded[key] 
-                    for key in chunk[0].keys() if key not in ['appid', 'recommendationid']
-                }
-                stmt_reviews = stmt_reviews.on_conflict_do_update(
-                    index_elements=['appid', 'recommendationid'],
-                    set_=update_columns_reviews
-                )
-                session.execute(stmt_reviews)
-                logging.info(f"  Upserted chunk {i//chunk_size + 1}/{(len(full_reviews)-1)//chunk_size + 1}")
+            with logging_redirect_tqdm(loggers=[logging.Logger("airflow.task")]):
+                for i in tqdm(range(0, len(full_reviews), chunk_size)):
+                    chunk = full_reviews[i:i + chunk_size]
+                    
+                    stmt_reviews = insert(GamesReviews).values(chunk)
+                    update_columns_reviews = {
+                        key: stmt_reviews.excluded[key] 
+                        for key in chunk[0].keys() if key not in ['appid', 'recommendationid']
+                    }
+                    stmt_reviews = stmt_reviews.on_conflict_do_update(
+                        index_elements=['appid', 'recommendationid'],
+                        set_=update_columns_reviews
+                    )
+                    session.execute(stmt_reviews)
 
-            logging.info(f'Finished upserting {len(full_reviews)} reviews.')
+                logging.info(f'Finished upserting {len(full_reviews)} reviews.')
 
 
         if full_stats:

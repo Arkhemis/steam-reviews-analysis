@@ -63,14 +63,14 @@ def steam_reviews_etl():
 
     @task()
     def process_reviews(games_df, games_reviews_stats_df):
-        max_games = 100
+        max_games = 500
         processed_games = 0
         full_stats, full_reviews = [], []
 
 
         with logging_redirect_tqdm(loggers=[logging.Logger("airflow.task")]):
             for appid in tqdm(games_df['steam_app_id']):
-                if processed_games >= max_games:
+                if processed_games >= max_games or len(full_reviews) >= 500000:
                     try:
                         save_and_close(full_stats, full_reviews, engine)
                         processed_games = 0
