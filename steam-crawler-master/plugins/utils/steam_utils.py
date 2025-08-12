@@ -12,14 +12,16 @@ import json
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
+#TODO: Technically, the reviews are filtered by recency so we could only fetch the most recent up to the last review checked?
+#Need to see how to implement that.
 
 params = {
         'json':1,
         'language': 'all', #fetch all languages
         'cursor': '*',                                  
         'num_per_page': 100,
-        'filter': 'recent'
+        'filter': 'recent',
+        'filter_offtopic_activity': 0 #Add review bombing.
     }
 
 def process_games_review_data(review_stats, appid):
@@ -131,6 +133,7 @@ def get_game_reviews(appid, games_stats):
             playtime_at_review_minutes = review.get('author', {}).get('playtime_at_review', 0)
             last_played = review.get('author', {}).get('last_played', None)
 
+            
             # Données review principales
             review_text = review.get('review', pd.NA)
             voted_up = review.get('voted_up', False)
@@ -145,6 +148,23 @@ def get_game_reviews(appid, games_stats):
             received_for_free = review.get('received_for_free', False)
             written_during_early_access = review.get('written_during_early_access', False)
             language = review.get('language', pd.NA)
+            primarily_steam_deck = review.get('primarily_steam_deck', False)
+
+            timestamp_created = review.get('timestamp_created', pd.NA)
+            if timestamp_created is not pd.NA:
+                timestamp_created = datetime.fromtimestamp(timestamp_created).date()
+
+            timestamp_updated = review.get('timestamp_updated', pd.NA)
+            if timestamp_updated is not pd.NA:
+                timestamp_updated = datetime.fromtimestamp(timestamp_updated).date()
+
+            developer_response = review.get('developer_response', pd.NA)
+            timestamp_dev_responded = review.get('timestamp_dev_responded', pd.NA)
+            if timestamp_dev_responded is not pd.NA:
+                timestamp_dev_responded = datetime.fromtimestamp(timestamp_dev_responded).date()
+            
+            
+
 
             reviews_dict = {
                 'appid': appid, 
@@ -165,7 +185,15 @@ def get_game_reviews(appid, games_stats):
                 'steam_purchase': steam_purchase,
                 'received_for_free': received_for_free,
                 'written_during_early_access': written_during_early_access,
-                'language': language
+                'primarily_steam_deck': primarily_steam_deck,
+
+                'language': language,
+
+                'timestamp_created': timestamp_created,
+                'timestamp_updated' : timestamp_updated,
+
+                'developer_response': developer_response,
+                'timestamp_dev_responded': timestamp_dev_responded
             }
             page_review.append(reviews_dict)
         full_game_reviews.extend(page_review)

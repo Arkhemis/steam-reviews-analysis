@@ -40,6 +40,7 @@ class GamesReviews(Base):
     checked_at = Column(DateTime, default=datetime.now, nullable=False)
     language = Column(String(10), nullable=True)
     
+    
     # Votes et scores
     voted_up = Column(Boolean, default=False, nullable=False)
     votes_up = Column(Integer, default=0)
@@ -50,6 +51,12 @@ class GamesReviews(Base):
     steam_purchase = Column(Boolean, default=True, nullable=False)
     received_for_free = Column(Boolean, default=False, nullable=False)
     written_during_early_access = Column(Boolean, default=False, nullable=False)
+
+    timestamp_created = Column(Date, nullable=True)
+    timestamp_updated = Column(Date, nullable=True)
+    developer_response = Column(Text, nullable=True)
+    timestamp_dev_responded = Column(Date, nullable=True)
+    primarily_steam_deck = Column(Boolean, nullable = True)
 
 class GameReviewStats(Base):
     __tablename__ = 'games_reviews_stats'
