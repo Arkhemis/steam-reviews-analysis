@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from tqdm import tqdm
 import sqlalchemy
 from utils.steam_utils import *
@@ -44,7 +44,8 @@ def steam_reviews_etl():
                 sys.exit()
                 raise
         total_games_in_db = len(games)
-        games = games[games['first_release_date'] <= datetime.today().date()]    
+        #Excluding games releasing today because they don't have reviews for the most part
+        games = games[games['first_release_date'] <= datetime.today().date() - timedelta(days=1)] 
         total_games_in_db_filtered = len(games)
         logging.info(f"""
                      Total games in db: {total_games_in_db}. 
