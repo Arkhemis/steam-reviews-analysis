@@ -19,7 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 params = {
         'json':1,
-        'language': 'all', #fetch all languages
+        'language': 'english', #'all', #fetch all languages
         'cursor': '*',                                  
         'num_per_page': 100,
         'filter': 'recent',
@@ -68,7 +68,7 @@ def get_game_reviews(appid, games_stats):
     while True:
         if games_stats is not None and 'updated_at' in games_stats:
             updated_at = games_stats['updated_at']
-            if updated_at is not None and updated_at > datetime.now() - timedelta(days=7):
+            if updated_at is not None and updated_at > datetime.now() - timedelta(days=31): #Originally 7 but hey...
                 logging.debug(f'Already checked {appid} recently ({updated_at}), skipping...') #Clutters the log otherwise 
                 # Retourner les stats existantes
                 should_skip = True
@@ -83,6 +83,9 @@ def get_game_reviews(appid, games_stats):
                 break
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
                 logging.warning(f"Error for appid {appid} (attempt {retry_count}/{max_retries}): {e}")
+                retry += 1
+                time.sleep(120)
+                
 
                 if retry_count >= max_retries:
                     logging.error(f"Max retries reached for appid {appid}")
