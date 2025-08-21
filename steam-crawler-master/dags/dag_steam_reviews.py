@@ -27,11 +27,10 @@ def steam_reviews_etl():
 
         
         try:
-            print('alchemy', sqlalchemy.__version__)
-            print('pandas', pd.__version__)
-            #Sorting by newest releases first
-            games = pd.read_sql('select steam_app_id, first_release_date from games order by first_release_date desc', engine) 
-            
+            games = pd.read_sql("""
+                                select steam_app_id, first_release_date from games where first_release_date <= NOW() - INTERVAL '1 day' order by first_release_date desc
+                                """, engine)
+
         except Exception as e:
             logging.error('An error occured %s', e)
             try:
@@ -43,14 +42,6 @@ def steam_reviews_etl():
                 logging.error('Games base data cannot be found. Stopping the script.')
                 sys.exit()
                 raise
-        total_games_in_db = len(games)
-        #Excluding games releasing today because they don't have reviews for the most part
-        games = games[games['first_release_date'] <= datetime.today().date() - timedelta(days=1)] 
-        total_games_in_db_filtered = len(games)
-        logging.info(f"""
-                     Total games in db: {total_games_in_db}. 
-                     Total games after filtering out unreleased games: {total_games_in_db_filtered} ({total_games_in_db_filtered/total_games_in_db}%)"""
-                     )
         return games
     @task()
     def init_game_reviews_stats():
@@ -63,7 +54,7 @@ def steam_reviews_etl():
 
     @task()
     def process_reviews(games_df, games_reviews_stats_df):
-        max_games = 500
+        max_games = 1000
         processed_games = 0
         full_stats, full_reviews = [], []
 
