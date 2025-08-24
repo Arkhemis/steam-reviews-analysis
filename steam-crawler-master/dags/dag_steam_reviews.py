@@ -3,8 +3,8 @@ import logging
 from datetime import datetime, time
 from tqdm import tqdm
 import sqlalchemy
-from utils.steam_utils import *
-from utils.models import *
+from operators.steam_utils import get_game_reviews, save_and_close
+from operators.models import GameReviewStats
 import sys
 from tqdm.contrib.logging import logging_redirect_tqdm
 from airflow.decorators import dag, task
