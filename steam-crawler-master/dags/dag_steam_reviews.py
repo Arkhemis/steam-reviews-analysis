@@ -73,7 +73,7 @@ def steam_reviews_etl():
                         # sys.exit()
                 try:
                     try:
-                        stats_row = games_reviews_stats_df[games_reviews_stats_df['appid'] == appid].iloc[0].to_dict()  # ✅
+                        stats_row = games_reviews_stats_df[games_reviews_stats_df['appid'] == appid].iloc[0].to_dict() 
                     except:
                         stats_row = None
                     reviews, stats, should_skip = get_game_reviews(appid, stats_row)
@@ -93,8 +93,8 @@ def steam_reviews_etl():
                     logging.error(f"Error processing appid {appid}: {e}")
                     continue
 
-    games_df = init_games_df()
-    games_stats = init_game_reviews_stats()
-    process_reviews(games_df, games_stats)
+    games_task = init_games_df()
+    stats_task = init_game_reviews_stats()
+    [games_task, stats_task] >> process_reviews(games_task, stats_task)
 
 dag_steam_reviews = steam_reviews_etl()
