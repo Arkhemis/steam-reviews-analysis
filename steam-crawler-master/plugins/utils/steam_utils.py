@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 import json
 from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm import tqdm
-
+import sys
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -19,7 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 params = {
         'json':1,
-        'language': 'english', #'all', #fetch all languages
+        'language': 'all', #'all', #fetch all languages
         'cursor': '*',                                  
         'num_per_page': 100,
         'filter': 'recent',
@@ -68,7 +68,7 @@ def get_game_reviews(appid, games_stats):
     while True:
         if games_stats is not None and 'updated_at' in games_stats:
             updated_at = games_stats['updated_at']
-            if updated_at is not None and updated_at > datetime.now() - timedelta(days=31): #Originally 7 but hey...
+            if updated_at is not None and updated_at > datetime.now() - timedelta(days=365): #Originally 7 but hey... #31 now
                 logging.debug(f'Already checked {appid} recently ({updated_at}), skipping...') #Clutters the log otherwise 
                 # Retourner les stats existantes
                 should_skip = True
@@ -81,15 +81,15 @@ def get_game_reviews(appid, games_stats):
                 user_review_url = f'https://store.steampowered.com/appreviews/{appid}?json=1'
                 user_reviews = requests.get(user_review_url, params=params, timeout=10).json()
                 break
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError, requests.exceptions.RequestException) as e:
                 logging.warning(f"Error for appid {appid} (attempt {retry_count}/{max_retries}): {e}")
-                retry += 1
+                retry_count += 1
                 time.sleep(120)
                 
 
-                if retry_count >= max_retries:
-                    logging.error(f"Max retries reached for appid {appid}")
-                    return [], default_game_stat, True
+        if retry_count >= max_retries:
+            logging.error(f"Max retries reached for appid {appid}")
+            return [], default_game_stat, True
 
         if user_reviews['success'] == 2:
             logging.warning(f"No reviews for appid {appid}")    
@@ -112,18 +112,18 @@ def get_game_reviews(appid, games_stats):
                 return [], default_game_stat, should_skip
 
                 
-            if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
-                logging.info(f"App {appid}: same review count ({total_current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
-                should_skip = True
-                games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
-            else:
-                if games_stats is not None:
-                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
-                else:
-                    logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
-                    
-                game_stat = process_games_review_data(query_summary, appid)
+            # if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
+            #     logging.info(f"App {appid}: same review count ({total_current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
+            #     should_skip = True
+            #     games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            #     return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
+            # else:
+            #     if games_stats is not None:
+            #         logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
+            #     else:
+            #         logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
+            logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")     
+            game_stat = process_games_review_data(query_summary, appid)
         
 
         page_review = []
@@ -232,10 +232,19 @@ def save_and_close(full_stats: list, full_reviews: list, engine):
     logging.info("Starting data bulk upsert to db in chunks...")
     Session = sessionmaker(bind=engine)
     session = Session()
-
     try:
         # UPSERT en masse pour les reviews
         if full_reviews:
+            original_len = len(full_reviews)
+            # Dédupliquer sur recommendationid en gardant le dernier
+            seen = {}
+            for review in full_reviews:
+                rec_id = review['recommendationid']
+                seen[rec_id] = review  # écrase si doublon
+            full_reviews = list(seen.values())
+            
+            if len(full_reviews) != original_len:
+                logging.warning(f"Removed {original_len - len(full_reviews)} duplicate reviews")
             logging.info(f"Processing {len(full_reviews)} reviews in chunks of {chunk_size}...")
             # Pas besoin de DataFrame ici, on peut travailler directement sur la liste
             with logging_redirect_tqdm(loggers=[logging.Logger("airflow.task")]):
@@ -279,6 +288,6 @@ def save_and_close(full_stats: list, full_reviews: list, engine):
     except Exception as e:
         logging.error(f"An error occurred during database upsert: {e}")
         session.rollback() # Annule toute la transaction en cas d'erreur
-        raise
+        sys.exit()
     finally:
         session.close()

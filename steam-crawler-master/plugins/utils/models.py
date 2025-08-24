@@ -73,3 +73,24 @@ class GameReviewStats(Base):
     # Timestamp de mise à jour
     updated_at = Column(DateTime, default=datetime.now, nullable=False)
 Base.metadata.create_all(engine)   
+
+
+class ReviewProcessed(Base):
+    """Table pour les reviews préprocessées"""
+    __tablename__ = 'processed_reviews'
+    
+    # Clé primaire
+    recommendationid = Column(BigInteger, primary_key=True, nullable=False)
+    appid = Column(Integer, nullable=False, index=True)
+    # Statistiques
+    original_review_length = Column(Integer, nullable=True)  # Longueur texte original
+
+    # Données préprocessées
+    tokens = Column(ARRAY(String), nullable=True)  # Tokens après preprocessing
+    token_count = Column(Integer, nullable=True)   # Nombre de tokens
+    detected_language = Column(String(255), nullable=True)  # Langue détectée
+    
+    # Métadonnées du preprocessing
+    processed_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    
