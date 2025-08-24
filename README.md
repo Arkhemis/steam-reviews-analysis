@@ -1,7 +1,7 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Coverage](https://codecov.io/gh/Arkhemis/steam-reviews-analysis/branch/main/graph/badge.svg)](https://codecov.io/gh/Arkhemis/steam-reviews-analysis)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
 
 I'm in the process of rewriting the whole code from scratch, so the below documentation will probably be obsolete. Stay tuned for fresh results on [steam.reviews](http://steam.reviews/)!
