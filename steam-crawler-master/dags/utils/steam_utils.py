@@ -19,7 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 params = {
     "json": 1,
-    "language": "all",  #'all', #fetch all languages
+    "language": "english",  #english, french, spanish for individual languages
     "cursor": "*",
     "num_per_page": 100,
     "filter": "recent",
@@ -64,18 +64,6 @@ def get_game_reviews(appid, games_stats):
     should_skip = False
     review_count = 0
     while True:
-        if games_stats is not None and "updated_at" in games_stats:
-            updated_at = games_stats["updated_at"]
-            if updated_at is not None and updated_at > datetime.now() - timedelta(
-                days=365
-            ):  # Originally 7 but hey... #31 now
-                logging.debug(
-                    f"Already checked {appid} recently ({updated_at}), skipping..."
-                )  # Clutters the log otherwise
-                # Retourner les stats existantes
-                should_skip = True
-                games_stats["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                return [], games_stats, should_skip
 
         retry_count = 0
         while retry_count < max_retries:
@@ -97,7 +85,7 @@ def get_game_reviews(appid, games_stats):
                     f"Error for appid {appid} (attempt {retry_count}/{max_retries}): {e}"
                 )
                 retry_count += 1
-                time.sleep(120)
+                time.sleep(20)
 
         if retry_count >= max_retries:
             logging.error(f"Max retries reached for appid {appid}")
@@ -132,10 +120,8 @@ def get_game_reviews(appid, games_stats):
             #     if games_stats is not None:
             #         logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
             #     else:
-            #         logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
-            logging.info(
-                f"App {appid}: reviews are missing. Fetching {total_current_reviews} now."
-            )
+            logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
+
             game_stat = process_games_review_data(query_summary, appid)
 
         page_review = []

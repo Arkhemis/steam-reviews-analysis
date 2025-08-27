@@ -10,7 +10,7 @@ import sqlalchemy
 import logging
 from airflow.exceptions import AirflowException
 from utils.models import ReviewProcessed
-from utils.process_utils import *
+from utils.process_utils import clean_text, detect_lang
 from tqdm import tqdm
 
 tqdm.pandas()
@@ -39,8 +39,7 @@ def review_process_etl():
                         SELECT gr.recommendationid, gr.appid, gr.review_text 
             FROM games_reviews gr
             LEFT JOIN processed_reviews pr ON gr.recommendationid = pr.recommendationid
-            WHERE regexp_count(trim(gr.review_text), '\w+') >= 5 
-            AND gr.playtime_at_review_minutes > 120
+            WHERE gr.playtime_at_review_minutes > 120
             AND gr.language = 'english'
             AND pr.recommendationid IS NULL  -- Pas encore traité
             LIMIT  {limit}
@@ -92,7 +91,7 @@ def review_process_etl():
             texts = df.select("review_text").to_series().to_list()
             logging.info(f"Processing {len(texts)} texts")  # DEBUG
 
-            tokens_batch = clean_text(texts, stopwords)
+            tokens_batch = clean_text(texts)
             df = df.with_columns(
                 [
                     pl.Series(

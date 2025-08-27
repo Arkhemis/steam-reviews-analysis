@@ -1,10 +1,11 @@
 import pandas as pd
 import logging
-from datetime import datetime, time
+from datetime import datetime
+import time
 from tqdm import tqdm
 import sqlalchemy
-from operators.steam_utils import get_game_reviews, save_and_close
-from operators.models import GameReviewStats
+from utils.steam_utils import get_game_reviews, save_and_close
+from utils.models import GameReviewStats
 import sys
 from tqdm.contrib.logging import logging_redirect_tqdm
 from airflow.decorators import dag, task
@@ -30,7 +31,13 @@ def steam_reviews_etl():
         try:
             games = pd.read_sql(
                 """
-                                select steam_app_id, first_release_date from games where first_release_date <= NOW() - INTERVAL '1 day' order by first_release_date desc
+                    select steam_app_id, first_release_date, updated_at
+                    from games g
+                    left join games_reviews_stats grs ON g.steam_app_id = grs.appid
+                    where first_release_date <= NOW() - INTERVAL '1 day' 
+                    AND (grs.updated_at < CURRENT_DATE - 365 OR grs.updated_at IS NULL)
+                    AND g.first_release_date is not null
+                    order by first_release_date desc;
                                 """,
                 engine,
             )
@@ -55,7 +62,8 @@ def steam_reviews_etl():
                 "select appid, total_reviews, updated_at from games_reviews_stats",
                 engine,
             )
-        except:
+        except Exception as e:
+            logging.error(f"Error initializing game reviews stats: {e}")
             GameReviewStats.__table__.create(engine, checkfirst=True)
             games_stats = pd.DataFrame()
         return games_stats
@@ -89,10 +97,7 @@ def steam_reviews_etl():
                             .iloc[0]
                             .to_dict()
                         )
-                    except Exception as e:
-                        logging.error(
-                            "An error occured while fetching stats_row: %s", e
-                        )
+                    except Exception:
                         stats_row = None
                     reviews, stats, should_skip = get_game_reviews(appid, stats_row)
 
@@ -110,6 +115,12 @@ def steam_reviews_etl():
                 except Exception as e:
                     logging.error(f"Error processing appid {appid}: {e}")
                     continue
+        if full_stats or full_reviews:
+            try:
+                save_and_close(full_stats, full_reviews, engine)
+                logging.info(f"Sauvegarde finale : {len(full_stats)} stats, {len(full_reviews)} reviews")
+            except Exception as e:
+                logging.error(f"Erreur lors de la sauvegarde finale: {e}")        
 
     games_task = init_games_df()
     stats_task = init_game_reviews_stats()
