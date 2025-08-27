@@ -9,7 +9,7 @@ import string
 import logging
 
 logger = logging.getLogger(__name__)
-nlp_model = spacy.load("en_core_web_sm")
+nlp_model = spacy.load("en_core_web_sm", disable=["parser", "ner", "textcat"])
 nlp_model.max_length = 1000000000
 SEED = 1962
 np.random.seed(SEED)
@@ -36,7 +36,7 @@ def clean_text(texts, stopwords):
         text = re.sub(r"(?<=\w)-(?=\w)", " ", text)
         text = re.sub(f"[{re.escape(string.punctuation)}]", "", text)
         cleaned_texts.append(text)
-    docs = nlp_model.pipe(cleaned_texts, batch_size=10000)
+    docs = nlp_model.pipe(cleaned_texts, batch_size=10000, n_process=4)
 
     # 3. Tokenization
     results = []

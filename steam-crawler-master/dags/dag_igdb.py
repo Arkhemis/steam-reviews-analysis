@@ -1,17 +1,14 @@
 from airflow.decorators import dag, task
 from datetime import datetime
 import pandas as pd
-import os
 import time
 from pathlib import Path
 from dotenv import load_dotenv
-import pandas as pd
-from utils.igdb_utils import * 
+from utils.igdb_utils import get_api_headers, convert_ids_to_names, check_and_download_dump
 import sqlalchemy
 from utils.models import GameTable
 import logging
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.models import Variable
 
@@ -125,7 +122,7 @@ def igdb_etl():
                 )
                 session.add(game)
             except Exception as e:
-                logging.error('An error occured while loading data {e}')
+                logging.error(f'An error occured while loading data {e}')
 
         session.commit()
         session.close()
