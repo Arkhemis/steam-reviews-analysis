@@ -9,7 +9,7 @@ import sqlalchemy
 from utils.models import GameTable
 import logging
 from sqlalchemy.orm import sessionmaker
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator # type: ignore
 from airflow.models import Variable
 
 
