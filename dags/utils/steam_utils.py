@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 import logging
 import urllib3
@@ -48,7 +48,7 @@ def process_games_review_data(review_stats, appid):
     return reviews_stats
 
 
-def get_game_reviews(appid, games_stats):
+def get_game_reviews(appid, games_stats, latest_recommendation_id: int):
     # Stats par défaut pour tous les cas
     default_game_stat = {
         "appid": appid,
@@ -111,18 +111,18 @@ def get_game_reviews(appid, games_stats):
                 logging.info(f"0 reviews found for {appid}")
                 return [], default_game_stat, should_skip
 
-            # if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
-            #     logging.info(f"App {appid}: same review count ({total_current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
-            #     should_skip = True
-            #     games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            #     return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
-            # else:
-            #     if games_stats is not None:
-            #         logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
-            #     else:
-            logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
+            if games_stats is not None and total_current_reviews <= games_stats.get('total_reviews', 0):
+                logging.info(f"App {appid}: same review count ({total_current_reviews}), last checked at {games_stats['updated_at']} skipping, ")
+                should_skip = True
+                games_stats['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                return [], games_stats.to_dict() if hasattr(games_stats, 'to_dict') else games_stats, should_skip
+            else:
+                if games_stats is not None:
+                    logging.info(f"App {appid}: reviews missing or changed ({games_stats.get('total_reviews', 'N/A')} -> {total_current_reviews})")
+                else:
+                    logging.info(f"App {appid}: reviews are missing. Fetching {total_current_reviews} now.")
 
-            game_stat = process_games_review_data(query_summary, appid)
+                game_stat = process_games_review_data(query_summary, appid)
 
         page_review = []
         # extract each review in the response of the API call
@@ -196,7 +196,13 @@ def get_game_reviews(appid, games_stats):
                 "timestamp_dev_responded": timestamp_dev_responded,
             }
             page_review.append(reviews_dict)
+        if latest_recommendation_id is not None and any(int(r['recommendationid']) == latest_recommendation_id for r in page_review):
+            logging.info(f'Latest recommendation ID {latest_recommendation_id} found in current page, stopping fetching.')
+            full_game_reviews.extend(page_review)
+            return full_game_reviews, game_stat, should_skip
+                
         full_game_reviews.extend(page_review)
+
 
         review_count += 1
 
