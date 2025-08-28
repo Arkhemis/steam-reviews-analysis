@@ -31,12 +31,21 @@ def steam_reviews_etl():
         try:
             games = pd.read_sql(
                 """
-                    select steam_app_id, first_release_date, updated_at
+                  with latest as(
+                    select appid, recommendationid, ROW_NUMBER() OVER(partition by appid 
+                    order by timestamp_created desc, recommendationid desc) rn
+                    from games_reviews
+                    where language = 'english'
+                    )
+
+                    select steam_app_id, first_release_date, updated_at, recommendationid
                     from games g
                     left join games_reviews_stats grs ON g.steam_app_id = grs.appid
-                    where first_release_date <= NOW() - INTERVAL '1 day' 
-                    AND (grs.updated_at < CURRENT_DATE - 365 OR grs.updated_at IS NULL)
+                    left join latest ON g.steam_app_id = latest.appid
+                    where first_release_date < CURRENT_DATE
+                    AND (grs.updated_at < CURRENT_DATE - 7 OR grs.updated_at IS NULL)
                     AND g.first_release_date is not null
+                    AND COALESCE(rn, 1) = 1
                     order by first_release_date desc;
                                 """,
                 engine,
@@ -68,12 +77,13 @@ def steam_reviews_etl():
             games_stats = pd.DataFrame()
         return games_stats
 
+
     @task()
     def process_reviews(games_df, games_reviews_stats_df):
         max_games = 1000
         processed_games = 0
         full_stats, full_reviews = [], []
-
+        recommendation_lookup = games_df.set_index('steam_app_id')['recommendationid'].to_dict()
         with logging_redirect_tqdm(loggers=[logging.Logger("airflow.task")]):
             for appid in tqdm(games_df["steam_app_id"]):
                 if processed_games >= max_games or len(full_reviews) >= 500000:
@@ -87,7 +97,7 @@ def steam_reviews_etl():
                         time.sleep(150)
                     except Exception as e:
                         logging.error("An error occured while saving the data: %s", e)
-                        # sys.exit()
+
                 try:
                     try:
                         stats_row = (
@@ -99,7 +109,9 @@ def steam_reviews_etl():
                         )
                     except Exception:
                         stats_row = None
-                    reviews, stats, should_skip = get_game_reviews(appid, stats_row)
+                    rec_id = recommendation_lookup.get(appid)
+                    latest_recommendation_id = int(rec_id) if rec_id is not None and not pd.isna(rec_id) else None
+                    reviews, stats, should_skip = get_game_reviews(appid, stats_row, latest_recommendation_id)
 
                     if should_skip:
                         full_stats.append(stats)
