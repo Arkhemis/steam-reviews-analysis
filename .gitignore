@@ -2,3 +2,4 @@ __pycache__
 .env
 dag_processor
 logs
+*.parquet
