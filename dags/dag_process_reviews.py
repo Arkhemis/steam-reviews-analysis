@@ -2,7 +2,7 @@
 import polars as pl 
 import pandas as pd
 
-from datetime import datetime
+import pendulum
 
 # Utils packages
 from airflow.decorators import dag, task
@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 tqdm.pandas()
 
-
+#TODO: Refactor this whole code.
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 engine = sqlalchemy.create_engine(
@@ -25,8 +25,8 @@ engine = sqlalchemy.create_engine(
 
 @dag(
     dag_id="dag_process_reviews",
-    start_date=datetime(year=2025, month=7, day=8, hour=9, minute=0),
-    schedule="*/25 * * * *",
+    start_date=pendulum.datetime(year=2025, month=7, day=8, hour=9, minute=0),
+    schedule="*/25 * * * *", #TODO: Changer pour déclencher sur uniquement les reviews du jour (indempotent)
     catchup=False,
     max_active_runs=1,
 )
@@ -103,7 +103,7 @@ def review_process_etl():
             df = df.with_columns(
                 [
                     pl.col("tokens").list.len().alias("token_count"),
-                    pl.lit(datetime.now()).alias("processed_at"),
+                    pl.lit(pendulum.datetime.now()).alias("processed_at"),
                 ]
             )
 
