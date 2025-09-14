@@ -256,7 +256,7 @@ def save_and_close(full_stats: list, full_reviews: list, engine):
             logging.info(
                 f"Processing {len(full_reviews)} reviews in chunks of {chunk_size}..."
             )
-            # Pas besoin de DataFrame ici, on peut travailler directement sur la liste
+
             with logging_redirect_tqdm(loggers=[logging.Logger("airflow.task")]):
                 for i in tqdm(range(0, len(full_reviews), chunk_size)):
                     chunk = full_reviews[i : i + chunk_size]
