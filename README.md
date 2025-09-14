@@ -4,4 +4,4 @@
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
 
-I'm in the process of rewriting the whole code from scratch, so the below documentation will probably be obsolete. Stay tuned for fresh results on [steam.reviews](http://steam.reviews/)!
+I'm in the process of rewriting the whole code from scratch, so the whole documentation is obsolete. Also, mostly my playground for testing new librairies and concepts. Hoping to be able to deliver some nice stats soon. Stay tuned for fresh results on [steam.reviews](http://steam.reviews/)!
