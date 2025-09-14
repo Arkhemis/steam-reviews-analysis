@@ -16,6 +16,7 @@ from airflow.models import Variable
 
 load_dotenv() # Charge les variables depuis le fichier .env
 
+#TODO: Pass this into Airflow .env
 CLIENT_ID = Variable.get("IGDB_CLIENT_ID")
 CLIENT_SECRET = Variable.get("IGDB_CLIENT_SECRET")
 DATA_DUMP_DIR = Path('igdb_datadumps') 
@@ -130,13 +131,13 @@ def igdb_etl():
 
     trigger_steam_reviews = TriggerDagRunOperator(
         task_id='trigger_steam_reviews_dag',
-        trigger_dag_id='dag_steam_reviews',  # ← ID de votre second DAG
+        trigger_dag_id='dag_steam_reviews',  
         conf={
             'triggered_by': 'dag_igdb',
             'execution_date': '{{ ds }}',
             'games_loaded': True
         },
-        wait_for_completion=False  # Le DAG IGDB se termine, Steam Reviews continue en parallèle
+        wait_for_completion=False  
     )
         
 
