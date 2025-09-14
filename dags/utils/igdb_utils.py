@@ -20,7 +20,7 @@ def get_api_headers(client_id, client_secret):
     logging.info("Récupération du token d'accès Twitch...")
     if not client_id or not client_secret:
         logging.error("ERREUR: CLIENT_ID ou CLIENT_SECRET manquant.")
-        sys.exit()
+        raise 
     try:
         response = requests.post(
             TOKEN_URL,
@@ -30,7 +30,7 @@ def get_api_headers(client_id, client_secret):
                 "grant_type": "client_credentials",
             },
             timeout=15,
-        )  # Timeout légèrement augmenté
+        ) 
         token_data = response.json()
         access_token = token_data.get("access_token")
         api_headers = {
@@ -41,14 +41,14 @@ def get_api_headers(client_id, client_secret):
         return api_headers
     except requests.exceptions.RequestException as e:
         logging.error(f"Erreur lors de la récupération du token : {e}")
-        sys.exit()
+        raise
 
 
 def download_dump(url, dest_path):
     try:
         with requests.get(
             url, stream=True, timeout=600
-        ) as r:  # Timeout long pour gros fichiers
+        ) as r:
             r.raise_for_status()
             total_size = int(r.headers.get("content-length", 0))
             downloaded_size = 0
@@ -59,21 +59,20 @@ def download_dump(url, dest_path):
                 else "  Taille inconnue."
             )
             with open(dest_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192 * 34):  # Chunk de 128Ko
-                    if chunk:  # Filtre les keep-alive chunks
+                for chunk in r.iter_content(chunk_size=8192 * 34):  
+                    if chunk:  
                         f.write(chunk)
                         downloaded_size += len(chunk)
                         now = time.time()
                         if total_size > 0 and (
                             now - last_print_time > 1
-                        ):  # MAJ toutes les secondes
+                        ):  
                             percent = (downloaded_size / total_size) * 100
                             print(
                                 f"    -> {downloaded_size / 1024 / 1024:.1f} / {total_size / 1024 / 1024:.1f} Mo ({percent:.1f}%)",
                                 end="\r",
                             )
                             last_print_time = now
-            # Assurer que la ligne de progression est effacée
             print(" " * 80, end="\r")
             print(f"  {dest_path.name} téléchargé avec succès.")
         return True
@@ -95,7 +94,7 @@ def check_and_download_dump(endpoint, headers, local_dir):
         response = requests.get(url, headers=headers, timeout=20)
     except Exception as e:
         logging.error(f"An error occured for this endpoint: {endpoint} - {e}")
-        sys.exit()
+        raise
     local_file_path = local_dir / (endpoint + ".csv")
 
     url = f"{API_BASE_URL}/dumps/{endpoint}"

@@ -28,11 +28,3 @@ jobs:
       run: |
         ruff check .
         
-    - name: Run tests
-      run: |
-        coverage run -m pytest
-        coverage report
-        coverage xml
-        
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3

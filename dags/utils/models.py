@@ -16,8 +16,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
-engine = create_engine("postgresql://user:password@postgres:5432/steamreviews")
-Base = declarative_base()
+# engine = create_engine("postgresql://user:password@postgres:5432/steamreviews")
+# Base = declarative_base()
 
 
 class GameTable(Base):
