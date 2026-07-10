@@ -5,8 +5,11 @@ description = "Personal Project for Steam Analysis"
 readme = "README.md"
 requires-python = "==3.13.*"
 
-dependencies = [    "dagster-webserver>=1.12,<1.13",
-    "dagster-dg-cli>=1.12,<1.13",    "dagster>=1.13.1",]
+dependencies = [
+    "dagster-webserver>=1.13.1",
+    "dagster-dg-cli>=1.13.1",
+    "dagster>=1.13.1",
+]
 
 [dependency-groups]
 dev = ["ruff>=0.10"]
