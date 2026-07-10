@@ -1,0 +1,9 @@
+[project]
+name = "steam-reviews-analysis"
+version = "0.1.0"
+description = "Personal Project for Steam Analysis"
+readme = "README.md"
+requires-python = "==3.13.*"
+
+dependencies = [    "dagster-webserver>=1.12,<1.13",
+    "dagster-dg-cli>=1.12,<1.13",    "dagster>=1.12,<1.13",]
