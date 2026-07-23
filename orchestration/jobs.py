@@ -11,6 +11,4 @@ daily_ingest_job = define_asset_job(
 
 __all__ = [
     "daily_ingest_job",
-    "steam_reviews_backfill_job",
-    "steam_reviews_incremental_job",
 ]

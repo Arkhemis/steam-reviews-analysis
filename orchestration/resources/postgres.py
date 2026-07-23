@@ -1,11 +1,9 @@
 from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Any
 
 import psycopg
 from dagster import ConfigurableResource
 from psycopg.rows import dict_row
-from pydantic import PrivateAttr
 
 
 class PostgresResource(ConfigurableResource):
