@@ -3,3 +3,13 @@ __pycache__
 dag_processor
 logs
 *.parquet
+.venv
+
+# Dagster
+.tmp_dagster_home_*
+tmp*/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/

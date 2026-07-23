@@ -1,0 +1,38 @@
+# Configuration de l'instance Dagster (montée en DAGSTER_HOME dans les
+# conteneurs webserver + daemon). Storage sur Postgres pour persister runs,
+# events et schedules entre redémarrages.
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: POSTGRES_USER
+      password:
+        env: POSTGRES_PASSWORD
+      hostname:
+        env: POSTGRES_HOST
+      db_name:
+        env: POSTGRES_DB
+      port:
+        env: POSTGRES_PORT
+
+# Les runs s'exécutent dans le conteneur user-code (même image/env).
+run_launcher:
+  module: dagster._core.launcher
+  class: DefaultRunLauncher
+
+# File d'attente : borne la concurrence pour respecter le rate limit Steam.
+run_coordinator:
+  module: dagster._core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 4
+
+# Rétention des logs de calcul.
+compute_logs:
+  module: dagster._core.storage.local_compute_log_manager
+  class: LocalComputeLogManager
+  config:
+    base_dir: /opt/dagster/dagster_home/compute_logs
+
+telemetry:
+  enabled: false

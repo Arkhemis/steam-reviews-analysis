@@ -1,0 +1,44 @@
+[project]
+name = "steam-reviews-analysis"
+version = "0.1.0"
+description = "Personal Project for Steam Analysis"
+readme = "README.md"
+requires-python = "==3.13.*"
+
+dependencies = [
+    "dagster>=1.13.1",
+    "dagster-dg-cli>=1.13.1",
+    "dagster-webserver>=1.13.1",
+    "dagster-postgres>=0.29.1",
+    "dagster-dbt>=0.29.1",
+    "dbt-core>=1.9",
+    "dbt-postgres>=1.9",
+    "httpx>=0.28",
+    "psycopg[binary]>=3.2",
+    "tenacity>=9.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.10",
+    "pytest>=8.0",
+]
+
+# Dagster code location (cf. CLAUDE.md : package `orchestration`).
+[tool.dagster]
+module_name = "orchestration.definitions"
+code_location_name = "steam_reviews"
+
+# dg CLI (`dg dev`, `dg check defs`) : projet basé sur le module `orchestration`.
+[tool.dg]
+directory_type = "project"
+
+[tool.dg.project]
+root_module = "orchestration"
+
+[tool.ruff]
+target-version = "py313"
+exclude = [".venv", "dags", "dbt/target", "dbt/dbt_packages"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
