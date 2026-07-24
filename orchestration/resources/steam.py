@@ -5,7 +5,6 @@ Endpoint : https://store.steampowered.com/appreviews/{app_id}?json=1
 
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -13,16 +12,6 @@ from dagster import ConfigurableResource, get_dagster_logger
 from pydantic import PrivateAttr
 
 BASE_URL = "https://store.steampowered.com/appreviews"
-
-
-@dataclass
-class SteamReviewsPage:
-    """Une page de reviews renvoyée par l'API."""
-
-    success: int
-    query_summary: dict[str, Any]
-    reviews: list[dict[str, Any]] = field(default_factory=list)
-    cursor: str | None = None
 
 
 class SteamResource(ConfigurableResource):
@@ -100,34 +89,3 @@ class SteamResource(ConfigurableResource):
             },
         )
         return data.get("query_summary", {})
-
-    def reviews_page(
-        self,
-        app_id: int,
-        cursor: str = "*",
-        filter_: str = "recent",
-    ) -> SteamReviewsPage:
-        """Une page de reviews.
-
-        `filter=recent` pour le backfill, `filter=updated` pour l'incrémental.
-        Les totaux ne sont fiables qu'à la première page (`cursor=*`).
-        `filter_offtopic_activity=0` inclut les review bombing détectés par Steam.
-        """
-        data = self._get(
-            app_id,
-            {
-                "json": 1,
-                "num_per_page": 100,
-                "language": "all",
-                "purchase_type": "all",
-                "filter": filter_,
-                "cursor": cursor,
-                "filter_offtopic_activity": 0,
-            },
-        )
-        return SteamReviewsPage(
-            success=data.get("success", 0),
-            query_summary=data.get("query_summary", {}),
-            reviews=data.get("reviews", []),
-            cursor=data.get("cursor"),
-        )

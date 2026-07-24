@@ -1,11 +1,7 @@
 from dagster import Definitions, EnvVar, load_assets_from_modules
 
 from orchestration.assets import igdb, steam_census
-from orchestration.jobs import (
-    daily_ingest_job,
-    steam_reviews_backfill_job,
-    steam_reviews_incremental_job,
-)
+from orchestration.jobs import daily_ingest_job
 from orchestration.resources import IGDBResource, PostgresResource, SteamResource
 from orchestration.schedules import schedules
 
@@ -28,11 +24,7 @@ igdb_resource = IGDBResource(
 
 defs = Definitions(
     assets=[*ingest_assets],
-    jobs=[
-        daily_ingest_job,
-        steam_reviews_backfill_job,
-        steam_reviews_incremental_job,
-    ],
+    jobs=[daily_ingest_job],
     schedules=schedules,
     resources={
         "postgres": postgres_resource,

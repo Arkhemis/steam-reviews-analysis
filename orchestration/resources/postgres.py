@@ -28,10 +28,6 @@ class PostgresResource(ConfigurableResource):
         finally:
             conn.close()
 
-    def execute(self, query: str, params: tuple[Any, ...] | None = None) -> None:
-        with self.connect() as conn:
-            conn.execute(query, params)
-
     def fetch_all(
         self, query: str, params: tuple[Any, ...] | None = None
     ) -> list[dict[str, Any]]:
