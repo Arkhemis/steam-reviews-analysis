@@ -8,18 +8,18 @@ from orchestration.schedules import schedules
 ingest_assets = load_assets_from_modules([igdb, steam_census])
 
 postgres_resource = PostgresResource(
-    host=EnvVar("POSTGRES_HOST"),
-    port=EnvVar.int("POSTGRES_PORT"),
-    user=EnvVar("POSTGRES_USER"),
-    password=EnvVar("POSTGRES_PASSWORD"),
-    database=EnvVar("POSTGRES_DB"),
+    host=EnvVar("POSTGRES_HOST").get_value(),
+    port=EnvVar.int("POSTGRES_PORT").get_value(),
+    user=EnvVar("POSTGRES_USER").get_value(),
+    password=EnvVar("POSTGRES_PASSWORD").get_value(),
+    database=EnvVar("POSTGRES_DB").get_value(),
 )
 
 steam_resource = SteamResource()
 
 igdb_resource = IGDBResource(
-    client_id=EnvVar("IGDB_CLIENT_ID"),
-    client_secret=EnvVar("IGDB_CLIENT_SECRET"),
+    client_id=EnvVar("IGDB_CLIENT_ID").get_value(),
+    client_secret=EnvVar("IGDB_CLIENT_SECRET").get_value(),
 )
 
 defs = Definitions(
