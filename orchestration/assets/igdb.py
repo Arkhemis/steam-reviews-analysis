@@ -28,23 +28,20 @@ csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 
 def _steam_app_ids_from_external_dump(path: Path) -> dict[int, int]:
-    """Parcourt le dump `external_games` → { igdb_id: steam_app_id }.
-    """
+    """Parcourt le dump `external_games` → { igdb_id: steam_app_id }."""
     mapping: dict[int, int] = {}
     with open(path, newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            is_steam = row.get("external_game_source") == STEAM_SOURCE 
+            is_steam = row.get("external_game_source") == STEAM_SOURCE
 
             if not is_steam:
                 continue
-            game_id = (row.get("game"))
+            game_id = row.get("game")
             uid = (row.get("uid") or "").strip()
             if game_id is not None and uid.isdigit():
                 mapping[game_id] = int(uid)
     return mapping
-
-
 
 
 @asset(
@@ -80,11 +77,11 @@ def igdb_games(
             batch: list[tuple] = []
             for row in reader:
                 total_games += 1
-                igdb_id = (row.get("id"))
+                igdb_id = row.get("id")
                 steam_app_id = steam_by_game.get(igdb_id)
                 if igdb_id is None or steam_app_id is None:
                     continue
-                
+
                 payload = {
                     "id": igdb_id,
                     "name": row.get("name"),
