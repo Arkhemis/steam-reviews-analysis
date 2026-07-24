@@ -3,7 +3,6 @@
 
 import time
 from pathlib import Path
-from typing import Any
 
 import httpx
 from dagster import ConfigurableResource, get_dagster_logger
@@ -56,16 +55,6 @@ class IGDBResource(ConfigurableResource):
     # ------------------------------------------------------------------
     # Data dumps (https://api-docs.igdb.com/#dumps)
     # ------------------------------------------------------------------
-    def list_dumps(self) -> dict[str, dict[str, Any]]:
-        """Liste les dumps disponibles, indexés par nom d'endpoint."""
-        resp = httpx.get(
-            f"{API_BASE_URL}/dumps",
-            headers=self._headers(),
-            timeout=self.request_timeout_seconds,
-        )
-        resp.raise_for_status()
-        return {d["endpoint"]: d for d in resp.json() if "endpoint" in d}
-
     def get_dump_url(self, endpoint: str) -> str:
         """Obtient l'URL S3 (signée, éphémère) de téléchargement d'un dump."""
         resp = httpx.get(
@@ -96,8 +85,7 @@ class IGDBResource(ConfigurableResource):
                 for chunk in resp.iter_bytes(chunk_size=1 << 20):
                     f.write(chunk)
 
-        size_mb = dest_path.stat().st_size / 1024 / 1024
         logger.info(
-            f"IGDB : dump '{endpoint}' téléchargé ({size_mb:.1f} Mo) → {dest_path}"
+            f"IGDB : dump '{endpoint}' téléchargé → {dest_path}"
         )
         return dest_path

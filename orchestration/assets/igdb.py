@@ -81,12 +81,10 @@ def igdb_games(
             for row in reader:
                 total_games += 1
                 igdb_id = (row.get("id"))
-                if igdb_id is None:
-                    continue
                 steam_app_id = steam_by_game.get(igdb_id)
-                if steam_app_id is None:
-                    continue  # IGDB ne sert qu'à lister les app_id Steam.
-
+                if igdb_id is None or steam_app_id is None:
+                    continue
+                
                 payload = {
                     "id": igdb_id,
                     "name": row.get("name"),
