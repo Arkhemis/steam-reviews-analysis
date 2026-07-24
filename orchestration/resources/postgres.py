@@ -7,8 +7,7 @@ from psycopg.rows import dict_row
 
 
 class PostgresResource(ConfigurableResource):
-    """Fournit des connexions psycopg3 vers Postgres.
-    """
+    """Fournit des connexions psycopg3 vers Postgres."""
 
     def setup_for_execution(self, context) -> None:  # noqa: ANN001
         self._dsn = (

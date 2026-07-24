@@ -1,5 +1,4 @@
-"""Client IGDB (auth OAuth via Twitch client credentials).
-"""
+"""Client IGDB (auth OAuth via Twitch client credentials)."""
 
 import time
 from pathlib import Path
@@ -51,7 +50,7 @@ class IGDBResource(ConfigurableResource):
             "Authorization": f"Bearer {self._ensure_token()}",
             "Accept": "application/json",
         }
-    
+
     # ------------------------------------------------------------------
     # Data dumps (https://api-docs.igdb.com/#dumps)
     # ------------------------------------------------------------------
@@ -69,8 +68,7 @@ class IGDBResource(ConfigurableResource):
         return s3_url
 
     def download_dump(self, endpoint: str, dest_dir: Path) -> Path:
-        """Télécharge le dump CSV d'un endpoint dans `dest_dir`, renvoie le chemin.
-        """
+        """Télécharge le dump CSV d'un endpoint dans `dest_dir`, renvoie le chemin."""
         logger = get_dagster_logger()
         s3_url = self.get_dump_url(endpoint)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -85,7 +83,5 @@ class IGDBResource(ConfigurableResource):
                 for chunk in resp.iter_bytes(chunk_size=1 << 20):
                     f.write(chunk)
 
-        logger.info(
-            f"IGDB : dump '{endpoint}' téléchargé → {dest_path}"
-        )
+        logger.info(f"IGDB : dump '{endpoint}' téléchargé → {dest_path}")
         return dest_path

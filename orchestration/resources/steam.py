@@ -15,8 +15,7 @@ BASE_URL = "https://store.steampowered.com/appreviews"
 
 
 class SteamResource(ConfigurableResource):
-    """Client Steam reviews avec rate limit + retries.
-    """
+    """Client Steam reviews avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
     # Backoff exponentiel sur 429 / timeout / 5xx.
@@ -35,9 +34,7 @@ class SteamResource(ConfigurableResource):
         self._client.close()
 
     def _throttle(self) -> None:
-        """Réserve le prochain créneau disponible (thread-safe).
-
-        """
+        """Réserve le prochain créneau disponible (thread-safe)."""
         with self._lock:
             now = time.monotonic()
             start_at = max(now, self._next_slot_ts)
@@ -76,8 +73,7 @@ class SteamResource(ConfigurableResource):
                 time.sleep(delay)
 
     def review_summary(self, app_id: int) -> dict[str, Any]:
-        """Sonde de recensement : renvoie `query_summary` seul.
-        """
+        """Sonde de recensement : renvoie `query_summary` seul."""
         data = self._get(
             app_id,
             {
