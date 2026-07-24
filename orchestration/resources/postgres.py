@@ -1,23 +1,23 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
-from dagster import ConfigurableResource
 from psycopg.rows import dict_row
 
 
-class PostgresResource(ConfigurableResource):
+class PostgresResource:
     """Fournit des connexions psycopg3 vers Postgres."""
 
-    def setup_for_execution(self, context) -> None:  # noqa: ANN001
-        self._dsn = (
-            f"host={self.host} port={self.port} user={self.user} "
-            f"password={self.password} dbname={self.database}"
+    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+        self.dsn = (
+            f"host={host} port={port} user={user} password={password} dbname={database}"
         )
 
+    @contextmanager
     def connect(self) -> Iterator[psycopg.Connection]:
         """Ouvre une connexion (commit auto en sortie, rollback sur exception)."""
-        conn = psycopg.connect(self._dsn, row_factory=dict_row)
+        conn = psycopg.connect(self.dsn, row_factory=dict_row)
         try:
             yield conn
             conn.commit()

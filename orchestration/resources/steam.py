@@ -8,37 +8,36 @@ import time
 from typing import Any
 
 import httpx
-from dagster import ConfigurableResource, get_dagster_logger
-from pydantic import PrivateAttr
+from dagster import get_dagster_logger
 
 BASE_URL = "https://store.steampowered.com/appreviews"
 
 
-class SteamResource(ConfigurableResource):
+class SteamResource:
     """Client Steam reviews avec rate limit + retries."""
 
-    min_interval_seconds: float = 0.1
-    # Backoff exponentiel sur 429 / timeout / 5xx.
-    max_retries: int = 5
-    backoff_base_seconds: float = 2.0
-    request_timeout_seconds: float = 20.0
+    def __init__(
+        self,
+        min_interval_seconds: float = 0.1,
+        max_retries: int = 5,
+        backoff_base_seconds: float = 2.0,
+        request_timeout_seconds: float = 20.0,
+    ):
+        self.min_interval_seconds = min_interval_seconds
+        # Backoff exponentiel sur 429 / timeout / 5xx.
+        self.max_retries = max_retries
+        self.backoff_base_seconds = backoff_base_seconds
 
-    _client: httpx.Client = PrivateAttr()
-    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
-    _next_slot_ts: float = PrivateAttr(default=0.0)
-
-    def setup_for_execution(self, context) -> None:  # noqa: ANN001
-        self._client = httpx.Client(timeout=self.request_timeout_seconds)
-
-    def teardown_after_execution(self, context) -> None:  # noqa: ANN001
-        self._client.close()
+        self.client = httpx.Client(timeout=request_timeout_seconds)
+        self.lock = threading.Lock()
+        self.next_slot_ts = 0.0
 
     def _throttle(self) -> None:
         """Réserve le prochain créneau disponible (thread-safe)."""
-        with self._lock:
+        with self.lock:
             now = time.monotonic()
-            start_at = max(now, self._next_slot_ts)
-            self._next_slot_ts = start_at + self.min_interval_seconds
+            start_at = max(now, self.next_slot_ts)
+            self.next_slot_ts = start_at + self.min_interval_seconds
         wait = start_at - now
         if wait > 0:
             time.sleep(wait)
@@ -52,7 +51,7 @@ class SteamResource(ConfigurableResource):
             self._throttle()
             try:
                 # httpx URL-encode les query params (dont le cursor) automatiquement.
-                resp = self._client.get(url, params=params)
+                resp = self.client.get(url, params=params)
                 if resp.status_code == 429:
                     raise httpx.HTTPStatusError(
                         "429 Too Many Requests", request=resp.request, response=resp
