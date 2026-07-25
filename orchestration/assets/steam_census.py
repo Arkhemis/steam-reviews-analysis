@@ -66,7 +66,7 @@ def steam_review_counts(
     ):
         for batch_start in range(0, total, CENSUS_BATCH_SIZE):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
-            summaries = pool.map(steam.review_summary, batch)
+            summaries = pool.map(steam.get_summary, batch)
             with conn.cursor() as cur:
                 for app_id, summary in zip(batch, summaries):
                     cur.execute(
