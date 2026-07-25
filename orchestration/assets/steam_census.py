@@ -33,13 +33,6 @@ SET prev_total_reviews = raw.steam_review_counts.total_reviews,
     checked_at         = now();
 """
 
-INIT_FETCH_STATE_SQL = """
-INSERT INTO raw.steam_fetch_state (app_id, backfill_status)
-SELECT app_id, 'pending'
-FROM raw.steam_review_counts
-ON CONFLICT (app_id) DO NOTHING;
-"""
-
 
 @asset(
     group_name="ingest",
@@ -68,7 +61,7 @@ def steam_review_counts(
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
             summaries = pool.map(
                 lambda app_id: steam.get_summary(app_id, language="french"), batch
-            ) #TODO: change french after testing
+            )  # TODO: change french after testing
             with conn.cursor() as cur:
                 for app_id, summary in zip(batch, summaries):
                     cur.execute(
@@ -93,19 +86,3 @@ def steam_review_counts(
             )
 
     return MaterializeResult(metadata={"apps_probed": MetadataValue.int(probed)})
-
-
-@asset(
-    group_name="ingest",
-    deps=["steam_review_counts"],
-    description="Initialise raw.steam_fetch_state (backfill_status='pending') pour les jeux recensés.",
-)
-def steam_fetch_state_init(
-    context: AssetExecutionContext,
-    postgres: PostgresResource,
-) -> MaterializeResult:
-    with postgres.connect() as conn:
-        cur = conn.execute(INIT_FETCH_STATE_SQL)
-        inserted = cur.rowcount
-    context.log.info(f"steam_fetch_state : {inserted} nouvelles lignes 'pending'")
-    return MaterializeResult(metadata={"rows_inserted": MetadataValue.int(inserted)})
