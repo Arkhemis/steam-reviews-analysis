@@ -1,4 +1,5 @@
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
@@ -8,6 +9,7 @@ from orchestration.resources import PostgresResource, SteamResource
 ABSENT_STEAM_IDS = """
 SELECT DISTINCT app_id FROM raw.steam_review_counts
 WHERE last_backfill_at IS NULL OR last_backfill_at < NOW() - INTERVAL '1 month'
+ORDER BY app_id ASC
 """
 
 # Upsert : ne remplace la ligne que si la review est plus récente.
@@ -67,6 +69,8 @@ def steam_reviews_backfill(
     )
 
     loaded = 0
+    backfilled = 0
+    start = time.monotonic()
     with (
         postgres.connect() as conn,
         ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool,
@@ -93,5 +97,13 @@ def steam_reviews_backfill(
                         loaded += 1
                     cur.execute(MARK_BACKFILLED_SQL, (app_id,))
             conn.commit()
+            backfilled += len(batch)
+            elapsed = time.monotonic() - start
+            rate = backfilled / elapsed if elapsed > 0 else 0
+            eta_min = (total - backfilled) / rate / 60 if rate > 0 else float("inf")
+            context.log.info(
+                f"Backfillé {backfilled}/{total} ({backfilled / total:.0%}) "
+                f"— {rate:.2f} jeux/s — {loaded} reviews chargées — ETA {eta_min:.0f} min"
+            )
 
     return MaterializeResult(metadata={"reviews_loaded": MetadataValue.int(loaded)})
