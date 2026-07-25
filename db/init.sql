@@ -24,21 +24,19 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     review_score       INT,
     review_score_desc  TEXT,
     checked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    prev_total_reviews BIGINT          
+    prev_total_reviews BIGINT,
     last_backfill_at      TIMESTAMPTZ
 );
 
 
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
-    recommendation_id  BIGINT NOT NULL,
+    recommendation_id  BIGINT PRIMARY KEY,
     app_id             BIGINT NOT NULL,
     payload            JSONB  NOT NULL,   -- la review complète, telle quelle
     timestamp_created  BIGINT,
     timestamp_updated  BIGINT NOT NULL,   -- extrait pour l'incrémental / la dédup
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_steam_reviews_rec_ts
-    ON raw.steam_reviews (recommendation_id, timestamp_updated DESC);
 CREATE INDEX IF NOT EXISTS idx_steam_reviews_app_id
     ON raw.steam_reviews (app_id);
 CREATE INDEX IF NOT EXISTS idx_steam_reviews_loaded_at
