@@ -27,12 +27,15 @@ WHERE EXCLUDED.timestamp_updated > raw.steam_reviews.timestamp_updated;
 CENSUS_WORKERS = 5
 CENSUS_BATCH_SIZE = 200
 
+
 def fetch_steam_reviews(steam: SteamResource, app_id: int) -> list["dict"]:
     reviews: list["dict"] = []
-    cursor = '*'
-    while True:    
-        review_page = steam.get_all_reviews(app_id, cursor=cursor)
-        if not  review_page.get("reviews") or review_page["cursor"] == cursor : 
+    cursor = "*"
+    while True:
+        review_page = steam.get_all_reviews(
+            app_id, cursor=cursor, language="french"
+        )  # TODO: A retirer après les tests
+        if not review_page.get("reviews") or review_page["cursor"] == cursor:
             break
         else:
             reviews.extend(review_page["reviews"])

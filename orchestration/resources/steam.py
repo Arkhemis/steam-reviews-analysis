@@ -71,7 +71,7 @@ class SteamResource:
                 )
                 time.sleep(delay)
 
-    def get_summary(self, app_id: int, language: str = 'all') -> dict[str, Any]:
+    def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
         """Recensement : renvoie `query_summary` (total_reviews, review_score, ...) pour un jeu."""
         data = self._get(
             app_id,
@@ -85,7 +85,13 @@ class SteamResource:
         )
         return data.get("query_summary", {})
 
-    def get_all_reviews(self, app_id: int, num_per_page: int = 100, language: str = 'all', cursor: str = '*') -> dict[str, Any]:
+    def get_all_reviews(
+        self,
+        app_id: int,
+        num_per_page: int = 100,
+        language: str = "all",
+        cursor: str = "*",
+    ) -> dict[str, Any]:
         """Renvoie les reviews Steam."""
         return self._get(
             app_id,
@@ -94,8 +100,8 @@ class SteamResource:
                 "num_per_page": num_per_page,
                 "language": language,
                 "purchase_type": "all",
-                "filter": "recent", #ordonné par date d'update
-                "filter_offtopic_activity": 0, #inclus le review bombing
-                "cursor": cursor
+                "filter": "recent",  # ordonné par date d'update
+                "filter_offtopic_activity": 0,  # inclus le review bombing
+                "cursor": cursor,
             },
         )
