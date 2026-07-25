@@ -24,6 +24,12 @@ SET payload           = EXCLUDED.payload,
 WHERE EXCLUDED.timestamp_updated > raw.steam_reviews.timestamp_updated;
 """
 
+MARK_BACKFILLED_SQL = """
+UPDATE raw.steam_review_counts
+SET last_backfill_at = now()
+WHERE app_id = %s;
+"""
+
 CENSUS_WORKERS = 5
 CENSUS_BATCH_SIZE = 200
 
@@ -45,9 +51,10 @@ def fetch_steam_reviews(steam: SteamResource, app_id: int) -> list["dict"]:
 
 @asset(
     group_name="load",
+    deps=["steam_review_counts"],
     description="Backfill des reviews Steam (payload complet) -> raw.steam_reviews.",
 )
-def steam_review_counts(
+def steam_reviews_backfill(
     context: AssetExecutionContext,
     steam: SteamResource,
     postgres: PostgresResource,
@@ -55,7 +62,7 @@ def steam_review_counts(
     app_ids = [row["app_id"] for row in postgres.fetch_all(ABSENT_STEAM_IDS)]
     total = len(app_ids)
     context.log.info(
-        f"Recensement de {total} jeux Steam ({CENSUS_WORKERS} workers, "
+        f"Backfill de {total} jeux Steam ({CENSUS_WORKERS} workers, "
         f"lots de {CENSUS_BATCH_SIZE})"
     )
 
@@ -84,6 +91,7 @@ def steam_review_counts(
                             ),
                         )
                         loaded += 1
+                    cur.execute(MARK_BACKFILLED_SQL, (app_id,))
             conn.commit()
 
     return MaterializeResult(metadata={"reviews_loaded": MetadataValue.int(loaded)})
