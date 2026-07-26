@@ -1,0 +1,106 @@
+version: 2
+
+models:
+  - name: steam_review
+    description: Reviews Steam nettoyées et typées à partir du payload JSON brut (une ligne par review).
+    columns:
+      - name: recommendation_id
+        description: Identifiant unique de la review (clé primaire).
+        data_tests:
+          - unique
+          - not_null
+
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: author_steamid
+        description: Identifiant Steam (64 bits) de l'auteur de la review.
+
+      - name: author_personaname
+        description: Pseudo affiché de l'auteur au moment de la review.
+
+      - name: author_profile_url
+        description: URL du profil Steam de l'auteur.
+
+      - name: author_avatar
+        description: URL de l'avatar de l'auteur.
+
+      - name: author_persona_status
+        description: Statut de présence Steam de l'auteur (ex. en ligne, hors ligne).
+
+      - name: author_num_games_owned
+        description: Nombre de jeux possédés par l'auteur.
+
+      - name: author_num_reviews
+        description: Nombre total de reviews écrites par l'auteur.
+
+      - name: author_playtime_forever_minutes
+        description: Temps de jeu total de l'auteur sur ce jeu, en minutes.
+
+      - name: author_playtime_at_review_minutes
+        description: Temps de jeu de l'auteur au moment de la review, en minutes.
+
+      - name: author_playtime_last_two_weeks_minutes
+        description: Temps de jeu de l'auteur sur les deux dernières semaines, en minutes.
+
+      - name: author_last_played_at
+        description: Horodatage de la dernière session de jeu de l'auteur.
+
+      - name: review_text
+        description: Texte libre de la review.
+
+      - name: language
+        description: Langue déclarée de la review (code langue Steam, ex. french, english).
+
+      - name: voted_up
+        description: Vrai si la review est positive (recommandation), faux sinon.
+        data_tests:
+          - not_null
+
+      - name: votes_up
+        description: Nombre de votes "utile" reçus par la review.
+
+      - name: votes_funny
+        description: Nombre de votes "drôle" reçus par la review.
+
+      - name: weighted_vote_score
+        description: Score de pertinence pondéré utilisé par Steam pour le tri des reviews.
+
+      - name: comment_count
+        description: Nombre de commentaires sur la review.
+
+      - name: steam_purchase
+        description: Vrai si le jeu a été acheté sur Steam par l'auteur.
+
+      - name: received_for_free
+        description: Vrai si l'auteur a reçu le jeu gratuitement.
+
+      - name: written_during_early_access
+        description: Vrai si la review a été écrite alors que le jeu était en accès anticipé.
+
+      - name: primarily_steam_deck
+        description: Vrai si l'auteur joue principalement sur Steam Deck.
+
+      - name: refunded
+        description: Vrai si l'achat a été remboursé.
+
+      - name: app_release_date
+        description: Date de sortie du jeu telle que renseignée dans le payload de la review.
+
+      - name: reactions
+        description: Réactions (emojis) laissées sur la review, au format JSON brut.
+
+      - name: created_at
+        description: Horodatage de création de la review.
+        data_tests:
+          - not_null
+
+      - name: updated_at
+        description: Horodatage de dernière mise à jour de la review.
+        data_tests:
+          - not_null
+
+      - name: loaded_at
+        description: Horodatage de chargement de la review par Dagster.
