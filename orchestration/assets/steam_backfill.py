@@ -36,7 +36,6 @@ CENSUS_WORKERS = 5
 CENSUS_BATCH_SIZE = 100
 
 
-
 def fetch_steam_reviews(steam: SteamResource, app_id: int) -> list["dict"]:
     reviews: list["dict"] = []
     cursor = "*"
@@ -76,7 +75,9 @@ def steam_reviews_backfill(
         postgres.connect() as conn,
         ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool,
     ):
-        for batch_num, batch_start in enumerate(range(0, total, CENSUS_BATCH_SIZE), start=1):
+        for batch_num, batch_start in enumerate(
+            range(0, total, CENSUS_BATCH_SIZE), start=1
+        ):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
             reviews_by_app = pool.map(
                 lambda app_id: fetch_steam_reviews(steam, app_id),
@@ -85,13 +86,15 @@ def steam_reviews_backfill(
             rows = []
             for app_id, app_reviews in zip(batch, reviews_by_app):
                 for review in app_reviews:
-                    rows.append((
-                        review["recommendationid"],
-                        app_id,
-                        json.dumps(review),
-                        review["timestamp_created"],
-                        review["timestamp_updated"],
-                    ))
+                    rows.append(
+                        (
+                            review["recommendationid"],
+                            app_id,
+                            json.dumps(review),
+                            review["timestamp_created"],
+                            review["timestamp_updated"],
+                        )
+                    )
             with conn.cursor() as cur:
                 if rows:
                     cur.executemany(UPSERT_REVIEWS_SQL, rows)
