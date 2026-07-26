@@ -33,7 +33,8 @@ WHERE app_id = %s;
 """
 
 CENSUS_WORKERS = 5
-CENSUS_BATCH_SIZE = 200
+CENSUS_BATCH_SIZE = 100
+
 
 
 def fetch_steam_reviews(steam: SteamResource, app_id: int) -> list["dict"]:
@@ -75,28 +76,28 @@ def steam_reviews_backfill(
         postgres.connect() as conn,
         ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool,
     ):
-        for batch_start in range(0, total, CENSUS_BATCH_SIZE):
+        for batch_num, batch_start in enumerate(range(0, total, CENSUS_BATCH_SIZE), start=1):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
             reviews_by_app = pool.map(
                 lambda app_id: fetch_steam_reviews(steam, app_id),
                 batch,
             )
+            rows = []
+            for app_id, app_reviews in zip(batch, reviews_by_app):
+                for review in app_reviews:
+                    rows.append((
+                        review["recommendationid"],
+                        app_id,
+                        json.dumps(review),
+                        review["timestamp_created"],
+                        review["timestamp_updated"],
+                    ))
             with conn.cursor() as cur:
-                for app_id, app_reviews in zip(batch, reviews_by_app):
-                    for review in app_reviews:
-                        cur.execute(
-                            UPSERT_REVIEWS_SQL,
-                            (
-                                review["recommendationid"],
-                                app_id,
-                                json.dumps(review),
-                                review["timestamp_created"],
-                                review["timestamp_updated"],
-                            ),
-                        )
-                        loaded += 1
-                    cur.execute(MARK_BACKFILLED_SQL, (app_id,))
+                if rows:
+                    cur.executemany(UPSERT_REVIEWS_SQL, rows)
+                cur.executemany(MARK_BACKFILLED_SQL, [(app_id,) for app_id in batch])
             conn.commit()
+            loaded += len(rows)
             backfilled += len(batch)
             elapsed = time.monotonic() - start
             rate = backfilled / elapsed if elapsed > 0 else 0
@@ -105,5 +106,12 @@ def steam_reviews_backfill(
                 f"Backfillé {backfilled}/{total} ({backfilled / total:.0%}) "
                 f"— {rate:.2f} jeux/s — {loaded} reviews chargées — ETA {eta_min:.0f} min"
             )
+            if batch_num % 10 == 0:
+                PAUSE_SECONDS = 120
+                context.log.info(
+                    f"Pause de {PAUSE_SECONDS}s après {batch_num} batches "
+                    f"({backfilled} jeux traités)."
+                )
+                time.sleep(PAUSE_SECONDS)
 
     return MaterializeResult(metadata={"reviews_loaded": MetadataValue.int(loaded)})
