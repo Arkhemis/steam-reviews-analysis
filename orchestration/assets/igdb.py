@@ -26,12 +26,14 @@ csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 def _steam_app_ids_from_external_dump(path: Path) -> dict[int, int]:
     """Parcourt le dump `external_games` → { igdb_id: steam_app_id }."""
-    STEAM_CATEGORY = 1  # enum ExternalGameCategory : steam = 1 
+    STEAM_CATEGORY = 1  # enum ExternalGameCategory : steam = 1
     mapping: dict[int, int] = {}
     with open(path, newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            category = (row.get("category") or row.get("external_game_source") or "").strip()
+            category = (
+                row.get("category") or row.get("external_game_source") or ""
+            ).strip()
             if not category.isdigit() or int(category) != STEAM_CATEGORY:
                 continue
             game_id = row.get("game")
