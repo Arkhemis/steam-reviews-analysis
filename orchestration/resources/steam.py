@@ -80,6 +80,7 @@ class SteamResource(ConfigurableResource):
                 "language": language,
                 "purchase_type": "all",
                 "filter": "all",
+                "filter_offtopic_activity": 0,  # inclus le review bombing (aligné avec get_all_reviews)
             },
         )
         return data.get("query_summary", {})
@@ -99,7 +100,7 @@ class SteamResource(ConfigurableResource):
                 "num_per_page": num_per_page,
                 "language": language,
                 "purchase_type": "all",
-                "filter": "recent",  # ordonné par date d'update
+                "filter": "updated",  # ordonné par date de mise à jour ; "recent" tronque le curseur au-delà de ~120k reviews (bug Steam connu)
                 "filter_offtopic_activity": 0,  # inclus le review bombing
                 "cursor": cursor,
             },
