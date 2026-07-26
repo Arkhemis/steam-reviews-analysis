@@ -73,6 +73,7 @@ uv run dbt run --project-dir dbt --profiles-dir dbt
 - [x] dbt staging (cleaned, typed reviews) with source tests
 - [x] CI (ruff, sqlfluff)
 - [ ] dbt marts (actionable metrics) — **in progress**
+- [ ] NLP tokenization asset (per-language, routed via the `language` field: powers word clouds / text-based marts for steam-reviews-website)
 - [ ] Python tests on business logic (resources, casts)
 - [ ] `dbt build`/`dbt test` run in CI
 - [ ] Dagster alerting
