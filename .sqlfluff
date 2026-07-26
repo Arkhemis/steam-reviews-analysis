@@ -14,10 +14,10 @@ profiles_dir = dbt/
 extended_capitalisation_policy = snake
 
 [sqlfluff:rules:capitalisation.functions]
-extended_capitalisation_policy = lower
+extended_capitalisation_policy = upper
 
 [sqlfluff:rules:capitalisation.keywords]
-capitalisation_policy = lower
+capitalisation_policy = upper
 
 [sqlfluff:indentation]
 tab_space_size = 4
