@@ -1,0 +1,57 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Données brutes chargées par Dagster (IGDB + Steam), cf. db/init.sql.
+    database: "{{ env_var('POSTGRES_DB') }}"
+    schema: raw
+    loader: dagster
+
+    tables:
+      - name: steam_review_counts
+        description: Recensement du nombre de reviews par jeu Steam (compteurs agrégés).
+        columns:
+          - name: app_id
+            description: Identifiant de l'application Steam (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: total_reviews
+            description: Nombre total de reviews.
+          - name: total_positive
+            description: Nombre de reviews positives.
+          - name: total_negative
+            description: Nombre de reviews négatives.
+          - name: review_score
+            description: Score de review Steam (0-9).
+          - name: review_score_desc
+            description: Libellé du score de review.
+          - name: checked_at
+            description: Horodatage du dernier recensement.
+          - name: prev_total_reviews
+            description: Nombre total de reviews au recensement précédent.
+          - name: last_backfill_at
+            description: Horodatage du dernier backfill complet pour ce jeu.
+
+      - name: steam_reviews
+        description: Reviews individuelles Steam, telles que renvoyées par l'API (une ligne par review).
+        columns:
+          - name: recommendation_id
+            description: Identifiant unique de la review (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: app_id
+            description: Identifiant de l'application Steam concernée.
+            data_tests:
+              - not_null
+          - name: payload
+            description: Payload JSON brut de la review.
+          - name: timestamp_created
+            description: Timestamp Unix de création de la review.
+          - name: timestamp_updated
+            description: Timestamp Unix de dernière mise à jour, utilisé pour l'incrémental/dédup.
+            data_tests:
+              - not_null
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.

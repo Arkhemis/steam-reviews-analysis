@@ -1,0 +1,15 @@
+version: 2
+
+macros:
+  - name: generate_schema_name
+    description: |
+      Génère des noms de schéma basés sur la structure de dossiers ou un custom schema.
+      - Si custom_schema_name est fourni, utilise cette valeur
+      - Sinon, construit le nom de schéma à partir du chemin du dossier (ex: staging, marts)
+    arguments:
+      - name: custom_schema_name
+        type: string
+        description: Nom de custom schema optionnel, à utiliser au lieu de la nomination basée sur les dossiers
+      - name: node
+        type: object
+        description: L'objet contenant les informations du modèle incluant le chemin

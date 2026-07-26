@@ -1,0 +1,24 @@
+name: 'steam_reviews'
+version: '1.0.0'
+
+profile: 'steam_reviews'
+
+macro-paths: ['macros', 'tests'] # Some tests are declared as macros
+test-paths: ['tests/singular']
+docs-paths: ['docs']
+clean-targets: [target, logs]
+
+models:
+  steam_reviews:
+    +materialized: table
+    +meta:
+      severity: warn
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +tags: [staging]
+    intermediate:
+      +tags: [intermediate]
+    marts:
+      +tags: [marts]
