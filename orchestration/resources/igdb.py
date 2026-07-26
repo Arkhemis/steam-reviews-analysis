@@ -4,34 +4,28 @@ import time
 from pathlib import Path
 
 import httpx
-from dagster import get_dagster_logger
+from dagster import ConfigurableResource, get_dagster_logger
+from pydantic import PrivateAttr
 
 TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 API_BASE_URL = "https://api.igdb.com/v4"
 
 
-class IGDBResource:
+class IGDBResource(ConfigurableResource):
     """Accès à l'API IGDB."""
 
-    def __init__(
-        self,
-        client_id: str,
-        client_secret: str,
-        request_timeout_seconds: float = 20.0,
-        dump_download_timeout_seconds: float = 600.0,
-    ):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.request_timeout_seconds = request_timeout_seconds
-        self.dump_download_timeout_seconds = dump_download_timeout_seconds
+    client_id: str
+    client_secret: str
+    request_timeout_seconds: float = 20.0
+    dump_download_timeout_seconds: float = 600.0
 
-        self.access_token: str | None = None
-        self.token_expires_at = 0.0
+    _access_token: str | None = PrivateAttr(default=None)
+    _token_expires_at: float = PrivateAttr(default=0.0)
 
     def _ensure_token(self) -> str:
         # Marge de 60s pour ne pas utiliser un token qui expire à l'instant.
-        if self.access_token and time.time() < self.token_expires_at - 60:
-            return self.access_token
+        if self._access_token and time.time() < self._token_expires_at - 60:
+            return self._access_token
 
         logger = get_dagster_logger()
         logger.info("IGDB : récupération d'un token Twitch (client_credentials)")
@@ -46,9 +40,9 @@ class IGDBResource:
         )
         resp.raise_for_status()
         data = resp.json()
-        self.access_token = data["access_token"]
-        self.token_expires_at = time.time() + data.get("expires_in", 3600)
-        return self.access_token
+        self._access_token = data["access_token"]
+        self._token_expires_at = time.time() + data.get("expires_in", 3600)
+        return self._access_token
 
     def _headers(self) -> dict[str, str]:
         return {

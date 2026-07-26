@@ -8,36 +8,35 @@ import time
 from typing import Any
 
 import httpx
-from dagster import get_dagster_logger
+from dagster import ConfigurableResource, InitResourceContext, get_dagster_logger
+from pydantic import PrivateAttr
 
 BASE_URL = "https://store.steampowered.com/appreviews"
 
 
-class SteamResource:
+class SteamResource(ConfigurableResource):
     """Client Steam reviews avec rate limit + retries."""
 
-    def __init__(
-        self,
-        min_interval_seconds: float = 0.1,
-        max_retries: int = 5,
-        backoff_base_seconds: float = 2.0,
-        request_timeout_seconds: float = 20.0,
-    ):
-        self.min_interval_seconds = min_interval_seconds
-        # Backoff exponentiel sur 429 / timeout / 5xx.
-        self.max_retries = max_retries
-        self.backoff_base_seconds = backoff_base_seconds
+    min_interval_seconds: float = 0.1
+    max_retries: int = 5
+    # Backoff exponentiel sur 429 / timeout / 5xx.
+    backoff_base_seconds: float = 2.0
+    request_timeout_seconds: float = 20.0
 
-        self.client = httpx.Client(timeout=request_timeout_seconds)
-        self.lock = threading.Lock()
-        self.next_slot_ts = 0.0
+    _client: httpx.Client = PrivateAttr()
+    _lock: threading.Lock = PrivateAttr()
+    _next_slot_ts: float = PrivateAttr(default=0.0)
+
+    def setup_for_execution(self, context: InitResourceContext) -> None:
+        self._client = httpx.Client(timeout=self.request_timeout_seconds)
+        self._lock = threading.Lock()
 
     def _throttle(self) -> None:
         """Réserve le prochain créneau disponible (thread-safe)."""
-        with self.lock:
+        with self._lock:
             now = time.monotonic()
-            start_at = max(now, self.next_slot_ts)
-            self.next_slot_ts = start_at + self.min_interval_seconds
+            start_at = max(now, self._next_slot_ts)
+            self._next_slot_ts = start_at + self.min_interval_seconds
         wait = start_at - now
         if wait > 0:
             time.sleep(wait)
@@ -51,7 +50,7 @@ class SteamResource:
             self._throttle()
             try:
                 # httpx URL-encode les query params (dont le cursor) automatiquement.
-                resp = self.client.get(url, params=params)
+                resp = self._client.get(url, params=params)
                 if resp.status_code == 429:
                     raise httpx.HTTPStatusError(
                         "429 Too Many Requests", request=resp.request, response=resp
@@ -71,16 +70,37 @@ class SteamResource:
                 )
                 time.sleep(delay)
 
-    def review_summary(self, app_id: int) -> dict[str, Any]:
-        """Sonde de recensement : renvoie `query_summary` seul."""
+    def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
+        """Recensement : renvoie `query_summary` (total_reviews, review_score, ...) pour un jeu."""
         data = self._get(
             app_id,
             {
                 "json": 1,
                 "num_per_page": 0,
-                "language": "all",
+                "language": language,
                 "purchase_type": "all",
                 "filter": "all",
             },
         )
         return data.get("query_summary", {})
+
+    def get_all_reviews(
+        self,
+        app_id: int,
+        num_per_page: int = 100,
+        language: str = "all",
+        cursor: str = "*",
+    ) -> dict[str, Any]:
+        """Renvoie les reviews Steam."""
+        return self._get(
+            app_id,
+            {
+                "json": 1,
+                "num_per_page": num_per_page,
+                "language": language,
+                "purchase_type": "all",
+                "filter": "recent",  # ordonné par date d'update
+                "filter_offtopic_activity": 0,  # inclus le review bombing
+                "cursor": cursor,
+            },
+        )
