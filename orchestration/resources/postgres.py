@@ -3,15 +3,24 @@ from contextlib import contextmanager
 from typing import Any
 
 import psycopg
+from dagster import ConfigurableResource
 from psycopg.rows import dict_row
 
 
-class PostgresResource:
+class PostgresResource(ConfigurableResource):
     """Fournit des connexions psycopg3 vers Postgres."""
 
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
-        self.dsn = (
-            f"host={host} port={port} user={user} password={password} dbname={database}"
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+
+    @property
+    def dsn(self) -> str:
+        return (
+            f"host={self.host} port={self.port} user={self.user} "
+            f"password={self.password} dbname={self.database}"
         )
 
     @contextmanager

@@ -1,11 +1,11 @@
 from dagster import Definitions, EnvVar, load_assets_from_modules
 
-from orchestration.assets import igdb, steam_census
+from orchestration.assets import igdb, steam_census, steam_backfill
 from orchestration.jobs import daily_ingest_job
 from orchestration.resources import IGDBResource, PostgresResource, SteamResource
 from orchestration.schedules import schedules
 
-ingest_assets = load_assets_from_modules([igdb, steam_census])
+ingest_assets = load_assets_from_modules([igdb, steam_census, steam_backfill])
 
 postgres_resource = PostgresResource(
     host=EnvVar("POSTGRES_HOST").get_value(),

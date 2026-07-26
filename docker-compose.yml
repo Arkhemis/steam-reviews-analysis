@@ -56,7 +56,7 @@ services:
       - /opt/dagster/dagster_home/workspace.yaml
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       <<: *dagster-env
     volumes:
