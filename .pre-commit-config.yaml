@@ -1,0 +1,7 @@
+repos:
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.2.2
+    hooks:
+      - id: sqlfluff-lint
+        additional_dependencies: ['dbt-core>=1.9', 'dbt-postgres>=1.9', 'sqlfluff-templater-dbt==4.2.2']
+        files: dbt\/models\/.*\.sql$
