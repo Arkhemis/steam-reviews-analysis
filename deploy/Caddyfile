@@ -27,7 +27,7 @@ db.steam.reviews {
 		{$ADMIN_BASICAUTH_USER} {$ADMIN_BASICAUTH_HASH}
 	}
 
-	reverse_proxy adminer:8080
+	reverse_proxy dbgate:3000
 
 	log {
 		output file /var/log/caddy/admin-access.log
