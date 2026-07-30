@@ -1,0 +1,17 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deploy on VPS
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          install -m 600 -D /dev/null "$HOME/.ssh/deploy_key"
+          echo "$VPS_DEPLOY_KEY" > "$HOME/.ssh/deploy_key"
+          ssh -o StrictHostKeyChecking=accept-new -i "$HOME/.ssh/deploy_key" deploy@167.235.145.180 deploy
