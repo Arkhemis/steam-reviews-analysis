@@ -25,6 +25,7 @@ services:
     image: dbgate/dbgate:latest
     restart: unless-stopped
     environment:
+      SKIP_ALL_AUTH: "true"
       CONNECTIONS: postgres
       LABEL_postgres: Postgres
       SERVER_postgres: postgres
