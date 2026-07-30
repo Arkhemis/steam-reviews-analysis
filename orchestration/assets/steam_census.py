@@ -60,8 +60,8 @@ def steam_review_counts(
         for batch_start in range(0, total, CENSUS_BATCH_SIZE):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
             summaries = pool.map(
-                lambda app_id: steam.get_summary(app_id, language="french"), batch
-            )  # TODO: change french after testing
+                lambda app_id: steam.get_summary(app_id, language="all"), batch
+            )
             with conn.cursor() as cur:
                 for app_id, summary in zip(batch, summaries):
                     cur.execute(
