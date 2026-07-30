@@ -4,7 +4,8 @@ templater = dbt
 max_line_length = 140
 # ST06: pas de contrainte sur l'ordre des colonnes dans le SELECT.
 # RF04: des noms de colonnes sources (ex. `language`) sont des mots-clés SQL.
-exclude_rules = ST06, RF04
+# ST09: pas de contrainte sur l'ordre des tables dans les JOIN.
+exclude_rules = ST06, RF04, ST09
 
 [sqlfluff:templater:dbt]
 project_dir = dbt/
