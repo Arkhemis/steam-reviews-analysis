@@ -41,6 +41,9 @@ services:
     restart: unless-stopped
     environment:
       <<: *dagster-env
+    volumes:
+      - ./orchestration:/app/orchestration:ro
+      - ./dbt:/app/dbt
     depends_on:
       postgres:
         condition: service_healthy
