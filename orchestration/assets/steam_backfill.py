@@ -40,9 +40,7 @@ def fetch_steam_reviews(steam: SteamResource, app_id: int) -> list["dict"]:
     reviews: list["dict"] = []
     cursor = "*"
     while True:
-        review_page = steam.get_all_reviews(
-            app_id, cursor=cursor, language="all"
-        ) 
+        review_page = steam.get_all_reviews(app_id, cursor=cursor, language="all")
         if not review_page.get("reviews") or review_page["cursor"] == cursor:
             break
         else:

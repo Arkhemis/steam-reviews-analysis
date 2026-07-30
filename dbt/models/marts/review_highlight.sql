@@ -20,8 +20,9 @@ WITH ranked AS (
             ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id
         ) AS rank_in_game
     FROM {{ ref('steam_review') }}
-    WHERE review_text IS NOT NULL AND review_text != ''
-    AND NOT (review_text LIKE '%✅%' OR review_text LIKE '%☐%')
+    WHERE
+        review_text IS NOT NULL AND review_text != ''
+        AND NOT (review_text LIKE '%✅%' OR review_text LIKE '%☐%')
 )
 
 SELECT *

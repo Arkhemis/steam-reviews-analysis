@@ -11,7 +11,7 @@ SELECT
     grc.total_reviews,
     ROUND(
         100.0 * grc.total_positive
-            / NULLIF(grc.total_reviews, 0),
+        / NULLIF(grc.total_reviews, 0),
         1
     ) AS pct_positive_reviews,
     grc.review_score,
