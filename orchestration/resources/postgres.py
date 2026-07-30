@@ -16,17 +16,17 @@ class PostgresResource(ConfigurableResource):
     password: str
     database: str
 
-    @property
-    def dsn(self) -> str:
-        return (
-            f"host={self.host} port={self.port} user={self.user} "
-            f"password={self.password} dbname={self.database}"
-        )
-
     @contextmanager
     def connect(self) -> Iterator[psycopg.Connection]:
         """Ouvre une connexion (commit auto en sortie, rollback sur exception)."""
-        conn = psycopg.connect(self.dsn, row_factory=dict_row)
+        conn = psycopg.connect(
+            host=self.host,
+            port=self.port,
+            user=self.user,
+            password=self.password,
+            dbname=self.database,
+            row_factory=dict_row,
+        )
         try:
             yield conn
             conn.commit()
