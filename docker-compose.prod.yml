@@ -4,7 +4,7 @@
 services:
   postgres:
     volumes:
-      - /mnt/pgdata:/var/lib/postgresql/data
+      - /mnt/pgdata/postgresql:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   website:
