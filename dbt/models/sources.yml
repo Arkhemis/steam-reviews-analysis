@@ -8,6 +8,31 @@ sources:
     loader: dagster
 
     tables:
+      - name: igdb_games
+        description: Liste des jeux IGDB liés à Steam, enrichie (genres, developers, publishers, cover).
+        columns:
+          - name: igdb_id
+            description: Identifiant IGDB du jeu (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: steam_app_id
+            description: Identifiant de l'application Steam associée (peut être NULL si pas de lien Steam).
+          - name: name
+            description: Nom du jeu.
+          - name: first_release_date
+            description: Date de première sortie du jeu.
+          - name: genres
+            description: Genres du jeu (noms résolus).
+          - name: developers
+            description: Studios développeurs (noms résolus depuis involved_companies).
+          - name: publishers
+            description: Éditeurs (noms résolus depuis involved_companies).
+          - name: cover_url
+            description: URL de la jaquette du jeu (t_cover_big).
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.
+
       - name: steam_review_counts
         description: Recensement du nombre de reviews par jeu Steam (compteurs agrégés).
         columns:
