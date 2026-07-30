@@ -1,5 +1,4 @@
 # Stack pipeline (PLAN §8), périmètre : IGDB -> Postgres -> reviews -> dbt.
-# Metabase / reverse proxy / dashboards sont hors périmètre pour l'instant.
 # Tous les services lisent le .env (non commité). Voir .env.example.
 
 x-dagster-env: &dagster-env
@@ -17,9 +16,8 @@ services:
     image: postgres:16
     restart: unless-stopped
     shm_size: 256mb
-    # Exposé sur l'hôte pour `dg dev` en local (POSTGRES_HOST=localhost).
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -56,7 +54,7 @@ services:
       - /opt/dagster/dagster_home/workspace.yaml
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       <<: *dagster-env
     volumes:
