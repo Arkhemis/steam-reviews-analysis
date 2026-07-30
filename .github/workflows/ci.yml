@@ -79,3 +79,36 @@ jobs:
 
     - name: SQLFluff lint
       run: uv run pre-commit run sqlfluff-lint --all-files
+
+  dagster-validate:
+    name: Validate Dagster Definitions
+    runs-on: ubuntu-latest
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: ci
+      IGDB_CLIENT_ID: ci
+      IGDB_CLIENT_SECRET: ci
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    - name: Install dependencies
+      run: uv sync --group dev
+
+    - name: Validate Dagster definitions
+      run: uv run dg check defs
