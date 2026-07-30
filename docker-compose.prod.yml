@@ -21,11 +21,20 @@ services:
       postgres:
         condition: service_healthy
 
-  adminer:
-    image: adminer:latest
+  dbgate:
+    image: dbgate/dbgate:latest
     restart: unless-stopped
     environment:
-      ADMINER_DEFAULT_SERVER: postgres
+      CONNECTIONS: postgres
+      LABEL_postgres: Postgres
+      SERVER_postgres: postgres
+      PORT_postgres: "5432"
+      USER_postgres: ${POSTGRES_USER}
+      PASSWORD_postgres: ${POSTGRES_PASSWORD}
+      DATABASE_postgres: ${POSTGRES_DB}
+      ENGINE_postgres: postgres@dbgate-plugin-postgres
+    volumes:
+      - dbgate_data:/root/.dbgate
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,8 +56,9 @@ services:
     depends_on:
       - website
       - dagster-webserver
-      - adminer
+      - dbgate
 
 volumes:
   caddy_data:
   caddy_config:
+  dbgate_data:
