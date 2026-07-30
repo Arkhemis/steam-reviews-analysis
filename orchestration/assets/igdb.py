@@ -22,9 +22,9 @@ UPSERT_SQL = """
 INSERT INTO raw.igdb_games (
     igdb_id, steam_app_id, name, first_release_date,
     genres, developers, publishers,
-    cover_image_id, cover_url, loaded_at
+    cover_url, loaded_at
 )
-VALUES (%s, %s, %s, %s, %s::text[], %s::text[], %s::text[], %s, %s, now())
+VALUES (%s, %s, %s, %s, %s::text[], %s::text[], %s::text[], %s, now())
 ON CONFLICT (igdb_id) DO UPDATE
 SET steam_app_id       = EXCLUDED.steam_app_id,
     name               = EXCLUDED.name,
@@ -32,7 +32,6 @@ SET steam_app_id       = EXCLUDED.steam_app_id,
     genres             = EXCLUDED.genres,
     developers         = EXCLUDED.developers,
     publishers         = EXCLUDED.publishers,
-    cover_image_id     = EXCLUDED.cover_image_id,
     cover_url          = EXCLUDED.cover_url,
     loaded_at          = now();
 """
@@ -184,7 +183,6 @@ def igdb_games(
                         list(dict.fromkeys(genres)),
                         list(dict.fromkeys(developers)),
                         list(dict.fromkeys(publishers)),
-                        image_id,
                         cover_url,
                     )
                 )
