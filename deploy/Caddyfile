@@ -1,0 +1,35 @@
+{
+	email aristalopiteque@proton.me
+}
+
+steam.reviews {
+	reverse_proxy website:3000
+
+	log {
+		output file /var/log/caddy/access.log
+	}
+}
+
+dagster.steam.reviews {
+	basicauth {
+		{$ADMIN_BASICAUTH_USER} {$ADMIN_BASICAUTH_HASH}
+	}
+
+	reverse_proxy dagster-webserver:3000
+
+	log {
+		output file /var/log/caddy/admin-access.log
+	}
+}
+
+db.steam.reviews {
+	basicauth {
+		{$ADMIN_BASICAUTH_USER} {$ADMIN_BASICAUTH_HASH}
+	}
+
+	reverse_proxy adminer:8080
+
+	log {
+		output file /var/log/caddy/admin-access.log
+	}
+}
