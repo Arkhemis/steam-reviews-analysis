@@ -17,7 +17,7 @@ WITH ranked AS (
         author_last_played_at,
         ROW_NUMBER() OVER (
             PARTITION BY app_id, voted_up
-            ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id
+            ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id ASC
         ) AS rank_in_game
     FROM {{ ref('steam_review') }}
     WHERE
