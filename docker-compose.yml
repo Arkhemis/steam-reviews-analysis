@@ -34,7 +34,10 @@ services:
 
   # Code Dagster + dbt, servi en gRPC. webserver/daemon s'y connectent.
   user-code:
-    build: .
+    build:
+      context: .
+      provenance: false
+      sbom: false
     restart: unless-stopped
     environment:
       <<: *dagster-env
@@ -43,7 +46,10 @@ services:
         condition: service_healthy
 
   dagster-webserver:
-    build: .
+    build:
+      context: .
+      provenance: false
+      sbom: false
     entrypoint:
       - dagster-webserver
       - -h
@@ -68,7 +74,10 @@ services:
         condition: service_started
 
   dagster-daemon:
-    build: .
+    build:
+      context: .
+      provenance: false
+      sbom: false
     entrypoint: ["dagster-daemon", "run"]
     restart: unless-stopped
     environment:

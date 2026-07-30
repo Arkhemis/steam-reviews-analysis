@@ -10,6 +10,8 @@ services:
   website:
     build:
       context: ../steam-reviews-website
+      provenance: false
+      sbom: false
     restart: unless-stopped
     environment:
       POSTGRES_HOST: postgres
