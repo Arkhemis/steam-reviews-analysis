@@ -1,4 +1,5 @@
 [![Build Status](https://github.com/Arkhemis/steam-reviews-analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/Arkhemis/steam-reviews-analysis/actions)
+[![Deploy](https://github.com/Arkhemis/steam-reviews-analysis/actions/workflows/deploy.yml/badge.svg)](https://github.com/Arkhemis/steam-reviews-analysis/actions)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 ![Dagster](https://img.shields.io/badge/Dagster-4F43DD?logo=dagster&logoColor=white)
 ![dbt](https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white)
