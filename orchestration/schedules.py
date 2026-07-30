@@ -1,7 +1,6 @@
 from dagster import ScheduleDefinition
 
-from orchestration.jobs import daily_ingest_job, igdb_ingest_job
-
+from orchestration.jobs import igdb_ingest_job
 
 igdb_schedule = ScheduleDefinition(
     name="igdb_schedule",
@@ -10,6 +9,5 @@ igdb_schedule = ScheduleDefinition(
 )
 
 schedules = [
-    daily_ingest_schedule,
     igdb_schedule,
 ]
