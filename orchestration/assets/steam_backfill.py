@@ -122,19 +122,22 @@ def steam_reviews_backfill(
     postgres: PostgresResource,
 ) -> MaterializeResult:
     rows = postgres.fetch_all(ABSENT_STEAM_IDS)
-    light_ids = [
-        row["app_id"]
-        for row in rows
-        if (row["total_reviews"] or 0) <= HEAVY_REVIEW_THRESHOLD
-    ]
-    heavy_ids = [
-        row["app_id"]
-        for row in rows
-        if (row["total_reviews"] or 0) > HEAVY_REVIEW_THRESHOLD
-    ]
-    total = len(light_ids) + len(heavy_ids)
+    zero_ids: list[int] = []
+    light_ids: list[int] = []
+    heavy_ids: list[int] = []
+    for row in rows:
+        total_reviews = row["total_reviews"]
+        if total_reviews == 0:
+            zero_ids.append(row["app_id"])
+        elif (total_reviews or 0) > HEAVY_REVIEW_THRESHOLD:
+            heavy_ids.append(row["app_id"])
+        else:
+            light_ids.append(row["app_id"])
+
+    total = len(zero_ids) + len(light_ids) + len(heavy_ids)
     context.log.info(
-        f"Backfill de {total} jeux Steam : {len(light_ids)} légers "
+        f"Backfill de {total} jeux Steam : {len(zero_ids)} sans review "
+        f"(total_reviews=0, marqués sans appel API), {len(light_ids)} légers "
         f"(lots de {CENSUS_BATCH_SIZE}, {CENSUS_WORKERS} workers) et "
         f"{len(heavy_ids)} volumineux (> {HEAVY_REVIEW_THRESHOLD} reviews, "
         f"traités un par un avec pagination streamée)"
@@ -143,6 +146,17 @@ def steam_reviews_backfill(
     loaded = 0
     backfilled = 0
     start = time.monotonic()
+
+    if zero_ids:
+        with postgres.connect() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(MARK_BACKFILLED_SQL, [(app_id,) for app_id in zero_ids])
+            conn.commit()
+        backfilled += len(zero_ids)
+        context.log.info(
+            f"[sans review] {len(zero_ids)} jeux marqués backfillés directement, "
+            "0 appel API."
+        )
 
     with (
         postgres.connect() as conn,
