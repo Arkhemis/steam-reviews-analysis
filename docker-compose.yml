@@ -81,7 +81,11 @@ services:
       context: .
       provenance: false
       sbom: false
-    entrypoint: ["dagster-daemon", "run"]
+    entrypoint:
+      - dagster-daemon
+      - run
+      - -w
+      - /opt/dagster/dagster_home/workspace.yaml
     restart: unless-stopped
     environment:
       <<: *dagster-env
