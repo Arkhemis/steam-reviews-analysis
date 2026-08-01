@@ -4,7 +4,11 @@
 services:
   postgres:
     volumes:
-      - /mnt/pgdata/postgresql:/var/lib/postgresql/data
+      - type: bind
+        source: /mnt/pgdata/postgresql
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   website:
