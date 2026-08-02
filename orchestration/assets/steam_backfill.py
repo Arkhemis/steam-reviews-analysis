@@ -15,27 +15,24 @@ HEAVY_PAGE_FLUSH_INTERVAL = 1000
 
 ABSENT_STEAM_IDS = """
 SELECT app_id, total_reviews FROM raw.steam_review_counts
-WHERE last_backfill_at IS NULL OR last_backfill_at < NOW() - INTERVAL '1 month'
+WHERE last_backfill_at IS NULL
 ORDER BY total_reviews ASC NULLS FIRST
 """
 
-# Upsert : ne remplace la ligne que si la review est plus récente.
-UPSERT_REVIEWS_SQL = """
+INSERT_REVIEWS_SQL = """
 INSERT INTO raw.steam_reviews (
     recommendation_id, app_id, payload, timestamp_created, timestamp_updated
 )
-VALUES (%s, %s, %s, %s, %s)
-ON CONFLICT (recommendation_id) DO UPDATE
-SET payload           = EXCLUDED.payload,
-    timestamp_created = EXCLUDED.timestamp_created,
-    timestamp_updated = EXCLUDED.timestamp_updated,
-    loaded_at         = now()
-WHERE EXCLUDED.timestamp_updated > raw.steam_reviews.timestamp_updated;
+VALUES (%s, %s, %s, %s, %s);
 """
 
 MARK_BACKFILLED_SQL = """
 UPDATE raw.steam_review_counts
-SET last_backfill_at = now()
+SET last_backfill_at = now(),
+    last_seen_timestamp_updated = GREATEST(
+        COALESCE(last_seen_timestamp_updated, 0),
+        %s
+    )
 WHERE app_id = %s;
 """
 
@@ -78,6 +75,7 @@ def backfill_heavy_app_id(
     """Pagine et upsert un jeu volumineux page par page, en flushant tous les
     HEAVY_PAGE_FLUSH_INTERVAL pages pour ne jamais garder tout le jeu en mémoire."""
     loaded = 0
+    max_ts = 0
     pending_rows: list[tuple] = []
     pages_since_flush = 0
     cursor = "*"
@@ -86,12 +84,14 @@ def backfill_heavy_app_id(
             review_page = steam.get_all_reviews(app_id, cursor=cursor, language="all")
             if not review_page.get("reviews") or review_page["cursor"] == cursor:
                 break
+            for review in review_page["reviews"]:
+                max_ts = max(max_ts, review["timestamp_updated"])
             pending_rows.extend(reviews_to_rows(app_id, review_page["reviews"]))
             cursor = review_page["cursor"]
             pages_since_flush += 1
             if pages_since_flush >= HEAVY_PAGE_FLUSH_INTERVAL:
                 with conn.cursor() as cur:
-                    cur.executemany(UPSERT_REVIEWS_SQL, pending_rows)
+                    cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
                 conn.commit()
                 loaded += len(pending_rows)
                 pending_rows = []
@@ -99,12 +99,12 @@ def backfill_heavy_app_id(
 
         if pending_rows:
             with conn.cursor() as cur:
-                cur.executemany(UPSERT_REVIEWS_SQL, pending_rows)
+                cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
             conn.commit()
             loaded += len(pending_rows)
 
         with conn.cursor() as cur:
-            cur.execute(MARK_BACKFILLED_SQL, (app_id,))
+            cur.execute(MARK_BACKFILLED_SQL, (max_ts, app_id))
         conn.commit()
 
     context.log.info(f"[volumineux] app_id={app_id}: {loaded} reviews chargées")
@@ -150,7 +150,7 @@ def steam_reviews_backfill(
     if zero_ids:
         with postgres.connect() as conn:
             with conn.cursor() as cur:
-                cur.executemany(MARK_BACKFILLED_SQL, [(app_id,) for app_id in zero_ids])
+                cur.executemany(MARK_BACKFILLED_SQL, [(0, app_id) for app_id in zero_ids])
             conn.commit()
         backfilled += len(zero_ids)
         context.log.info(
@@ -171,12 +171,15 @@ def steam_reviews_backfill(
                 batch,
             )
             batch_rows = []
+            mark_params = []
             for app_id, app_reviews in zip(batch, reviews_by_app):
                 batch_rows.extend(reviews_to_rows(app_id, app_reviews))
+                app_max_ts = max((r["timestamp_updated"] for r in app_reviews), default=0)
+                mark_params.append((app_max_ts, app_id))
             with conn.cursor() as cur:
                 if batch_rows:
-                    cur.executemany(UPSERT_REVIEWS_SQL, batch_rows)
-                cur.executemany(MARK_BACKFILLED_SQL, [(app_id,) for app_id in batch])
+                    cur.executemany(INSERT_REVIEWS_SQL, batch_rows)
+                cur.executemany(MARK_BACKFILLED_SQL, mark_params)
             conn.commit()
             loaded += len(batch_rows)
             backfilled += len(batch)
