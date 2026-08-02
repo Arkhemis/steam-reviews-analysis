@@ -150,7 +150,9 @@ def steam_reviews_backfill(
     if zero_ids:
         with postgres.connect() as conn:
             with conn.cursor() as cur:
-                cur.executemany(MARK_BACKFILLED_SQL, [(0, app_id) for app_id in zero_ids])
+                cur.executemany(
+                    MARK_BACKFILLED_SQL, [(0, app_id) for app_id in zero_ids]
+                )
             conn.commit()
         backfilled += len(zero_ids)
         context.log.info(
@@ -174,7 +176,9 @@ def steam_reviews_backfill(
             mark_params = []
             for app_id, app_reviews in zip(batch, reviews_by_app):
                 batch_rows.extend(reviews_to_rows(app_id, app_reviews))
-                app_max_ts = max((r["timestamp_updated"] for r in app_reviews), default=0)
+                app_max_ts = max(
+                    (r["timestamp_updated"] for r in app_reviews), default=0
+                )
                 mark_params.append((app_max_ts, app_id))
             with conn.cursor() as cur:
                 if batch_rows:
