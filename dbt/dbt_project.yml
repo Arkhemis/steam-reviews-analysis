@@ -17,6 +17,7 @@ models:
       relation: true
       columns: true
     staging:
+      +materialized: view
       +tags: [staging]
     intermediate:
       +tags: [intermediate]
