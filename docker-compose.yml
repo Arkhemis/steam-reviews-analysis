@@ -14,6 +14,7 @@ x-dagster-env: &dagster-env
 services:
   postgres:
     image: citusdata/citus:14.1-pg16
+    command: postgres -c shared_preload_libraries=citus
     restart: unless-stopped
     shm_size: 256mb
     ports:
