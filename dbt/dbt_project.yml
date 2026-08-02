@@ -19,6 +19,7 @@ models:
     staging:
       +materialized: view
       +tags: [staging]
+      +pre-hook: "SET default_table_access_method = 'columnar'; SET max_parallel_workers_per_gather = 0"
     intermediate:
       +tags: [intermediate]
     marts:
