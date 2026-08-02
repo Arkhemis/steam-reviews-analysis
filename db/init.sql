@@ -1,5 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE EXTENSION IF NOT EXISTS citus;
+CREATE EXTENSION IF NOT EXISTS citus_columnar;
 -- ---------------------------------------------------------------------------
 -- Liste des jeux (source IGDB)
 -- ---------------------------------------------------------------------------
@@ -45,4 +46,4 @@ CREATE TABLE IF NOT EXISTS raw.steam_reviews (
     timestamp_created  BIGINT,
     timestamp_updated  BIGINT NOT NULL,
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-) USING columnar;
+) USING columnar; --sauve énormement en stockage
