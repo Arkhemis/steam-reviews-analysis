@@ -1,5 +1,5 @@
 CREATE SCHEMA IF NOT EXISTS raw;
-
+CREATE EXTENSION IF NOT EXISTS citus;
 -- ---------------------------------------------------------------------------
 -- Liste des jeux (source IGDB)
 -- ---------------------------------------------------------------------------
@@ -33,19 +33,16 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     review_score_desc  TEXT,
     checked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     prev_total_reviews BIGINT,
-    last_backfill_at      TIMESTAMPTZ
+    last_backfill_at      TIMESTAMPTZ,
+    last_seen_timestamp_updated BIGINT
 );
 
 
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
-    recommendation_id  BIGINT PRIMARY KEY,
+    recommendation_id  BIGINT NOT NULL,
     app_id             BIGINT NOT NULL,
-    payload            JSONB  NOT NULL,   -- la review complète, telle quelle
+    payload            JSONB  NOT NULL,
     timestamp_created  BIGINT,
-    timestamp_updated  BIGINT NOT NULL,   -- extrait pour l'incrémental / la dédup
+    timestamp_updated  BIGINT NOT NULL,
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_steam_reviews_app_id
-    ON raw.steam_reviews (app_id);
-CREATE INDEX IF NOT EXISTS idx_steam_reviews_loaded_at
-    ON raw.steam_reviews (loaded_at);
+) USING columnar;
