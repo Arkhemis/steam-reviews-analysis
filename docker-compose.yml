@@ -13,7 +13,7 @@ x-dagster-env: &dagster-env
 
 services:
   postgres:
-    image: citusdata/citus:12.1-pg16
+    image: citusdata/citus:14.1-pg16
     restart: unless-stopped
     shm_size: 256mb
     ports:
