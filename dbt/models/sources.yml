@@ -10,6 +10,10 @@ sources:
     tables:
       - name: igdb_games
         description: Liste des jeux IGDB liés à Steam, enrichie (genres, developers, publishers, cover).
+        config:
+          meta:
+            dagster:
+              asset_key: ['igdb_games']
         columns:
           - name: igdb_id
             description: Identifiant IGDB du jeu (clé primaire).
@@ -35,6 +39,10 @@ sources:
 
       - name: steam_review_counts
         description: Recensement du nombre de reviews par jeu Steam (compteurs agrégés).
+        config:
+          meta:
+            dagster:
+              asset_key: ['steam_review_counts']
         columns:
           - name: app_id
             description: Identifiant de l'application Steam (clé primaire).
@@ -60,6 +68,10 @@ sources:
 
       - name: steam_reviews
         description: Reviews individuelles Steam, telles que renvoyées par l'API (une ligne par review).
+        config:
+          meta:
+            dagster:
+              asset_key: ['steam_reviews_backfill']
         columns:
           - name: recommendation_id
             description: Identifiant unique de la review (clé primaire).
