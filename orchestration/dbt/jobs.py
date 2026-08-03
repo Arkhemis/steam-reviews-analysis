@@ -1,8 +1,7 @@
 import dagster as dg
 from dagster_dbt import build_dbt_asset_selection
 
-from orchestration.dbt import DbtRunConfig
-from orchestration.dbt.assets import dbt_steam_reviews_models
+from orchestration.dbt.assets import DbtRunConfig, dbt_steam_reviews_models
 
 # Les couches sont déjà taguées par dossier dans dbt/dbt_project.yml.
 dbt_all = build_dbt_asset_selection([dbt_steam_reviews_models], dbt_select="fqn:*")
