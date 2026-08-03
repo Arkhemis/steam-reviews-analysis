@@ -1,7 +1,7 @@
 from dagster import Definitions, EnvVar
 from dagster_dbt import DbtCliResource
 
-from orchestration.dbt_steam_reviews import definitions as dbt_steam_reviews
+from orchestration.dbt import definitions as dbt_steam_reviews
 from orchestration.igdb import definitions as igdb
 from orchestration.igdb.resources import IGDBResource
 from orchestration.postgres import PostgresResource

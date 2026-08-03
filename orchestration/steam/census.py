@@ -3,7 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
-from orchestration.resources import PostgresResource, SteamResource
+from orchestration.postgres import PostgresResource
+from orchestration.steam.resources import SteamResource
 
 
 CENSUS_WORKERS = 8
