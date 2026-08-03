@@ -1,5 +1,4 @@
-"""Assets dbt du projet steam-reviews.
-"""
+"""Assets dbt du projet steam-reviews."""
 
 from collections.abc import Mapping
 from typing import Any
