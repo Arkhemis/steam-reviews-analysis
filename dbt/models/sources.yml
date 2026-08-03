@@ -72,11 +72,18 @@ sources:
           meta:
             dagster:
               asset_key: ['steam_reviews_backfill']
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - recommendation_id
+                  - app_id
+              config:
+                severity: warn
         columns:
           - name: recommendation_id
-            description: Identifiant unique de la review (clé primaire).
+            description: Identifiant Steam de la review (unique par jeu, pas globalement).
             data_tests:
-              - unique
               - not_null
           - name: app_id
             description: Identifiant de l'application Steam concernée.

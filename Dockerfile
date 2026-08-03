@@ -23,13 +23,7 @@ RUN uv sync --frozen --no-dev
 
 EXPOSE 4000
 
-# dbt/target/manifest.json doit exister AVANT l'import de orchestration.definitions :
-# @dbt_assets lit le manifest pour savoir quels assets créer. En local
-# project.prepare_if_dev() s'en charge, mais il ne fait rien hors `dagster dev`
-# (il teste la variable DAGSTER_IS_DEV_CLI). On ne peut pas non plus le cuire au
-# build de l'image : docker-compose monte ./dbt par-dessus /app/dbt, ce qui
-# masquerait le manifest, et dbt/target/ est gitignoré donc absent du VPS.
-# D'où ce parse au démarrage : il ne se connecte pas à la base, il ne fait que
-# résoudre profiles.yml et écrire le manifest.
-CMD ["sh", "-c", "dbt parse --project-dir dbt --profiles-dir dbt && \
+
+CMD ["sh", "-c", "dbt deps --project-dir dbt --profiles-dir dbt && \
+     dbt parse --project-dir dbt --profiles-dir dbt && \
      exec dagster code-server start -h 0.0.0.0 -p 4000 -m orchestration.definitions"]

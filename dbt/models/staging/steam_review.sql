@@ -1,13 +1,10 @@
 WITH source AS (
 
-    SELECT
-        recommendation_id,
-        app_id,
-        payload,
-        timestamp_created,
-        timestamp_updated,
-        loaded_at
-    FROM {{ source('raw', 'steam_reviews') }}
+    {{ dbt_utils.deduplicate(
+        relation=source('raw', 'steam_reviews'),
+        partition_by='recommendation_id, app_id',
+        order_by='timestamp_updated DESC, loaded_at DESC',
+    ) }}
 
 ),
 

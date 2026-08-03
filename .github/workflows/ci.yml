@@ -81,6 +81,10 @@ jobs:
     - name: Install dependencies
       run: uv sync --group dev
 
+    # Le templater dbt de SQLFluff compile les modèles : dbt_utils doit être là.
+    - name: Install dbt packages
+      run: uv run dbt deps --project-dir dbt --profiles-dir dbt
+
     - name: SQLFluff lint
       run: uv run pre-commit run sqlfluff-lint --all-files
 
@@ -113,6 +117,10 @@ jobs:
 
     - name: Install dependencies
       run: uv sync --group dev
+
+    # Le manifest dbt lu par @dbt_assets ne peut être parsé sans les packages.
+    - name: Install dbt packages
+      run: uv run dbt deps --project-dir dbt --profiles-dir dbt
 
     - name: Validate Dagster definitions
       run: uv run dg check defs
