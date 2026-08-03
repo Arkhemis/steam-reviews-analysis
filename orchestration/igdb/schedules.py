@@ -1,6 +1,6 @@
 from dagster import ScheduleDefinition
 
-from orchestration.jobs import igdb_ingest_job
+from orchestration.igdb.jobs import igdb_ingest_job
 
 igdb_schedule = ScheduleDefinition(
     name="igdb_schedule",
@@ -8,6 +8,7 @@ igdb_schedule = ScheduleDefinition(
     cron_schedule="0 3 * * *",
 )
 
-schedules = [
-    igdb_schedule,
+
+__all__ = [
+    "igdb_schedule",
 ]

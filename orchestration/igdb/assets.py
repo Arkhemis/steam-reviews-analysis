@@ -6,7 +6,8 @@ from pathlib import Path
 
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
-from orchestration.resources import IGDBResource, PostgresResource
+from orchestration.igdb.resources import IGDBResource
+from orchestration.postgres import PostgresResource
 
 BATCH_SIZE = 1000
 

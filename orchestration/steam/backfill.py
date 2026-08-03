@@ -4,7 +4,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
-from orchestration.resources import PostgresResource, SteamResource
+from orchestration.postgres import PostgresResource
+from orchestration.steam.resources import SteamResource
 
 # Au-delà de ce volume, un jeu est traité un par un avec pagination streamée
 # plutôt que dans un lot classique : sans ça, le stream plante
