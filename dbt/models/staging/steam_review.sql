@@ -1,14 +1,4 @@
-WITH source AS (
-
-    {{ dbt_utils.deduplicate(
-        relation=source('raw', 'steam_reviews'),
-        partition_by='recommendation_id, app_id',
-        order_by='timestamp_updated DESC, loaded_at DESC',
-    ) }}
-
-),
-
-renamed AS (
+WITH renamed AS (
 
     SELECT
         recommendation_id,
@@ -55,7 +45,7 @@ renamed AS (
         TO_TIMESTAMP(timestamp_updated) AS updated_at,
         loaded_at
 
-    FROM source
+    FROM {{ source('raw', 'steam_reviews') }}
 
 )
 
