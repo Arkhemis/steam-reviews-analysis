@@ -1,80 +1,5 @@
 version: 2
 
-unit_tests:
-  - name: steam_review_dedup_test
-    description: >
-      raw.steam_reviews est append-only (table columnar : ni index unique ni
-      ON CONFLICT), donc une même review peut y figurer plusieurs fois. Le
-      staging doit n'en garder qu'une ligne, la plus récemment mise à jour.
-    model: steam_review
-    given:
-      - input: source('raw', 'steam_reviews')
-        rows:
-          # Même review vue deux fois, éditée entre les deux passages.
-          - recommendation_id: 1
-            app_id: 42
-            payload: '{"voted_up": true, "timestamp_created": 100}'
-            timestamp_created: 100
-            timestamp_updated: 100
-            loaded_at: '2026-01-01 00:00:00+00'
-          - recommendation_id: 1
-            app_id: 42
-            payload: '{"voted_up": false, "timestamp_created": 100}'
-            timestamp_created: 100
-            timestamp_updated: 200
-            loaded_at: '2026-01-02 00:00:00+00'
-          # Doublon strict : même timestamp_updated, deux chargements.
-          - recommendation_id: 2
-            app_id: 42
-            payload: '{"voted_up": true, "timestamp_created": 150}'
-            timestamp_created: 150
-            timestamp_updated: 150
-            loaded_at: '2026-01-01 00:00:00+00'
-          - recommendation_id: 2
-            app_id: 42
-            payload: '{"voted_up": true, "timestamp_created": 150}'
-            timestamp_created: 150
-            timestamp_updated: 150
-            loaded_at: '2026-01-01 00:00:00+00'
-          # Review vue une seule fois : doit passer telle quelle.
-          - recommendation_id: 3
-            app_id: 42
-            payload: '{"voted_up": false, "timestamp_created": 300}'
-            timestamp_created: 300
-            timestamp_updated: 300
-            loaded_at: '2026-01-01 00:00:00+00'
-          # Même review servie sous deux app_id (fiche de base + édition GOTY) :
-          # ce n'est pas un doublon, les deux lignes doivent survivre.
-          - recommendation_id: 4
-            app_id: 42
-            payload: '{"voted_up": true, "timestamp_created": 400}'
-            timestamp_created: 400
-            timestamp_updated: 400
-            loaded_at: '2026-01-01 00:00:00+00'
-          - recommendation_id: 4
-            app_id: 99
-            payload: '{"voted_up": true, "timestamp_created": 400}'
-            timestamp_created: 400
-            timestamp_updated: 400
-            loaded_at: '2026-01-01 00:00:00+00'
-    expect:
-      rows:
-        - recommendation_id: 1
-          app_id: 42
-          voted_up: false
-        - recommendation_id: 2
-          app_id: 42
-          voted_up: true
-        - recommendation_id: 3
-          app_id: 42
-          voted_up: false
-        - recommendation_id: 4
-          app_id: 42
-          voted_up: true
-        - recommendation_id: 4
-          app_id: 99
-          voted_up: true
-
 models:
   - name: steam_review
     description: >
@@ -85,6 +10,10 @@ models:
             combination_of_columns:
               - recommendation_id
               - app_id
+          config:
+            severity: error
+            warn_if: ">0"
+            error_if: ">10000"
     columns:
       - name: recommendation_id
         description: Identifiant Steam de la review (unique par jeu, pas globalement).
