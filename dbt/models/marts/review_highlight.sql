@@ -3,14 +3,15 @@ WITH eligible_reviews AS (
     SELECT
         recommendation_id,
         app_id,
+        language,
         voted_up,
         votes_up,
         weighted_vote_score
     FROM {{ ref('steam_review') }}
     WHERE
         author_playtime_at_review_minutes > 120
-        AND LENGTH(review_text) > 20
-        AND NOT (review_text LIKE '%✅%' OR review_text LIKE '%☐%')
+        AND review_text_length > {{ var('min_review_length', 20) }}
+        AND NOT is_generic
 
 ),
 
@@ -20,7 +21,7 @@ ranked AS (
         recommendation_id,
         app_id,
         ROW_NUMBER() OVER (
-            PARTITION BY app_id, voted_up
+            PARTITION BY app_id, voted_up, language
             ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id ASC
         ) AS rank_in_game
     FROM eligible_reviews
@@ -34,7 +35,7 @@ top_reviews AS (
         app_id,
         rank_in_game
     FROM ranked
-    WHERE rank_in_game <= {{ var('top_n_reviews', 5) }}
+    WHERE rank_in_game <= {{ var('top_n_reviews', 30) }}
 
 )
 
