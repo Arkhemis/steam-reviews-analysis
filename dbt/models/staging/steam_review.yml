@@ -61,6 +61,19 @@ models:
       - name: review_text
         description: Texte libre de la review.
 
+      - name: review_text_length
+        description: >
+          Longueur de review_text en caractères (NULL si la review est sans
+          texte). Matérialisée pour que les modèles aval puissent filtrer sur
+          la taille sans relire toute la colonne review_text.
+
+      - name: is_generic
+        description: >
+          Vrai si la review est mise en forme en checklist (✅ / ☐), un gabarit
+          récurrent qui produit peu de texte utile.
+        data_tests:
+          - not_null
+
       - name: language
         description: Langue déclarée de la review (code langue Steam, ex. french, english).
 

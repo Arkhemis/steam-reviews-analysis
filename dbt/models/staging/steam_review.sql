@@ -49,4 +49,12 @@ WITH renamed AS (
 
 )
 
-SELECT * FROM renamed
+SELECT
+    *,
+
+    -- attributs dérivés de review_text, matérialisés ici 
+    -- afin d'éviter de décompresser encore en aval
+    LENGTH(review_text) AS review_text_length,
+    COALESCE(review_text ~ '[✅☐]', FALSE) AS is_generic
+
+FROM renamed
