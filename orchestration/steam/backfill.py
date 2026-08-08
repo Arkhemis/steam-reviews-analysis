@@ -21,9 +21,18 @@ HEAVY_REVIEW_THRESHOLD = 10000
 HEAVY_PAGE_FLUSH_INTERVAL = 1000
 
 
-STOP_DELTA_TOLERANCE = 50
+# Le recensement compte des reviews que l'endpoint de listing ne sert jamais
+# (jusqu'à ~11% sur les jeux à reviews majoritairement chinoises) : tolérance
+# relative, avec plancher pour les petits jeux.
+STOP_TOLERANCE_RATIO = 0.15
+STOP_TOLERANCE_MIN = 50
 STOP_MAX_RETRIES = 6
 STOP_BACKOFF_BASE_SECONDS = 5.0
+
+
+def stop_tolerance(total_reviews: int | None) -> int:
+    return max(STOP_TOLERANCE_MIN, int((total_reviews or 0) * STOP_TOLERANCE_RATIO))
+
 
 ABSENT_STEAM_IDS = """
 SELECT app_id, total_reviews FROM raw.steam_review_counts
@@ -57,9 +66,9 @@ def iter_review_pages(
 ) -> Iterator[list["dict"]]:
     """Pagine les reviews d'un jeu en résistant aux faux signaux de fin de Steam.
 
-    Tant qu'il manque plus de STOP_DELTA_TOLERANCE reviews par rapport au
-    recensement, un signal de fin est considéré comme un incident transitoire :
-    on rejoue le même curseur après un backoff exponentiel.
+    Tant que l'écart au recensement dépasse `stop_tolerance`, un signal de
+    fin est considéré comme un incident transitoire : on rejoue le même curseur
+    après un backoff exponentiel.
     """
     logger = get_dagster_logger()
     cursor = "*"
@@ -72,7 +81,7 @@ def iter_review_pages(
 
         if not reviews or not next_cursor or next_cursor == cursor:
             missing = (total_reviews or 0) - fetched
-            if total_reviews is None or missing <= STOP_DELTA_TOLERANCE:
+            if total_reviews is None or missing <= stop_tolerance(total_reviews):
                 return
             if stop_retries >= STOP_MAX_RETRIES:
                 logger.warning(
@@ -158,7 +167,9 @@ def backfill_heavy_app_id(
             with conn.cursor() as cur:
                 cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
 
-        if total_reviews is not None and total_reviews - fetched > STOP_DELTA_TOLERANCE:
+        if total_reviews is not None and total_reviews - fetched > stop_tolerance(
+            total_reviews
+        ):
             conn.rollback()
             context.log.warning(
                 f"[volumineux] app_id={app_id}: {fetched}/{total_reviews} reviews "
@@ -244,10 +255,9 @@ def steam_reviews_backfill(
             batch_rows = []
             mark_params = []
             for (app_id, app_total), app_reviews in zip(batch, reviews_by_app):
-                if (
-                    app_total is not None
-                    and app_total - len(app_reviews) > STOP_DELTA_TOLERANCE
-                ):
+                if app_total is not None and app_total - len(
+                    app_reviews
+                ) > stop_tolerance(app_total):
                     incomplete += 1
                     context.log.warning(
                         f"[léger] app_id={app_id}: {len(app_reviews)}/{app_total} "
