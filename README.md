@@ -18,7 +18,7 @@ End-to-end data pipeline that ingests Steam games and reviews to derive statisti
 orchestration/     # Dagster code: assets, resources (Postgres/Steam/IGDB), jobs, schedules
 dbt/                # dbt project: sources, staging models (marts coming soon)
 db/init.sql         # DDL for the raw schema, run on Postgres' first startup
-deploy/             # Dagster config (dagster.yaml, workspace.yaml)
+deploy/             # Dagster config (dagster.yaml, workspace.yaml), Caddyfile, VPS cloud-init
 ```
 
 ## Pipeline
