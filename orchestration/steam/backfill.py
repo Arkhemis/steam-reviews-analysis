@@ -50,6 +50,7 @@ VALUES (%s, %s, %s, %s, %s);
 MARK_BACKFILLED_SQL = """
 UPDATE raw.steam_review_counts
 SET last_backfill_at = now(),
+    total_reviews_backfilled = %s,
     last_seen_timestamp_updated = GREATEST(
         COALESCE(last_seen_timestamp_updated, 0),
         %s
@@ -176,7 +177,7 @@ def backfill_heavy_app_id(
             return 0, False
 
         with conn.cursor() as cur:
-            cur.execute(MARK_BACKFILLED_SQL, (max_ts, app_id))
+            cur.execute(MARK_BACKFILLED_SQL, (fetched, max_ts, app_id))
         conn.commit()
 
     context.log.info(f"[volumineux] app_id={app_id}: {fetched} reviews chargées")
@@ -228,7 +229,7 @@ def steam_reviews_backfill(
         with postgres.connect() as conn:
             with conn.cursor() as cur:
                 cur.executemany(
-                    MARK_BACKFILLED_SQL, [(0, app_id) for app_id in zero_ids]
+                    MARK_BACKFILLED_SQL, [(0, 0, app_id) for app_id in zero_ids]
                 )
             conn.commit()
         backfilled += len(zero_ids)
@@ -266,7 +267,7 @@ def steam_reviews_backfill(
                 app_max_ts = max(
                     (r["timestamp_updated"] for r in app_reviews), default=0
                 )
-                mark_params.append((app_max_ts, app_id))
+                mark_params.append((len(app_reviews), app_max_ts, app_id))
             with conn.cursor() as cur:
                 if batch_rows:
                     cur.executemany(INSERT_REVIEWS_SQL, batch_rows)

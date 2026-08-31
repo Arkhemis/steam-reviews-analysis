@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     review_score_desc  TEXT,
     checked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     prev_total_reviews BIGINT,
-    last_backfill_at      TIMESTAMPTZ,
+    last_backfill_at   TIMESTAMPTZ,
+    total_reviews_backfilled BIGINT,
     last_seen_timestamp_updated BIGINT
 );
 
