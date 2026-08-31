@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: game_language_distribution
+    description: >
+      Répartition des reviews par langue déclarée, pour chaque jeu. Une ligne
+      par (app_id, language) ; pct_of_total est la part de review_count sur le
+      total de reviews du jeu, toutes langues confondues.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - language
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: language
+        description: Langue déclarée de la review (code langue Steam, ex. french, english).
+
+      - name: review_count
+        description: Nombre de reviews de ce jeu écrites dans cette langue.
+        data_tests:
+          - not_null
+
+      - name: pct_of_total
+        description: >
+          Part de review_count sur le total de reviews du jeu (toutes langues
+          confondues), entre 0 et 1.
+        data_tests:
+          - not_null
