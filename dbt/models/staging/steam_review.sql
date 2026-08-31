@@ -1,4 +1,17 @@
-WITH renamed AS (
+WITH source_versions AS (
+
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY recommendation_id
+            ORDER BY timestamp_updated DESC, loaded_at DESC
+        ) AS version_rank
+
+    FROM {{ source('raw', 'steam_reviews') }}
+
+),
+
+renamed AS (
 
     SELECT
         recommendation_id,
@@ -45,7 +58,8 @@ WITH renamed AS (
         TO_TIMESTAMP(timestamp_updated) AS updated_at,
         loaded_at
 
-    FROM {{ source('raw', 'steam_reviews') }}
+    FROM source_versions
+    WHERE version_rank = 1
 
 )
 

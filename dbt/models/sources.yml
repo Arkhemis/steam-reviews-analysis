@@ -65,6 +65,8 @@ sources:
             description: Nombre total de reviews au recensement précédent.
           - name: last_backfill_at
             description: Horodatage du dernier backfill complet pour ce jeu.
+          - name: total_reviews_backfilled
+            description: Nombre de reviews chargées lors du dernier backfill complet.
 
       - name: steam_reviews
         description: Reviews individuelles Steam, telles que renvoyées par l'API (une ligne par review).
