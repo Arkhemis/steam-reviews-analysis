@@ -7,8 +7,9 @@
 # 2026-08-01 incident: without it, Docker silently created a Postgres data dir
 # on the root disk and 22GB got written there for ~10h before anyone noticed).
 #
-# Before pasting: replace REPLACE_WITH_YOUR_SSH_PUBLIC_KEY below with your
-# actual public key.
+# SSH key: pulled from GitHub at boot (ssh_import_id below) instead of
+# hardcoded here — one less thing to edit per server, and a public key isn't
+# sensitive anyway (GitHub already publishes it at github.com/<user>.keys).
 #
 # Manual step still required after first boot (NOT automated here, since the
 # volume already holds the production database and blind automation here is
@@ -29,8 +30,8 @@ users:
     groups: [sudo]
     shell: /bin/bash
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
-    ssh_authorized_keys:
-      - REPLACE_WITH_YOUR_SSH_PUBLIC_KEY
+    ssh_import_id:
+      - gh:Arkhemis
 
 ssh_pwauth: false
 
@@ -42,6 +43,7 @@ packages:
   - ufw
   - fail2ban
   - git
+  - ssh-import-id
 
 write_files:
   - path: /etc/ssh/sshd_config.d/99-hardening.conf
