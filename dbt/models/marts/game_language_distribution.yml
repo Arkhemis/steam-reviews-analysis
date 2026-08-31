@@ -19,7 +19,11 @@ models:
           - not_null
 
       - name: language
-        description: Langue déclarée de la review (code langue Steam, ex. french, english).
+        description: >
+          Langue déclarée de la review (code langue Steam, ex. french,
+          english), ou 'unknown' si le payload source n'en contient pas.
+        data_tests:
+          - not_null
 
       - name: review_count
         description: Nombre de reviews de ce jeu écrites dans cette langue.
