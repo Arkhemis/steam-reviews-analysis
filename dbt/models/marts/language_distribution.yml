@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: language_distribution
+    description: >
+      Répartition globale des reviews par langue déclarée, tous jeux
+      confondus. Une ligne par language ; rollup de
+      game_language_distribution. pct_of_total est la part de review_count
+      sur le total de reviews toutes langues et tous jeux confondus.
+    data_tests:
+      - unique:
+          column_name: language
+    columns:
+      - name: language
+        description: Langue déclarée de la review (code langue Steam, ex. french, english).
+        data_tests:
+          - not_null
+
+      - name: review_count
+        description: Nombre total de reviews écrites dans cette langue, tous jeux confondus.
+        data_tests:
+          - not_null
+
+      - name: pct_of_total
+        description: >
+          Part de review_count sur le total de reviews, toutes langues et
+          tous jeux confondus, entre 0 et 1.
+        data_tests:
+          - not_null
