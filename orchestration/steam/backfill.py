@@ -14,7 +14,7 @@ from dagster import (
 from orchestration.postgres import PostgresResource
 from orchestration.steam.resources import SteamResource
 
-# Au-delà de ce volume, un jeu est traité un par un avec pagination streamée
+# Au-delà de ce volume, un jeu est considéré comme "big"
 HEAVY_REVIEW_THRESHOLD = 10000
 
 # Pour les jeux volumineux, on upsert/commit tous les N pages Steam
@@ -139,10 +139,7 @@ def backfill_heavy_app_id(
     serveur tous les HEAVY_PAGE_FLUSH_INTERVAL pages pour ne jamais garder tout le
     jeu en mémoire.
 
-    Renvoie (reviews chargées, backfill complet). Le commit n'a lieu qu'à la fin :
-    `raw.steam_reviews` est en columnar, donc les lignes d'un jeu incomplet ne
-    pourraient pas être supprimées après coup — on annule la transaction entière
-    plutôt que de laisser un partiel que le prochain run dupliquerait.
+    Renvoie (reviews chargées, backfill complet). Le commit n'a lieu qu'à la fin.
     """
     fetched = 0
     max_ts = 0

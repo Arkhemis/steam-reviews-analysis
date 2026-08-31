@@ -14,7 +14,7 @@ BATCH_SIZE = 1000
 # `t_cover_big` n'est qu'une taille parmi d'autres : on stocke aussi l'image_id
 # brut pour que le front puisse composer t_thumb, t_720p, etc.
 COVER_URL_TEMPLATE = (
-    "https://images.igdb.com/igdb/image/upload/t_cover_big/{image_id}.jpg"
+    "https://images.igdb.com/igdb/image/upload/t_720p/{image_id}.jpg"
 )
 
 # Les trois tableaux sont castés explicitement : psycopg sérialise les listes
