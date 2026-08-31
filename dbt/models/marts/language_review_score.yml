@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: language_review_score
+    description: >
+      Volume et note (% d'avis positifs) par langue déclarée, tous jeux
+      confondus. Remplace language_distribution : mêmes review_count/pct_of_total,
+      plus pct_positive.
+    data_tests:
+      - unique:
+          column_name: language
+    columns:
+      - name: language
+        description: Langue déclarée de la review (code langue Steam), ou 'unknown'.
+        data_tests:
+          - not_null
+
+      - name: total_reviews
+        description: Nombre total de reviews dans cette langue, tous jeux confondus.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: Nombre de reviews positives dans cette langue.
+        data_tests:
+          - not_null
+
+      - name: pct_positive
+        description: Part de total_positive sur total_reviews, entre 0 et 1.
+        data_tests:
+          - not_null
+
+      - name: pct_of_total
+        description: Part de total_reviews sur le total toutes langues confondues, entre 0 et 1.
+        data_tests:
+          - not_null
