@@ -45,3 +45,4 @@ exclude = [".venv", "dags", "dbt/target", "dbt/dbt_packages"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
