@@ -50,6 +50,7 @@ write_files:
     content: |
       PermitRootLogin no
       PasswordAuthentication no
+      KbdInteractiveAuthentication no
   - path: /etc/systemd/system/docker.service.d/override.conf
     content: |
       [Unit]
