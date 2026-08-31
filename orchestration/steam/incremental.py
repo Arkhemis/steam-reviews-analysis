@@ -1,4 +1,5 @@
 import json
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dagster import (
@@ -163,37 +164,49 @@ def fetch_steam_reviews(
     app_id: int,
     last_seen_timestamp_updated: int,
 ) -> tuple[list["dict"], bool]:
-    """Renvoie les versions récentes et indique si le checkpoint a été atteint."""
+    """Renvoie les versions récentes et indique si le checkpoint a été atteint.
+
+    Les pages sont écrites au fur et à mesure sur un fichier temporaire plutôt
+    que dans une liste en mémoire : un jeu dont le checkpoint est ancien peut
+    nécessiter des milliers de pages avant de s'arrêter, et jusqu'à dix jeux
+    sont récupérés en parallèle. Le fichier est supprimé automatiquement à la
+    sortie du `with`, que le checkpoint ait été atteint ou non.
+    """
     logger = get_dagster_logger()
     cursor = "*"
-    fetched_reviews: list["dict"] = []
     saw_checkpoint_timestamp = last_seen_timestamp_updated == 0
 
-    while True:
-        review_page = steam.get_all_reviews(app_id, cursor=cursor, language="all")
-        reviews = review_page.get("reviews") or []
-        next_cursor = review_page.get("cursor")
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as spool:
 
-        if not reviews:
-            return fetched_reviews, saw_checkpoint_timestamp
+        def load_spooled() -> list["dict"]:
+            spool.seek(0)
+            return [json.loads(line) for line in spool]
 
-        for review in reviews:
-            # On inclut les égalités afin de ne pas perdre une review publiée
-            # dans la même seconde que le checkpoint. Elles seront dédupliquées
-            # par (recommendation_id, timestamp_updated) avant insertion.
-            if review["timestamp_updated"] < last_seen_timestamp_updated:
-                logger.info(
-                    f"app_id={app_id}: pagination arrêtée au checkpoint "
-                    f"timestamp_updated={last_seen_timestamp_updated}"
-                )
-                return fetched_reviews, True
-            if review["timestamp_updated"] == last_seen_timestamp_updated:
-                saw_checkpoint_timestamp = True
-            fetched_reviews.append(review)
+        while True:
+            review_page = steam.get_all_reviews(app_id, cursor=cursor, language="all")
+            reviews = review_page.get("reviews") or []
+            next_cursor = review_page.get("cursor")
 
-        if not next_cursor or next_cursor == cursor:
-            return fetched_reviews, saw_checkpoint_timestamp
-        cursor = next_cursor
+            if not reviews:
+                return load_spooled(), saw_checkpoint_timestamp
+
+            for review in reviews:
+                # On inclut les égalités afin de ne pas perdre une review publiée
+                # dans la même seconde que le checkpoint. Elles seront dédupliquées
+                # par (recommendation_id, timestamp_updated) avant insertion.
+                if review["timestamp_updated"] < last_seen_timestamp_updated:
+                    logger.info(
+                        f"app_id={app_id}: pagination arrêtée au checkpoint "
+                        f"timestamp_updated={last_seen_timestamp_updated}"
+                    )
+                    return load_spooled(), True
+                if review["timestamp_updated"] == last_seen_timestamp_updated:
+                    saw_checkpoint_timestamp = True
+                spool.write(json.dumps(review) + "\n")
+
+            if not next_cursor or next_cursor == cursor:
+                return load_spooled(), saw_checkpoint_timestamp
+            cursor = next_cursor
 
 
 def reviews_to_rows(app_id: int, reviews: list["dict"]) -> list[tuple]:

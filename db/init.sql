@@ -35,9 +35,14 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     checked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     prev_total_reviews BIGINT,
     last_backfill_at   TIMESTAMPTZ,
-    total_reviews_backfilled BIGINT,
     last_seen_timestamp_updated BIGINT
 );
+
+-- Migration idempotente : peut être rejouée sur une base déjà initialisée
+-- (ce script n'est exécuté automatiquement par Postgres qu'au premier
+-- démarrage sur un volume vide, cf. docker-entrypoint-initdb.d).
+ALTER TABLE raw.steam_review_counts
+    ADD COLUMN IF NOT EXISTS total_reviews_backfilled BIGINT;
 
 
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
