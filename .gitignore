@@ -18,3 +18,4 @@ dbt/logs/
 .user.yml
 .superpowers/
 website.txt
+package-lock.concurrent-update-lock
