@@ -1,11 +1,10 @@
 version: 2
 
 models:
-  - name: game_language_distribution
+  - name: language_review_score
     description: >
-      Répartition des reviews par langue déclarée, pour chaque jeu. Une ligne
-      par (app_id, language) ; pct_of_total est la part de review_count sur le
-      total de reviews du jeu, toutes langues confondues.
+      Volume et note (% d'avis positifs) par langue déclarée, pour chaque jeu.
+      Une ligne par (app_id, language).
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -25,14 +24,25 @@ models:
         data_tests:
           - not_null
 
-      - name: review_count
+      - name: total_reviews
         description: Nombre de reviews de ce jeu écrites dans cette langue.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: >
+          Nombre de reviews positives (voted_up) de ce jeu dans cette langue.
+        data_tests:
+          - not_null
+
+      - name: pct_positive
+        description: Part de total_positive sur total_reviews, entre 0 et 1.
         data_tests:
           - not_null
 
       - name: pct_of_total
         description: >
-          Part de review_count sur le total de reviews du jeu (toutes langues
+          Part de total_reviews sur le total de reviews du jeu (toutes langues
           confondues), entre 0 et 1.
         data_tests:
           - not_null

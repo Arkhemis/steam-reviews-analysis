@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: language_review_score_global
+    description: >
+      Rollup global du modèle intermédiaire language_review_score : une ligne
+      par langue déclarée, tous jeux confondus. Remplace l'ancien mart
+      language_review_score, qui agrégeait directement depuis steam_review.
+    data_tests:
+      - unique:
+          column_name: language
+    columns:
+      - name: language
+        description: >
+          Langue déclarée de la review (code langue Steam, ex. french,
+          english), ou 'unknown' si le payload source n'en contient pas.
+        data_tests:
+          - not_null
+
+      - name: total_reviews
+        description: Nombre total de reviews dans cette langue, tous jeux confondus.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: >
+          Nombre total de reviews positives (voted_up) dans cette langue, tous
+          jeux confondus.
+        data_tests:
+          - not_null
+
+      - name: pct_positive
+        description: Part de total_positive sur total_reviews, entre 0 et 1.
+        data_tests:
+          - not_null
+
+      - name: pct_of_total
+        description: >
+          Part de total_reviews sur le total toutes langues confondues, entre
+          0 et 1.
+        data_tests:
+          - not_null
