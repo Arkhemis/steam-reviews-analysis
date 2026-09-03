@@ -47,17 +47,21 @@ WHERE app_id = %s
 """
 
 # Un scan par run au lieu d'un par jeu, et le compteur redevient exact quoi
-# qu'il ait dérivé.
+# qu'il ait dérivé. LEFT JOIN pour que les jeux backfillés dont plus aucune
+# review n'est stockée retombent à 0 au lieu de garder leur ancien compteur.
 RECOUNT_BACKFILLED_SQL = """
-UPDATE raw.steam_review_counts AS c
-SET total_reviews_backfilled = stored.reviews_stored
-FROM (
+WITH stored AS (
     SELECT app_id, count(DISTINCT recommendation_id) AS reviews_stored
     FROM raw.steam_reviews
     GROUP BY app_id
-) AS stored
-WHERE stored.app_id = c.app_id
-  AND c.total_reviews_backfilled IS DISTINCT FROM stored.reviews_stored
+)
+UPDATE raw.steam_review_counts AS c
+SET total_reviews_backfilled = COALESCE(stored.reviews_stored, 0)
+FROM raw.steam_review_counts AS census
+LEFT JOIN stored ON stored.app_id = census.app_id
+WHERE census.app_id = c.app_id
+  AND census.last_backfill_at IS NOT NULL
+  AND c.total_reviews_backfilled IS DISTINCT FROM COALESCE(stored.reviews_stored, 0)
 """
 
 
