@@ -15,10 +15,34 @@ storage:
       port:
         env: POSTGRES_PORT
 
-# Les runs s'exécutent dans le conteneur user-code (même image/env).
+# Un conteneur par run, à partir de l'image de user-code. Le DefaultRunLauncher
+# exécutait les runs dans le conteneur user-code, donc chaque `compose up
+# --build` tuait les runs en vol.
 run_launcher:
-  module: dagster._core.launcher
-  class: DefaultRunLauncher
+  module: dagster_docker
+  class: DockerRunLauncher
+  config:
+    # definitions.py résout ces EnvVar au chargement du module.
+    env_vars:
+      - POSTGRES_HOST
+      - POSTGRES_PORT
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+      - IGDB_CLIENT_ID
+      - IGDB_CLIENT_SECRET
+    network: steam-reviews-analysis_default
+    container_kwargs:
+      # Partagé avec le webserver, sinon les stdout/stderr des runs sont perdus.
+      volumes:
+        - steam-reviews-analysis_dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
+      # Même raison que pour webserver/daemon dans le compose.
+      healthcheck:
+        test: ["NONE"]
+      # Conteneur conservé : run_monitoring lit son code de sortie et il reste
+      # inspectable. Purge (l'hôte porte d'autres stacks, d'où le filtre) :
+      # docker container prune --filter label=dagster/run_id --filter until=336h
+      auto_remove: false
 
 # File d'attente : borne la concurrence pour respecter le rate limit Steam.
 run_coordinator:
@@ -26,6 +50,12 @@ run_coordinator:
   class: QueuedRunCoordinator
   config:
     max_concurrent_runs: 4
+
+# Marque en échec les runs dont le conteneur a disparu. Sans ça ils restent
+# STARTED indéfiniment et retiennent un slot de max_concurrent_runs.
+run_monitoring:
+  enabled: true
+  max_resume_run_attempts: 0
 
 # Rétention des logs de calcul.
 compute_logs:
