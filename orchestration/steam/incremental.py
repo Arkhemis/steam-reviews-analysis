@@ -237,8 +237,7 @@ def sync_app_reviews(
     app_id: int,
     last_seen_timestamp_updated: int,
 ) -> AppSync:
-    """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau.
-    """
+    """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau."""
     logger = get_dagster_logger()
     pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated)
     fetched = 0
@@ -277,8 +276,7 @@ def sync_app_reviews(
 def insert_new_versions(
     conn: psycopg.Connection, app_id: int, reviews: list[dict[str, Any]]
 ) -> tuple[int, int]:
-    """Insère les versions du lot absentes de la base.
-    """
+    """Insère les versions du lot absentes de la base."""
     if not reviews:
         return 0, 0
 
