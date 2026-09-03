@@ -18,14 +18,8 @@ from orchestration.steam.resources import SteamResource
 # Un thread et une connexion Postgres par jeu en cours de traitement.
 INCREMENTAL_WORKERS = 10
 
-# Reviews gardées en mémoire par jeu avant envoi au serveur. La mémoire du
-# process est ainsi bornée à ~ INCREMENTAL_WORKERS * FLUSH_REVIEWS reviews,
-# quels que soient le nombre de jeux et l'ancienneté de leur checkpoint. Le
-# seuil est assez haut pour que la grande majorité des jeux (quelques pages de
-# retard) tienne en un seul lot, donc une seule requête d'existence.
+# Reviews gardées en mémoire par jeu avant envoi au serveur (afin d'éviter un OOM)
 FLUSH_REVIEWS = 5000
-
-# Périodicité des logs d'avancement (un log par jeu noierait le run).
 PROGRESS_EVERY = 500
 
 
@@ -170,11 +164,6 @@ class NewReviewPages:
     mémoire. `filter=updated` garantit un ordre décroissant sur
     `timestamp_updated`, la pagination s'arrête donc dès la première review
     antérieure au checkpoint.
-
-    Après itération, `reached_checkpoint` dit si la pagination a effectivement
-    rejoint le checkpoint. Sinon Steam a interrompu la pagination avant : il
-    manque des reviews entre les dernières servies et le checkpoint, et
-    l'appelant doit tout annuler plutôt que de créer un trou définitif.
     """
 
     def __init__(
@@ -249,11 +238,6 @@ def sync_app_reviews(
     last_seen_timestamp_updated: int,
 ) -> AppSync:
     """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau.
-
-    Les lots sont envoyés au serveur puis oubliés : le retard d'un jeu ne
-    détermine plus la mémoire du process, seulement le volume écrit. Le commit
-    n'a lieu qu'une fois le checkpoint rejoint ; sinon la transaction est
-    annulée et le jeu repart de son ancien checkpoint au prochain run.
     """
     logger = get_dagster_logger()
     pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated)
@@ -294,10 +278,6 @@ def insert_new_versions(
     conn: psycopg.Connection, app_id: int, reviews: list[dict[str, Any]]
 ) -> tuple[int, int]:
     """Insère les versions du lot absentes de la base.
-
-    Renvoie (versions insérées, reviews jamais vues). Les lignes des lots
-    précédents, envoyées mais pas encore commitées, sont visibles par la
-    requête d'existence : le dédoublonnage tient d'un lot au suivant.
     """
     if not reviews:
         return 0, 0
