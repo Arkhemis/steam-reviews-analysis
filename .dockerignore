@@ -1,0 +1,14 @@
+# Le build régénère dbt_packages/ et target/ ; les copier depuis l'hôte y
+# ferait entrer des artefacts périmés.
+.git
+.env
+.venv
+__pycache__
+**/__pycache__
+dbt/target
+dbt/dbt_packages
+dbt/logs
+logs
+.pytest_cache
+.ruff_cache
+*.parquet

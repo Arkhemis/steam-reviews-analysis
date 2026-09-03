@@ -11,6 +11,12 @@ x-dagster-env: &dagster-env
   IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
   IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
 
+# Cité en dur dans deploy/dagster.yaml. Valeur identique au nom implicite de
+# Compose, donc aucun service existant n'est recréé.
+networks:
+  default:
+    name: steam-reviews-analysis_default
+
 services:
   postgres:
     image: citusdata/citus:14.1-pg16
@@ -34,17 +40,19 @@ services:
       retries: 5
 
   # Code Dagster + dbt, servi en gRPC. webserver/daemon s'y connectent.
+  # Pas de bind mount du code : les conteneurs de run ne le verraient pas et
+  # exécuteraient donc un autre code que celui servi ici.
   user-code:
     build:
       context: .
       provenance: false
       sbom: false
+    image: steam-reviews-analysis-user-code:latest
     restart: unless-stopped
     environment:
       <<: *dagster-env
-    volumes:
-      - ./orchestration:/app/orchestration:ro
-      - ./dbt:/app/dbt
+      # Image que le run launcher utilisera pour les conteneurs de run.
+      DAGSTER_CURRENT_IMAGE: steam-reviews-analysis-user-code:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,15 +75,20 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       <<: *dagster-env
+    # Le HEALTHCHECK de l'image sonde le code server, absent ici.
+    healthcheck:
+      disable: true
     volumes:
       - ./deploy/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
       - ./deploy/workspace.yaml:/opt/dagster/dagster_home/workspace.yaml:ro
       - dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
+      # Terminer un run = arrêter son conteneur.
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
       user-code:
-        condition: service_started
+        condition: service_healthy
 
   dagster-daemon:
     build:
@@ -90,15 +103,20 @@ services:
     restart: unless-stopped
     environment:
       <<: *dagster-env
+    # Le HEALTHCHECK de l'image sonde le code server, absent ici.
+    healthcheck:
+      disable: true
     volumes:
       - ./deploy/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
       - ./deploy/workspace.yaml:/opt/dagster/dagster_home/workspace.yaml:ro
       - dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
+      # DockerRunLauncher crée un conteneur par run via ce socket.
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
       user-code:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   pgdata:
