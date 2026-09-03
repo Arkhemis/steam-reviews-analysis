@@ -1,3 +1,16 @@
+{{
+    config(
+        indexes=[
+            {'columns': ['steam_app_id'], 'type': 'btree'},
+            {'columns': ['total_reviews'], 'type': 'btree'},
+        ]
+    )
+}}
+
+-- steam_app_id : clé de la table, lookup direct d'une fiche jeu et cible de
+-- toutes les jointures depuis review_highlight et game_review_trend_daily.
+-- total_reviews : classements et listes paginées trient dessus.
+
 SELECT
     i.igdb_id,
     i.steam_app_id,
