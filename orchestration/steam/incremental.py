@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple
@@ -13,6 +14,10 @@ from dagster import (
 )
 
 from orchestration.postgres import PostgresResource
+from orchestration.steam.backfill import (
+    STOP_BACKOFF_BASE_SECONDS,
+    STOP_MAX_RETRIES,
+)
 from orchestration.steam.resources import SteamResource
 
 # Un thread et une connexion Postgres par jeu en cours de traitement.
@@ -175,7 +180,9 @@ class NewReviewPages:
     peut demander des milliers de pages, qui ne doivent jamais coexister en
     mémoire. `filter=updated` garantit un ordre décroissant sur
     `timestamp_updated`, la pagination s'arrête donc dès la première review
-    antérieure au checkpoint.
+    antérieure au checkpoint. Un signal de fin reçu avant le checkpoint est
+    traité comme un incident transitoire : le même curseur est rejoué, comme
+    dans le backfill.
     """
 
     def __init__(
@@ -187,12 +194,13 @@ class NewReviewPages:
         self.steam = steam
         self.app_id = app_id
         self.last_seen_timestamp_updated = last_seen_timestamp_updated
-        # Un jeu sans checkpoint n'a rien à rejoindre : tout est nouveau.
-        self.reached_checkpoint = last_seen_timestamp_updated == 0
+        self.has_checkpoint = last_seen_timestamp_updated > 0
+        self.reached_checkpoint = False
 
     def __iter__(self) -> Iterator[list[dict[str, Any]]]:
         logger = get_dagster_logger()
         cursor = "*"
+        stop_retries = 0
 
         while True:
             review_page = self.steam.get_all_reviews(
@@ -201,10 +209,8 @@ class NewReviewPages:
             reviews = review_page.get("reviews") or []
             next_cursor = review_page.get("cursor")
 
-            if not reviews:
-                return
-
             page: list[dict[str, Any]] = []
+            passed_checkpoint = False
             for review in reviews:
                 # On inclut les égalités afin de ne pas perdre une review publiée
                 # dans la même seconde que le checkpoint. Elles seront dédupliquées
@@ -215,17 +221,48 @@ class NewReviewPages:
                         f"timestamp_updated={self.last_seen_timestamp_updated}"
                     )
                     self.reached_checkpoint = True
-                    if page:
-                        yield page
-                    return
+                    passed_checkpoint = True
+                    break
                 if review["timestamp_updated"] == self.last_seen_timestamp_updated:
                     self.reached_checkpoint = True
                 page.append(review)
 
-            yield page
+            stalled = not reviews or not next_cursor or next_cursor == cursor
+            give_up = stalled and stop_retries >= STOP_MAX_RETRIES
 
-            if not next_cursor or next_cursor == cursor:
+            if page and (self.reached_checkpoint or not stalled or give_up):
+                yield page
+            if passed_checkpoint:
                 return
+
+            if stalled:
+                if self.reached_checkpoint:
+                    return
+                # Steam annonce régulièrement une fin de pagination qui n'en est
+                # pas une : tant que le checkpoint n'est pas rejoint, on rejoue le
+                # même curseur plutôt que d'abandonner le jeu (cf. backfill).
+                if give_up:
+                    if not self.has_checkpoint:
+                        # Rien à rejoindre : après les relances, la fin annoncée
+                        # par Steam est le seul signal de fin exploitable.
+                        self.reached_checkpoint = True
+                        return
+                    logger.warning(
+                        f"app_id={self.app_id}: checkpoint non rejoint après "
+                        f"{STOP_MAX_RETRIES} relances du curseur"
+                    )
+                    return
+                stop_retries += 1
+                delay = STOP_BACKOFF_BASE_SECONDS * 2 ** (stop_retries - 1)
+                logger.warning(
+                    f"app_id={self.app_id}: fin prématurée avant le checkpoint ; "
+                    f"relance du même curseur {stop_retries}/{STOP_MAX_RETRIES} "
+                    f"dans {delay:.0f}s"
+                )
+                time.sleep(delay)
+                continue
+
+            stop_retries = 0
             cursor = next_cursor
 
 
@@ -287,8 +324,7 @@ def insert_versions(
     `last_seen_timestamp_updated` est le max des `timestamp_updated` stockés
     pour ce jeu : une review plus récente que le checkpoint ne peut pas y être.
     Seule la seconde-frontière peut donc produire un doublon, que le modèle
-    staging écarte déjà (ROW_NUMBER par recommendation_id). Le contrôle
-    d'existence coûtait un scan de la table columnar par jeu.
+    staging écarte déjà (ROW_NUMBER par recommendation_id).
     """
     if not reviews:
         return 0
