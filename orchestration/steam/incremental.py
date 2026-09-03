@@ -194,8 +194,8 @@ class NewReviewPages:
         self.steam = steam
         self.app_id = app_id
         self.last_seen_timestamp_updated = last_seen_timestamp_updated
-        # Un jeu sans checkpoint n'a rien à rejoindre : tout est nouveau.
-        self.reached_checkpoint = last_seen_timestamp_updated == 0
+        self.has_checkpoint = last_seen_timestamp_updated > 0
+        self.reached_checkpoint = False
 
     def __iter__(self) -> Iterator[list[dict[str, Any]]]:
         logger = get_dagster_logger()
@@ -228,8 +228,9 @@ class NewReviewPages:
                 page.append(review)
 
             stalled = not reviews or not next_cursor or next_cursor == cursor
+            give_up = stalled and stop_retries >= STOP_MAX_RETRIES
 
-            if page and (self.reached_checkpoint or not stalled):
+            if page and (self.reached_checkpoint or not stalled or give_up):
                 yield page
             if passed_checkpoint:
                 return
@@ -240,7 +241,12 @@ class NewReviewPages:
                 # Steam annonce régulièrement une fin de pagination qui n'en est
                 # pas une : tant que le checkpoint n'est pas rejoint, on rejoue le
                 # même curseur plutôt que d'abandonner le jeu (cf. backfill).
-                if stop_retries >= STOP_MAX_RETRIES:
+                if give_up:
+                    if not self.has_checkpoint:
+                        # Rien à rejoindre : après les relances, la fin annoncée
+                        # par Steam est le seul signal de fin exploitable.
+                        self.reached_checkpoint = True
+                        return
                     logger.warning(
                         f"app_id={self.app_id}: checkpoint non rejoint après "
                         f"{STOP_MAX_RETRIES} relances du curseur"
