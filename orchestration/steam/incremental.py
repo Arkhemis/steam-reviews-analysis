@@ -96,8 +96,12 @@ def steam_reviews_incremental(
                 )
                 continue
 
+            # Steam sérialise recommendationid en texte ; la colonne est un
+            # BIGINT et les lignes relues sont des entiers : sans cette
+            # normalisation aucune comparaison ne matche et toutes les versions
+            # déjà connues sont réinsérées à chaque run.
             recommendation_ids = list(
-                {review["recommendationid"] for review in reviews}
+                {int(review["recommendationid"]) for review in reviews}
             )
             existing_versions: set[tuple[int, int]] = set()
             existing_recommendation_ids: set[int] = set()
@@ -117,7 +121,7 @@ def steam_reviews_incremental(
                 review
                 for review in reviews
                 if (
-                    review["recommendationid"],
+                    int(review["recommendationid"]),
                     review["timestamp_updated"],
                 )
                 not in existing_versions
@@ -212,7 +216,7 @@ def fetch_steam_reviews(
 def reviews_to_rows(app_id: int, reviews: list["dict"]) -> list[tuple]:
     return [
         (
-            review["recommendationid"],
+            int(review["recommendationid"]),
             app_id,
             json.dumps(review),
             review["timestamp_created"],
