@@ -58,6 +58,8 @@ docker compose up -d
 
 The Dagster webserver is served on `http://localhost:3001`. The `raw` schema is created on Postgres' first startup (`db/init.sql`).
 
+The stack ships no bind mount for the application code: each run executes in its own container built from the `user-code` image, so a code change needs `docker compose up -d --build` to be picked up.
+
 For local development (without Docker for the Dagster code):
 
 ```bash
