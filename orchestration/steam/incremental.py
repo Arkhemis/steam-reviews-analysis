@@ -80,7 +80,9 @@ class AppSync(NamedTuple):
 
 @asset(
     group_name="load",
-    deps=["steam_review_counts"],
+    # Un jeu n'entre dans l'incrémental qu'une fois backfillé : le backfill pose
+    # le `last_seen_timestamp_updated` que RELEVANT_APP_IDS exige.
+    deps=["steam_review_counts", "steam_reviews_backfill"],
     description="Incremental backfill des reviews Steam (payload complet) -> raw.steam_reviews.",
 )
 def steam_reviews_incremental(
