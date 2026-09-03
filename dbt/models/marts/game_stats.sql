@@ -1,3 +1,13 @@
+{{
+    config(
+        indexes=[
+            {'columns': ['steam_app_id'], 'type': 'btree'},
+            {'columns': ['total_reviews'], 'type': 'btree'},
+        ]
+    )
+}}
+
+
 SELECT
     i.igdb_id,
     i.steam_app_id,
