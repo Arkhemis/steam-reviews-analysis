@@ -120,4 +120,7 @@ services:
 
 volumes:
   pgdata:
+  # Nom explicite pour la même raison que le réseau : DockerRunLauncher le cite
+  # en dur, or le préfixe de projet dépend du dossier ou de `-p`.
   dagster_compute_logs:
+    name: steam-reviews-analysis_dagster_compute_logs

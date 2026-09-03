@@ -40,7 +40,8 @@ run_launcher:
       healthcheck:
         test: ["NONE"]
       # Conteneur conservé : run_monitoring lit son code de sortie et il reste
-      # inspectable. À purger via `docker container prune`.
+      # inspectable. Purge (l'hôte porte d'autres stacks, d'où le filtre) :
+      # docker container prune --filter label=dagster/run_id --filter until=336h
       auto_remove: false
 
 # File d'attente : borne la concurrence pour respecter le rate limit Steam.
