@@ -7,10 +7,6 @@
     )
 }}
 
--- app_id : sélection des reviews mises en avant sur la fiche d'un jeu.
--- rank_in_game + voted_up : sélection des meilleures reviews positives et
--- négatives tous jeux confondus (bloc « deux avis » de la home).
-
 WITH eligible_reviews AS (
 
     SELECT

@@ -7,11 +7,6 @@
     )
 }}
 
--- review_date : les fenêtres glissantes du site (tendances 30j vs 30j
--- précédents) filtrent sur cette colonne et calculent MAX(review_date) ;
--- sans index chaque appel faisait trois seq scans de la table entière.
--- app_id : lecture de la courbe d'un seul jeu sur sa fiche.
-
 SELECT
     app_id,
     DATE(created_at) AS review_date,
