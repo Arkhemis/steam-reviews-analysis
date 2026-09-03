@@ -227,12 +227,15 @@ class NewReviewPages:
                     self.reached_checkpoint = True
                 page.append(review)
 
-            if page:
+            stalled = not reviews or not next_cursor or next_cursor == cursor
+
+        
+            if page and (self.reached_checkpoint or not stalled):
                 yield page
             if passed_checkpoint:
                 return
 
-            if not reviews or not next_cursor or next_cursor == cursor:
+            if stalled:
                 if self.reached_checkpoint:
                     return
                 # Steam annonce régulièrement une fin de pagination qui n'en est
@@ -316,8 +319,7 @@ def insert_versions(
     `last_seen_timestamp_updated` est le max des `timestamp_updated` stockés
     pour ce jeu : une review plus récente que le checkpoint ne peut pas y être.
     Seule la seconde-frontière peut donc produire un doublon, que le modèle
-    staging écarte déjà (ROW_NUMBER par recommendation_id). Le contrôle
-    d'existence coûtait un scan de la table columnar par jeu.
+    staging écarte déjà (ROW_NUMBER par recommendation_id). 
     """
     if not reviews:
         return 0
