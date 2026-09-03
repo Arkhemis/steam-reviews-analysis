@@ -37,24 +37,31 @@ INSERT INTO raw.steam_reviews (
 VALUES (%s, %s, %s, %s, %s)
 """
 
-EXISTING_REVIEW_VERSIONS_SQL = """
-SELECT recommendation_id, timestamp_updated
-FROM raw.steam_reviews
-WHERE app_id = %s
-  AND recommendation_id = ANY(%s)
-"""
-
-UPDATE_REVIEW_COUNT_SQL = """
+UPDATE_CHECKPOINT_SQL = """
 UPDATE raw.steam_review_counts
-SET total_reviews_backfilled = LEAST(
-        total_reviews,
-        COALESCE(total_reviews_backfilled, 0) + %s
-    ),
-    last_seen_timestamp_updated = GREATEST(
+SET last_seen_timestamp_updated = GREATEST(
         COALESCE(last_seen_timestamp_updated, 0),
         %s
     )
 WHERE app_id = %s
+"""
+
+# Un scan par run au lieu d'un par jeu, et le compteur redevient exact quoi
+# qu'il ait dérivé. LEFT JOIN pour que les jeux backfillés dont plus aucune
+# review n'est stockée retombent à 0 au lieu de garder leur ancien compteur.
+RECOUNT_BACKFILLED_SQL = """
+WITH stored AS (
+    SELECT app_id, count(DISTINCT recommendation_id) AS reviews_stored
+    FROM raw.steam_reviews
+    GROUP BY app_id
+)
+UPDATE raw.steam_review_counts AS c
+SET total_reviews_backfilled = COALESCE(stored.reviews_stored, 0)
+FROM raw.steam_review_counts AS census
+LEFT JOIN stored ON stored.app_id = census.app_id
+WHERE census.app_id = c.app_id
+  AND census.last_backfill_at IS NOT NULL
+  AND c.total_reviews_backfilled IS DISTINCT FROM COALESCE(stored.reviews_stored, 0)
 """
 
 
@@ -63,7 +70,6 @@ class AppSync(NamedTuple):
 
     reviews_fetched: int
     versions_inserted: int
-    new_reviews: int
     reached_checkpoint: bool
 
 
@@ -130,14 +136,19 @@ def steam_reviews_incremental(
             apps_updated += 1
             if result.versions_inserted:
                 context.log.info(
-                    f"app_id={app_id}: {result.versions_inserted} versions "
-                    f"insérées, dont {result.new_reviews} nouvelles reviews"
+                    f"app_id={app_id}: {result.versions_inserted} versions insérées"
                 )
             if processed % PROGRESS_EVERY == 0:
                 context.log.info(
                     f"Synchronisé {processed}/{total} jeux "
                     f"— {review_versions_inserted} versions insérées"
                 )
+
+    apps_recounted = recount_backfilled(postgres)
+    context.log.info(
+        f"total_reviews_backfilled recalculé depuis raw.steam_reviews "
+        f"({apps_recounted} jeux corrigés)"
+    )
 
     if apps_incomplete:
         context.log.warning(
@@ -152,6 +163,7 @@ def steam_reviews_incremental(
             "apps_updated": MetadataValue.int(apps_updated),
             "apps_incomplete": MetadataValue.int(apps_incomplete),
             "apps_failed": MetadataValue.int(apps_failed),
+            "apps_recounted": MetadataValue.int(apps_recounted),
         }
     )
 
@@ -242,7 +254,6 @@ def sync_app_reviews(
     pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated)
     fetched = 0
     versions_inserted = 0
-    new_reviews = 0
     max_timestamp_updated = last_seen_timestamp_updated
 
     with postgres.connect() as conn:
@@ -252,61 +263,53 @@ def sync_app_reviews(
                 max_timestamp_updated,
                 max(review["timestamp_updated"] for review in batch),
             )
-            inserted, new = insert_new_versions(conn, app_id, batch)
-            versions_inserted += inserted
-            new_reviews += new
+            versions_inserted += insert_versions(conn, app_id, batch)
 
         if not pages.reached_checkpoint:
             conn.rollback()
             logger.warning(
                 f"app_id={app_id}: checkpoint non atteint ; aucune donnée enregistrée"
             )
-            return AppSync(fetched, 0, 0, False)
+            return AppSync(fetched, 0, False)
 
         with conn.cursor() as cur:
-            cur.execute(
-                UPDATE_REVIEW_COUNT_SQL,
-                (new_reviews, max_timestamp_updated, app_id),
-            )
+            cur.execute(UPDATE_CHECKPOINT_SQL, (max_timestamp_updated, app_id))
         conn.commit()
 
-    return AppSync(fetched, versions_inserted, new_reviews, True)
+    return AppSync(fetched, versions_inserted, True)
 
 
-def insert_new_versions(
+def insert_versions(
     conn: psycopg.Connection, app_id: int, reviews: list[dict[str, Any]]
-) -> tuple[int, int]:
-    """Insère les versions du lot absentes de la base."""
-    if not reviews:
-        return 0, 0
+) -> int:
+    """Insère les versions du lot sans vérifier ce qui est déjà en base.
 
-    # Dédoublonnage intra-lot : Steam resert parfois une review d'une page à
-    # l'autre, et une review peut être servie deux fois dans la même seconde.
+    `last_seen_timestamp_updated` est le max des `timestamp_updated` stockés
+    pour ce jeu : une review plus récente que le checkpoint ne peut pas y être.
+    Seule la seconde-frontière peut donc produire un doublon, que le modèle
+    staging écarte déjà (ROW_NUMBER par recommendation_id). Le contrôle
+    d'existence coûtait un scan de la table columnar par jeu.
+    """
+    if not reviews:
+        return 0
+
+    # Steam resert parfois une review d'une page à l'autre.
     versions = {
         (int(review["recommendationid"]), review["timestamp_updated"]): review
         for review in reviews
     }
-    recommendation_ids = list({recommendation_id for recommendation_id, _ in versions})
-
-    existing_versions: set[tuple[int, int]] = set()
-    existing_recommendation_ids: set[int] = set()
+    rows = [review_to_row(app_id, review) for review in versions.values()]
     with conn.cursor() as cur:
-        cur.execute(EXISTING_REVIEW_VERSIONS_SQL, (app_id, recommendation_ids))
-        for row in cur.fetchall():
-            existing_versions.add((row["recommendation_id"], row["timestamp_updated"]))
-            existing_recommendation_ids.add(row["recommendation_id"])
+        cur.executemany(INSERT_REVIEW_SQL, rows)
+    return len(rows)
 
-    rows = [
-        review_to_row(app_id, review)
-        for version, review in versions.items()
-        if version not in existing_versions
-    ]
-    if rows:
+
+def recount_backfilled(postgres: PostgresResource) -> int:
+    """Réaligne total_reviews_backfilled sur ce que contient raw.steam_reviews."""
+    with postgres.connect() as conn:
         with conn.cursor() as cur:
-            cur.executemany(INSERT_REVIEW_SQL, rows)
-
-    new_reviews = len(set(recommendation_ids) - existing_recommendation_ids)
-    return len(rows), new_reviews
+            cur.execute(RECOUNT_BACKFILLED_SQL)
+            return cur.rowcount
 
 
 def review_to_row(app_id: int, review: dict[str, Any]) -> tuple:
