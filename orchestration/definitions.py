@@ -4,6 +4,7 @@ from dagster_dbt import DbtCliResource
 from orchestration.dbt import definitions as dbt_steam_reviews
 from orchestration.igdb import definitions as igdb
 from orchestration.igdb.resources import IGDBResource
+from orchestration.jobs import daily_pipeline_job
 from orchestration.postgres import PostgresResource
 from orchestration.project import dbt_steam_reviews_project
 from orchestration.steam import definitions as steam
@@ -15,6 +16,8 @@ defs = Definitions.merge(
     steam.defs,
     dbt_steam_reviews.defs,
     Definitions(
+        # Job transverse : il ne peut vivre dans aucun domaine puisqu'il les couvre tous.
+        jobs=[daily_pipeline_job],
         resources={
             "postgres": PostgresResource(
                 host=EnvVar("POSTGRES_HOST").get_value(),
