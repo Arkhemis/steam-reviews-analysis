@@ -1,3 +1,12 @@
+{{
+    config(
+        indexes=[
+            {'columns': ['review_date'], 'type': 'btree'},
+            {'columns': ['app_id'], 'type': 'btree'},
+        ]
+    )
+}}
+
 SELECT
     app_id,
     DATE(created_at) AS review_date,

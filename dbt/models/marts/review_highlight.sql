@@ -1,3 +1,12 @@
+{{
+    config(
+        indexes=[
+            {'columns': ['app_id'], 'type': 'btree'},
+            {'columns': ['rank_in_game', 'voted_up'], 'type': 'btree'},
+        ]
+    )
+}}
+
 WITH eligible_reviews AS (
 
     SELECT
