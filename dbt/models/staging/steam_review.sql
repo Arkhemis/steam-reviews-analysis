@@ -1,34 +1,13 @@
--- enable_mergejoin : le merge join retrierait des 182 M de lignes larges ==> OOM
-{{ config(pre_hook="SET enable_mergejoin = off") }}
+WITH source_versions AS (
 
-WITH contested AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY recommendation_id
+            ORDER BY timestamp_updated DESC, loaded_at DESC
+        ) AS version_rank
 
-    SELECT recommendation_id
     FROM {{ source('raw', 'steam_reviews') }}
-    GROUP BY recommendation_id
-    HAVING COUNT(*) > 1
-
-),
-
-source_versions AS (
-
-    SELECT s.*
-    FROM {{ source('raw', 'steam_reviews') }} AS s
-    WHERE
-        NOT EXISTS (
-            SELECT 1
-            FROM contested AS c
-            WHERE c.recommendation_id = s.recommendation_id
-        )
-
-    UNION ALL
-
-    (
-        SELECT DISTINCT ON (s.recommendation_id) s.*
-        FROM {{ source('raw', 'steam_reviews') }} AS s
-        INNER JOIN contested AS c ON c.recommendation_id = s.recommendation_id
-        ORDER BY s.recommendation_id ASC, s.timestamp_updated DESC, s.loaded_at DESC
-    )
 
 ),
 
@@ -80,6 +59,7 @@ renamed AS (
         loaded_at
 
     FROM source_versions
+    WHERE version_rank = 1
 
 )
 
