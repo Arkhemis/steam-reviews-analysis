@@ -20,7 +20,7 @@ networks:
 services:
   postgres:
     image: citusdata/citus:14.1-pg16
-    command: postgres -c shared_preload_libraries=citus
+    command: postgres -c shared_preload_libraries=citus -c temp_file_limit=30GB
     restart: unless-stopped
     shm_size: 256mb
     ports:
