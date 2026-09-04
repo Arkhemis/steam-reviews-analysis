@@ -9,17 +9,25 @@ WITH source_versions AS (
         NOT EXISTS (
             SELECT 1
             FROM {{ ref('steam_review_contested') }} AS c
-            WHERE c.recommendation_id = s.recommendation_id
+            WHERE
+                c.recommendation_id = s.recommendation_id
+                AND c.app_id = s.app_id
         )
 
     UNION ALL
 
     (
-        SELECT DISTINCT ON (s.recommendation_id) s.*
+        SELECT DISTINCT ON (s.recommendation_id, s.app_id) s.*
         FROM {{ source('raw', 'steam_reviews') }} AS s
         INNER JOIN {{ ref('steam_review_contested') }} AS c
-            ON c.recommendation_id = s.recommendation_id
-        ORDER BY s.recommendation_id ASC, s.timestamp_updated DESC, s.loaded_at DESC
+            ON
+                c.recommendation_id = s.recommendation_id
+                AND c.app_id = s.app_id
+        ORDER BY
+            s.recommendation_id ASC,
+            s.app_id ASC,
+            s.timestamp_updated DESC,
+            s.loaded_at DESC
     )
 
 ),

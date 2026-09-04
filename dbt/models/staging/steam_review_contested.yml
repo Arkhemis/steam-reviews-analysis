@@ -3,12 +3,24 @@ version: 2
 models:
   - name: steam_review_contested
     description: >
-      Identifiants de reviews chargés en plusieurs versions, à dédoublonner par
-      steam_review. Isolé dans son propre modèle pour que les deux branches du
-      UNION ALL lisent une table et non un CTE partagé.
+      Couples (recommendation_id, app_id) chargés en plusieurs versions, à
+      dédoublonner par steam_review. Isolé dans son propre modèle pour que les
+      deux branches du UNION ALL lisent une table et non un CTE partagé.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - recommendation_id
+              - app_id
     columns:
       - name: recommendation_id
-        description: Identifiant Steam de la review, présent au moins deux fois dans raw.
+        description: >
+          Identifiant Steam de la review. Unique par jeu seulement : 264 233
+          identifiants sont partagés par plusieurs app_id, d'où la clé composite.
         data_tests:
-          - unique
+          - not_null
+
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
           - not_null
