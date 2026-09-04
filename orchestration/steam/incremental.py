@@ -70,11 +70,6 @@ WHERE census.app_id = c.app_id
 """
 
 
-# L'autovacuum ne passe pas sur les tables columnar : sans ça pg_stats est vide
-# pour raw.steam_reviews et dbt planifie le dédoublonnage à l'aveugle.
-ANALYZE_REVIEWS_SQL = "ANALYZE raw.steam_reviews"
-
-
 class AppSync(NamedTuple):
     """Bilan de la synchronisation d'un jeu (des compteurs, jamais de reviews)."""
 
@@ -161,9 +156,6 @@ def steam_reviews_incremental(
         f"total_reviews_backfilled recalculé depuis raw.steam_reviews "
         f"({apps_recounted} jeux corrigés)"
     )
-
-    analyze_reviews(postgres)
-    context.log.info("Statistiques de raw.steam_reviews rafraîchies")
 
     if apps_incomplete:
         context.log.warning(
@@ -356,13 +348,6 @@ def recount_backfilled(postgres: PostgresResource) -> int:
         with conn.cursor() as cur:
             cur.execute(RECOUNT_BACKFILLED_SQL)
             return cur.rowcount
-
-
-def analyze_reviews(postgres: PostgresResource) -> None:
-    """Rafraîchit les statistiques de raw.steam_reviews pour les modèles dbt."""
-    with postgres.connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(ANALYZE_REVIEWS_SQL)
 
 
 def review_to_row(app_id: int, review: dict[str, Any]) -> tuple:
