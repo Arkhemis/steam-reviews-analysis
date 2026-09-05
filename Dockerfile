@@ -27,7 +27,9 @@ RUN dbt deps --project-dir dbt --profiles-dir dbt \
 
 EXPOSE 4000
 
-HEALTHCHECK --timeout=2s --start-period=5s --interval=3s --retries=20 \
+# La sonde met ~3 s rien qu'à démarrer Python : sous 10 s elle expire même
+# quand le serveur répond, et le déploiement casse dès que la machine charge.
+HEALTHCHECK --timeout=10s --start-period=30s --interval=10s --retries=12 \
     CMD ["dagster", "api", "grpc-health-check", "-p", "4000"]
 
 CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", \
