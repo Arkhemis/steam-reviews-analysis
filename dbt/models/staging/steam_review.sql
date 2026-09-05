@@ -64,7 +64,7 @@ renamed AS (
         TO_TIMESTAMP((payload -> 'author' ->> 'last_played')::bigint) AS author_last_played_at,
 
         -- COLLATE "C" : columnar calcule un min/max par chunk sur chaque
-        -- colonne text ; en collation locale c'est 36 % du temps du modèle.
+        -- colonne text ; en collation locale c'est 35 % du temps du modèle.
         (payload ->> 'review') COLLATE "C" AS review_text,
         payload ->> 'language' AS language,
         (payload ->> 'voted_up')::boolean AS voted_up,
