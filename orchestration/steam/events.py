@@ -116,9 +116,7 @@ def steam_events(
             f"{apps_without_hub} jeux sans hub d'annonces (success={NO_ANNOUNCEMENT_HUB}) : "
         )
     if apps_failed:
-        context.log.warning(
-            f"{apps_failed} jeux en échec, repris au prochain run"
-        )
+        context.log.warning(f"{apps_failed} jeux en échec, repris au prochain run")
 
     return MaterializeResult(
         metadata={
@@ -131,8 +129,7 @@ def steam_events(
 
 
 def iter_app_events(steam: SteamResource, app_id: int) -> Iterator[dict[str, Any]]:
-    """Pagine les annonces d'un jeu.
-    """
+    """Pagine les annonces d'un jeu."""
     offset = 0
     while True:
         page = steam.get_events(app_id, count=EVENTS_PAGE_SIZE, offset=offset)
@@ -159,8 +156,7 @@ def fetch_app_events(steam: SteamResource, app_id: int) -> AppEvents:
 
 
 def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
-    """Ligne à upserter pour une annonce.
-    """
+    """Ligne à upserter pour une annonce."""
     return (
         event["gid"],
         app_id,
