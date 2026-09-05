@@ -16,7 +16,6 @@ SELECT
     (payload -> 'announcement_body' ->> 'body') COLLATE "C" AS announcement_text,
     payload -> 'announcement_body' -> 'tags' AS tags,
 
-
     TO_TIMESTAMP(rtime32_start_time) AS started_at,  -- noqa: CP02
     TO_TIMESTAMP((payload -> 'announcement_body' ->> 'posttime')::bigint) AS posted_at,
     TO_TIMESTAMP((payload -> 'announcement_body' ->> 'updatetime')::bigint) AS updated_at,
