@@ -1,14 +1,25 @@
 -- enable_mergejoin : le merge join retrierait des 182 M de lignes larges ==> OOM
 {{ config(pre_hook="SET enable_mergejoin = off") }}
 
-WITH source_versions AS (
+WITH contested AS (
+
+    SELECT
+        recommendation_id,
+        app_id
+    FROM {{ source('raw', 'steam_reviews') }}
+    GROUP BY recommendation_id, app_id
+    HAVING COUNT(*) > 1
+
+),
+
+source_versions AS (
 
     SELECT s.*
     FROM {{ source('raw', 'steam_reviews') }} AS s
     WHERE
         NOT EXISTS (
             SELECT 1
-            FROM {{ ref('steam_review_contested') }} AS c
+            FROM contested AS c
             WHERE
                 c.recommendation_id = s.recommendation_id
                 AND c.app_id = s.app_id
@@ -19,7 +30,7 @@ WITH source_versions AS (
     (
         SELECT DISTINCT ON (s.recommendation_id, s.app_id) s.*
         FROM {{ source('raw', 'steam_reviews') }} AS s
-        INNER JOIN {{ ref('steam_review_contested') }} AS c
+        INNER JOIN contested AS c
             ON
                 c.recommendation_id = s.recommendation_id
                 AND c.app_id = s.app_id
@@ -39,10 +50,10 @@ renamed AS (
         app_id,
 
         (payload -> 'author' ->> 'steamid')::bigint AS author_steamid,
-        payload -> 'author' ->> 'personaname' AS author_personaname,
-        payload -> 'author' ->> 'profile_url' AS author_profile_url,
-        payload -> 'author' ->> 'avatar' AS author_avatar,
-        payload -> 'author' ->> 'persona_status' AS author_persona_status,
+        (payload -> 'author' ->> 'personaname') COLLATE "C" AS author_personaname,
+        (payload -> 'author' ->> 'profile_url') COLLATE "C" AS author_profile_url,
+        (payload -> 'author' ->> 'avatar') COLLATE "C" AS author_avatar,
+        (payload -> 'author' ->> 'persona_status') COLLATE "C" AS author_persona_status,
         (payload -> 'author' ->> 'num_games_owned')::int AS author_num_games_owned,
         (payload -> 'author' ->> 'num_reviews')::int AS author_num_reviews,
 
@@ -52,7 +63,8 @@ renamed AS (
         (payload -> 'author' ->> 'playtime_last_two_weeks')::int AS author_playtime_last_two_weeks_minutes,
         TO_TIMESTAMP((payload -> 'author' ->> 'last_played')::bigint) AS author_last_played_at,
 
-        payload ->> 'review' AS review_text,
+
+        (payload ->> 'review') COLLATE "C" AS review_text,
         payload ->> 'language' AS language,
         (payload ->> 'voted_up')::boolean AS voted_up,
         (payload ->> 'votes_up')::int AS votes_up,
