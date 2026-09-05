@@ -157,8 +157,14 @@ def fetch_app_events(steam: SteamResource, app_id: int) -> AppEvents:
 
 def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
     """Ligne à upserter pour une annonce."""
+    # Steam laisse gid à 0 sur certaines annonces : le gid du post prend le relais,
+    # sinon elles s'écrasent entre elles sur la PK (app_id, gid).
+    gid = str(event["gid"])
+    if gid == "0":
+        gid = str(event.get("announcement_body", {}).get("gid") or gid)
+
     return (
-        event["gid"],
+        gid,
         app_id,
         json.dumps(event),
         event.get("rtime32_start_time"),
