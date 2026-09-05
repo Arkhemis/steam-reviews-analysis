@@ -63,7 +63,6 @@ renamed AS (
         (payload -> 'author' ->> 'playtime_last_two_weeks')::int AS author_playtime_last_two_weeks_minutes,
         TO_TIMESTAMP((payload -> 'author' ->> 'last_played')::bigint) AS author_last_played_at,
 
-
         (payload ->> 'review') COLLATE "C" AS review_text,
         payload ->> 'language' AS language,
         (payload ->> 'voted_up')::boolean AS voted_up,
