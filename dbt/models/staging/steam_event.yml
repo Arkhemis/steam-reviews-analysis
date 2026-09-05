@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: steam_event
+    description: >
+      Annonces Steam nettoyées et typées à partir du payload JSON brut
+      (patch notes, mises à jour, actus, promos).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - gid
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: gid
+        description: >
+          Identifiant Steam de l'événement, partagé entre les jeux d'un même éditeur
+          (jusqu'à 53). Quand Steam le laisse à 0, l'ingestion lui substitue
+          announcement_gid pour que la clé reste unique par annonce.
+        data_tests:
+          - not_null
+
+      - name: announcement_gid
+        description: >
+          Identifiant du post d'annonce, distinct de gid (qui correspond à
+          announcement_body.event_gid). Toujours renseigné, y compris quand gid vaut 0.
+        data_tests:
+          - not_null
+
+      - name: event_type
+        description: >
+          Type d'annonce Steam : 28 = actu (la moitié du volume), 12/13/14 = mise à jour,
+          20/21/35 = promo, 11 = stream, 10 = sortie.
+        data_tests:
+          - not_null
+
+      - name: comment_type
+        description: Espace de commentaires associé (ForumTopic dans la quasi-totalité des cas).
+
+      - name: build_id
+        description: >
+          Build Steam déployé avec l'annonce, NULL si aucun. Renseigné sur ~10 % des
+          annonces et ~30 % des event_type = 12 : c'est le signal dur d'un vrai patch.
+
+      - name: build_branch
+        description: Branche du build déployé, NULL si aucune.
+
+      - name: headline
+        description: Titre de l'annonce (identique au champ event_name du payload).
+
+      - name: announcement_text
+        description: Corps de l'annonce en BBCode.
+
+      - name: tags
+        description: Tags de l'annonce (tableau JSON de chaînes).
+
+      - name: started_at
+        description: >
+          Date de publication de l'événement, borne du croisement avec la courbe de
+          reviews. Diffère de posted_at sur deux tiers des annonces (publication programmée).
+        data_tests:
+          - not_null
+
+      - name: posted_at
+        description: Date de dépôt du corps de l'annonce.
+
+      - name: updated_at
+        description: Date de dernière modification du corps de l'annonce.
+
+      - name: last_modified_at
+        description: Date de dernière modification de l'événement.
+
+      - name: votes_up
+        description: Votes positifs sur l'annonce.
+
+      - name: votes_down
+        description: Votes négatifs sur l'annonce.
+
+      - name: comment_count
+        description: Nombre de commentaires sur l'annonce.
+
+      - name: loaded_at
+        description: Horodatage de chargement par Dagster.

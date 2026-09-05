@@ -103,3 +103,35 @@ sources:
               - not_null
           - name: loaded_at
             description: Horodatage de chargement par Dagster.
+
+      - name: steam_events
+        description: >
+          Annonces Steam par jeu (patch notes, MAJ, actus).
+          Limitée aux jeux au-dessus du seuil de reviews.
+        config:
+          meta:
+            dagster:
+              asset_key: ['steam_events']
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - app_id
+                  - gid
+        columns:
+          - name: gid
+            description: Identifiant Steam de l'annonce (unique par jeu, pas globalement).
+            data_tests:
+              - not_null
+          - name: app_id
+            description: Identifiant de l'application Steam concernée.
+            data_tests:
+              - not_null
+          - name: payload
+            description: Payload JSON brut de l'annonce.
+          - name: rtime32_start_time
+            description: >
+              Timestamp Unix de publication de l'annonce, borne du croisement avec la
+              courbe de reviews.
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.
