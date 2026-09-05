@@ -23,7 +23,6 @@ EVENTS_PAGE_SIZE = 100
 MIN_TOTAL_REVIEWS = 100
 
 # `success = 42` : Steam n'a pas su résoudre le groupe officiel de cet appid.
-# C'est un état normal (le jeu n'a pas de hub d'annonces), pas un échec.
 NO_ANNOUNCEMENT_HUB = 42
 
 SELECT_APP_IDS_SQL = """
@@ -33,8 +32,7 @@ WHERE total_reviews >= %s
 ORDER BY total_reviews DESC;
 """
 
-# Une annonce est mutable : ses votes et son nombre de commentaires bougent
-# entre deux runs. On réécrit donc la ligne au lieu d'empiler des versions.
+
 UPSERT_EVENT_SQL = """
 INSERT INTO raw.steam_events (
     gid, app_id, payload, rtime32_start_time
@@ -58,9 +56,8 @@ class AppEvents(NamedTuple):
 
 @asset(
     group_name="ingest",
-    # Le périmètre se lit dans le recensement : c'est lui qui porte total_reviews.
     deps=["steam_review_counts"],
-    description="Annonces Steam (patch notes, MAJ, actus) des jeux au-dessus du seuil -> raw.steam_events.",
+    description="Annonces Steam (patch notes, MAJ, actus) des jeux au-dessus du seuil",
 )
 def steam_events(
     context: AssetExecutionContext,
@@ -87,8 +84,6 @@ def steam_events(
     ):
         for batch_start in range(0, total, EVENTS_BATCH_SIZE):
             batch = app_ids[batch_start : batch_start + EVENTS_BATCH_SIZE]
-            # pool.map borne la mémoire au lot courant : les annonces d'un jeu
-            # pèsent ~9 Ko pièce, on ne garde jamais tout le corpus en RAM.
             results = list(
                 pool.map(lambda app_id: fetch_app_events(steam, app_id), batch)
             )
@@ -119,12 +114,10 @@ def steam_events(
     if apps_without_hub:
         context.log.info(
             f"{apps_without_hub} jeux sans hub d'annonces (success={NO_ANNOUNCEMENT_HUB}) : "
-            "rien à charger pour eux."
         )
     if apps_failed:
         context.log.warning(
-            f"{apps_failed} jeux en échec, repris au prochain run : l'upsert étant "
-            "idempotent, aucun rattrapage n'est nécessaire."
+            f"{apps_failed} jeux en échec, repris au prochain run"
         )
 
     return MaterializeResult(
@@ -139,9 +132,6 @@ def steam_events(
 
 def iter_app_events(steam: SteamResource, app_id: int) -> Iterator[dict[str, Any]]:
     """Pagine les annonces d'un jeu.
-
-    Contrairement à `appreviews`, la fin est franche : Steam omet la clé
-    `events`. Aucune relance à prévoir, l'offset avance donc sans garde-fou.
     """
     offset = 0
     while True:
@@ -170,8 +160,6 @@ def fetch_app_events(steam: SteamResource, app_id: int) -> AppEvents:
 
 def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
     """Ligne à upserter pour une annonce.
-
-    `gid` reste une string : c'est un uint64, que BIGINT ne couvre pas.
     """
     return (
         event["gid"],
