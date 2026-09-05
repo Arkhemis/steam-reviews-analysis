@@ -53,3 +53,17 @@ CREATE TABLE IF NOT EXISTS raw.steam_reviews (
     timestamp_updated  BIGINT NOT NULL,
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 ) USING columnar; --sauve énormement en stockage
+
+-- ---------------------------------------------------------------------------
+-- Annonces Steam par jeu (patch notes, MAJ, actus)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw.steam_events (
+    -- identifiant du patch/annonce
+    gid                TEXT   NOT NULL, 
+    app_id             BIGINT NOT NULL,
+    payload            JSONB  NOT NULL,
+    -- Date de publication : la borne du croisement avec la courbe de reviews.
+    rtime32_start_time BIGINT,
+    loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (app_id, gid)
+);

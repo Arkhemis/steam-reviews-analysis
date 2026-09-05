@@ -1,6 +1,11 @@
-"""Client HTTP centralisé pour l'API reviews de Steam.
+"""Client HTTP centralisé pour les API Steam.
 
-Endpoint : https://store.steampowered.com/appreviews/{app_id}?json=1
+Endpoints :
+- reviews   : https://store.steampowered.com/appreviews/{app_id}
+- annonces  : https://store.steampowered.com/events/ajaxgetpartnereventspageable/
+
+Les deux tapent le même host, donc le même budget de rate limit : ils doivent
+partager cette resource, et donc son throttle.
 """
 
 import threading
@@ -11,11 +16,39 @@ import httpx
 from dagster import ConfigurableResource, InitResourceContext, get_dagster_logger
 from pydantic import PrivateAttr
 
-BASE_URL = "https://store.steampowered.com/appreviews"
+BASE_URL = "https://store.steampowered.com"
+
+
+class SteamApiError(Exception):
+    """Erreur permanente de l'API Steam (4xx hors 429, ou `success` != 1).
+
+    Elle échappe volontairement au `except` de `_get` : retenter un appid sans
+    hub d'annonces coûterait 62 s de backoff pour un échec certain.
+    """
+
+    def __init__(self, app_id: int, success: Any, err_msg: str) -> None:
+        super().__init__(f"app_id={app_id}: success={success} ({err_msg})")
+        self.app_id = app_id
+        self.success = success
+        self.err_msg = err_msg
+
+    @classmethod
+    def from_response(cls, app_id: int, resp: httpx.Response) -> "SteamApiError":
+        """Steam décrit ses refus dans le corps du 4xx : `success` 42 = pas de
+        hub d'annonces pour cet appid, 8 = paramètres incomplets."""
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        return cls(
+            app_id,
+            body.get("success", f"HTTP {resp.status_code}"),
+            body.get("err_msg", resp.reason_phrase),
+        )
 
 
 class SteamResource(ConfigurableResource):
-    """Client Steam reviews avec rate limit + retries."""
+    """Client Steam (reviews + annonces) avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
     max_retries: int = 5
@@ -41,10 +74,9 @@ class SteamResource(ConfigurableResource):
         if wait > 0:
             time.sleep(wait)
 
-    def _get(self, app_id: int, params: dict[str, Any]) -> dict[str, Any]:
-        """Requête GET avec throttle + backoff exponentiel."""
+    def _get(self, url: str, params: dict[str, Any], *, app_id: int) -> dict[str, Any]:
+        """Requête GET avec throttle + backoff exponentiel (`app_id` sert aux logs)."""
         logger = get_dagster_logger()
-        url = f"{BASE_URL}/{app_id}"
         attempt = 0
         while True:
             self._throttle()
@@ -55,6 +87,8 @@ class SteamResource(ConfigurableResource):
                     raise httpx.HTTPStatusError(
                         "429 Too Many Requests", request=resp.request, response=resp
                     )
+                if 400 <= resp.status_code < 500:
+                    raise SteamApiError.from_response(app_id, resp)
                 resp.raise_for_status()
                 return resp.json()
             except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
@@ -73,7 +107,7 @@ class SteamResource(ConfigurableResource):
     def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
         """Recensement : renvoie `query_summary` (total_reviews, review_score, ...) pour un jeu."""
         data = self._get(
-            app_id,
+            f"{BASE_URL}/appreviews/{app_id}",
             {
                 "json": 1,
                 "num_per_page": 0,
@@ -82,6 +116,7 @@ class SteamResource(ConfigurableResource):
                 "filter": "all",
                 "filter_offtopic_activity": 0,  # inclus le review bombing (aligné avec get_all_reviews)
             },
+            app_id=app_id,
         )
         return data.get("query_summary", {})
 
@@ -94,7 +129,7 @@ class SteamResource(ConfigurableResource):
     ) -> dict[str, Any]:
         """Renvoie les reviews Steam."""
         return self._get(
-            app_id,
+            f"{BASE_URL}/appreviews/{app_id}",
             {
                 "json": 1,
                 "num_per_page": num_per_page,
@@ -104,4 +139,28 @@ class SteamResource(ConfigurableResource):
                 "filter_offtopic_activity": 0,  # inclus le review bombing
                 "cursor": cursor,
             },
+            app_id=app_id,
         )
+
+    def get_events(
+        self,
+        app_id: int,
+        count: int = 100,
+        offset: int = 0,
+        language: str = "english",
+    ) -> dict[str, Any]:
+        """Renvoie une page d'annonces du jeu (patch notes, MAJ, actus)."""
+        data = self._get(
+            f"{BASE_URL}/events/ajaxgetpartnereventspageable/",
+            # Contrairement à appreviews, l'app_id est un query param.
+            {
+                "appid": app_id,
+                "offset": offset,
+                "count": count,
+                "l": language,
+            },
+            app_id=app_id,
+        )
+        if data.get("success") != 1:
+            raise SteamApiError(app_id, data.get("success"), data.get("err_msg", ""))
+        return data
