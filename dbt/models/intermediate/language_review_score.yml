@@ -4,7 +4,10 @@ models:
   - name: language_review_score
     description: >
       Volume et note (% d'avis positifs) par langue déclarée, pour chaque jeu.
-      Une ligne par (app_id, language).
+      Une ligne par (app_id, language). Lu directement par le site, qui filtre
+      sur app_id : le renommer ou le passer en ephemeral casse les fiches de
+      jeu, comme l'a fait la suppression de l'ancien mart
+      game_language_distribution.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
