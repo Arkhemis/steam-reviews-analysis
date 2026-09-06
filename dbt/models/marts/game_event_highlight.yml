@@ -4,11 +4,12 @@ models:
   - name: game_event_highlight
     description: >
       Annonces marquantes d'un jeu, prêtes à annoter la courbe de reviews :
-      une ligne par (app_id, gid), réduite aux événements news et update et
-      aux trois plus votés de chaque année. Le corps de l'annonce
-      (announcement_text) n'est pas repris : l'infobulle n'affiche que le
-      titre, les compteurs et une vignette, et le BBCode brut pèse plus que
-      tout le reste du modèle réuni.
+      une ligne par (app_id, gid), réduite aux événements news et update.
+      Chaque année d'un jeu retient les trois annonces qui ont le plus fait
+      réagir, plus jusqu'à deux annonces controversées repêchées. Le corps de
+      l'annonce (announcement_text) n'est pas repris : l'infobulle n'affiche
+      que le titre, les compteurs et une vignette, et le BBCode brut pèse plus
+      que tout le reste du modèle réuni.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -55,7 +56,7 @@ models:
           - not_null
 
       - name: votes_up
-        description: Votes positifs sur l'annonce, critère principal du classement annuel.
+        description: Votes positifs sur l'annonce.
         data_tests:
           - not_null
 
@@ -72,26 +73,44 @@ models:
 
       - name: rank_in_year
         description: >
-          Rang de l'annonce parmi celles de son jeu et de son année, de 1 au
-          plafond top_n_events_per_year (3 par défaut). Permet au site de
-          réduire encore l'affichage sans relancer dbt.
+          Rang de l'annonce parmi celles retenues pour son jeu et son année,
+          classées par volume de votes décroissant. Va de 1 au cumul des deux
+          plafonds (trois annonces discutées plus deux controverses repêchées,
+          soit 5 par défaut). Permet au site de réduire encore l'affichage
+          sans relancer dbt.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 1
-                max_value: "{{ var('top_n_events_per_year', 3) }}"
+                max_value: "{{ var('top_n_events_per_year', 3) + var('top_n_controversial_per_year', 2) }}"
 
       - name: image_url
         description: >
           Première image du corps de l'annonce, servant de vignette. NULL sur
           la moitié des annonces, qui n'en contiennent aucune.
 
+      - name: pct_negative
+        description: >
+          Part des votes négatifs sur l'annonce, de 0 à 1. Vaut 0 quand
+          personne n'a voté : l'absence de réaction n'est pas un rejet. C'est
+          le critère du repêchage des controverses et de is_well_received.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+
       - name: is_well_received
         description: >
-          Vrai quand l'annonce a recueilli au moins autant de votes positifs
-          que négatifs, ce qui est le cas de 99,7 % des annonces retenues. Le
-          site en fait la couleur du contour de l'infobulle : le rouge est
-          donc un signal rare, pas une nuance.
+          Faux quand l'annonce dépasse le seuil de controverse
+          (controversy_pct_negative, 25 % de votes négatifs par défaut) tout
+          en réunissant assez de votes pour que le ratio veuille dire quelque
+          chose (controversy_min_votes, 100 par défaut). Le site en fait la
+          couleur du contour de l'infobulle. Le seuil est volontairement plus
+          bas que la majorité absolue : à 36 % de votes négatifs, l'annonce du
+          report de Cyberpunk 2077 était un rejet, et la compter comme bien
+          reçue aurait été un contresens.
         data_tests:
           - not_null
