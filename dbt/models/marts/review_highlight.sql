@@ -1,5 +1,6 @@
 {{
     config(
+        pre_hook="SET work_mem = '1GB'; SET hash_mem_multiplier = 16",
         indexes=[
             {'columns': ['app_id'], 'type': 'btree'},
             {'columns': ['rank_in_game', 'voted_up'], 'type': 'btree'},
