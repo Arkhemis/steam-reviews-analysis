@@ -48,6 +48,7 @@ most_discussed AS (
     WHERE rk <= {{ var('top_n_events_per_year', 3) }}
 
 ),
+
 controversial AS (
 
     SELECT
