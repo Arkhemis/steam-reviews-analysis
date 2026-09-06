@@ -1,0 +1,80 @@
+version: 2
+
+models:
+  - name: steam_event_parsed
+    description: >
+      Annonces Steam prêtes à l'analyse : une ligne par (app_id, gid), toutes
+      les colonnes du staging plus la catégorie d'événement, le jour de
+      publication et les médias extraits du corps. Le corps lui-même
+      (announcement_text) reste en BBCode brut : son nettoyage viendra plus tard.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - gid
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: gid
+        description: Identifiant Steam de l'événement, cf. staging.steam_event.
+        data_tests:
+          - not_null
+
+      - name: started_on
+        description: >
+          Jour de publication de l'événement, dérivé de started_at. C'est la clé
+          de croisement avec game_review_trend_daily.review_date.
+        data_tests:
+          - not_null
+
+      - name: event_category
+        description: >
+          Famille d'annonce, regroupement des 27 codes event_type d'après un
+          sondage des titres en prod : news (53 %), update (33 %), promotion,
+          release, stream, cross_promo, in_game_event, contest, beta, expo.
+          cross_promo (event_type 34) est isolé parce que c'est de la promotion
+          croisée entre jeux d'un même éditeur, sans rapport avec le jeu porteur.
+          other ne ramène rien aujourd'hui : il n'existe que pour les codes que
+          Steam ajoutera.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - news
+                  - update
+                  - promotion
+                  - in_game_event
+                  - stream
+                  - cross_promo
+                  - release
+                  - contest
+                  - beta
+                  - expo
+                  - other
+
+      - name: image_urls
+        description: >
+          Images du corps de l'annonce, dans l'ordre d'apparition. Le placeholder
+          {STEAM_CLAN_IMAGE} est résolu vers la racine du CDN des groupes Steam.
+          Tableau vide si l'annonce n'en contient pas (la moitié des cas).
+        data_tests:
+          - not_null
+
+      - name: link_urls
+        description: >
+          Liens [url=...] du corps, dans l'ordre d'apparition. Tableau vide si
+          l'annonce n'en contient pas.
+        data_tests:
+          - not_null
+
+      - name: youtube_ids
+        description: >
+          Identifiants des vidéos [previewyoutube] du corps. Tableau vide si
+          l'annonce n'en contient pas (la grande majorité).
+        data_tests:
+          - not_null
