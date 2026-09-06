@@ -21,6 +21,14 @@ SELECT
     TO_TIMESTAMP((payload -> 'announcement_body' ->> 'updatetime')::bigint) AS updated_at,
     TO_TIMESTAMP((payload ->> 'rtime32_last_modified')::bigint) AS last_modified_at,
 
+    -- Steam met 0 pour « absent » sur ces cinq champs, d'un tiers des annonces
+    -- (end_time) à la quasi-totalité (visibility_end).
+    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_end_time')::bigint, 0)) AS ended_at,
+    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_visibility_start')::bigint, 0)) AS visible_from,
+    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_visibility_end')::bigint, 0)) AS visible_until,
+    TO_TIMESTAMP(NULLIF((payload ->> 'rtime_created')::bigint, 0)) AS created_at,
+    TO_TIMESTAMP(NULLIF((payload ->> 'rtime_mod_reviewed')::bigint, 0)) AS mod_reviewed_at,
+
     (payload -> 'announcement_body' ->> 'voteupcount')::int AS votes_up,
     (payload -> 'announcement_body' ->> 'votedowncount')::int AS votes_down,
     (payload -> 'announcement_body' ->> 'commentcount')::int AS comment_count,

@@ -75,6 +75,29 @@ models:
       - name: last_modified_at
         description: Date de dernière modification de l'événement.
 
+      - name: ended_at
+        description: >
+          Date de fin de l'événement, NULL quand Steam n'en donne pas (un tiers
+          des annonces) : une actu ponctuelle n'a pas de fin, une promo si.
+
+      - name: visible_from
+        description: >
+          Début de la fenêtre d'affichage de l'annonce, NULL sur la moitié des
+          annonces. Distinct de started_at, qui est la date de l'événement.
+
+      - name: visible_until
+        description: >
+          Fin de la fenêtre d'affichage, NULL sur la quasi-totalité des annonces.
+
+      - name: created_at
+        description: >
+          Date de création de l'entrée côté Steam. Renseignée seulement depuis
+          2026, NULL sur l'historique.
+
+      - name: mod_reviewed_at
+        description: >
+          Date de passage en modération Steam, NULL sur un tiers des annonces.
+
       - name: votes_up
         description: Votes positifs sur l'annonce.
 
