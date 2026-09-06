@@ -1,0 +1,97 @@
+version: 2
+
+models:
+  - name: game_event_highlight
+    description: >
+      Annonces marquantes d'un jeu, prêtes à annoter la courbe de reviews :
+      une ligne par (app_id, gid), réduite aux événements news et update et
+      aux trois plus votés de chaque année. Le corps de l'annonce
+      (announcement_text) n'est pas repris : l'infobulle n'affiche que le
+      titre, les compteurs et une vignette, et le BBCode brut pèse plus que
+      tout le reste du modèle réuni.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - gid
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: gid
+        description: Identifiant Steam de l'événement, cf. staging.steam_event.
+        data_tests:
+          - not_null
+
+      - name: started_on
+        description: >
+          Jour de publication de l'événement. C'est la clé de croisement avec
+          game_review_trend_daily.review_date, et l'abscisse de la barre
+          verticale tracée sur la courbe.
+        data_tests:
+          - not_null
+
+      - name: event_category
+        description: >
+          Famille d'annonce, restreinte ici aux deux seules qui expliquent un
+          mouvement du score : update (le patch) et news (l'actu). Les autres
+          catégories de steam_event_categorized (promotion, stream, contest…)
+          sont écartées, elles annoncent un événement commercial, pas une
+          modification du jeu.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - news
+                  - update
+
+      - name: headline
+        description: Titre de l'annonce, affiché tel quel dans l'infobulle.
+        data_tests:
+          - not_null
+
+      - name: votes_up
+        description: Votes positifs sur l'annonce, critère principal du classement annuel.
+        data_tests:
+          - not_null
+
+      - name: votes_down
+        description: Votes négatifs sur l'annonce.
+        data_tests:
+          - not_null
+
+      - name: comment_count
+        description: >
+          Nombre de commentaires sur l'annonce, départage les ex æquo en votes.
+        data_tests:
+          - not_null
+
+      - name: rank_in_year
+        description: >
+          Rang de l'annonce parmi celles de son jeu et de son année, de 1 au
+          plafond top_n_events_per_year (3 par défaut). Permet au site de
+          réduire encore l'affichage sans relancer dbt.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: "{{ var('top_n_events_per_year', 3) }}"
+
+      - name: image_url
+        description: >
+          Première image du corps de l'annonce, servant de vignette. NULL sur
+          la moitié des annonces, qui n'en contiennent aucune.
+
+      - name: is_well_received
+        description: >
+          Vrai quand l'annonce a recueilli au moins autant de votes positifs
+          que négatifs, ce qui est le cas de 99,7 % des annonces retenues. Le
+          site en fait la couleur du contour de l'infobulle : le rouge est
+          donc un signal rare, pas une nuance.
+        data_tests:
+          - not_null
