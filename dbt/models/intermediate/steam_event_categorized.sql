@@ -1,11 +1,8 @@
--- Le corps de l'annonce reste en BBCode brut : son nettoyage viendra plus tard.
--- Seuls les médias qu'il contient sont extraits ici.
 SELECT
-    e.*,
-    DATE(e.started_at) AS started_on,
 
-    -- Les 27 codes event_type de Steam, regroupés d'après un sondage des
-    -- titres en prod. 28 et 12/13/14 pèsent 86 % à eux seuls.
+    e.app_id,
+    e.gid,
+    DATE(e.started_at) AS started_on,
     CASE
         WHEN e.event_type IN (28, 1) THEN 'news'
         WHEN e.event_type IN (12, 13, 14) THEN 'update'
@@ -19,9 +16,13 @@ SELECT
         WHEN e.event_type = 27 THEN 'expo'
         ELSE 'other'
     END AS event_category,
+    e.headline,
+    e.announcement_text,
+    e.votes_up,
+    e.votes_down,
+    e.comment_count,
 
-    -- Steam substitue {STEAM_CLAN_IMAGE} par la racine du CDN des groupes ;
-    -- le chemin qui suit porte déjà le clanid.
+    -- Steam substitue {STEAM_CLAN_IMAGE} par la racine du CDN de ses groupes.
     ARRAY(
         SELECT
             REPLACE(
@@ -30,17 +31,6 @@ SELECT
                 'https://clan.cloudflare.steamstatic.com/images'
             )
         FROM REGEXP_MATCHES(e.announcement_text, '\[img\]([^\[]+?)\[/img\]', 'g') AS img (parts)
-    ) AS image_urls,
-
-    -- Les [url=...] sont tantôt nus, tantôt entre guillemets.
-    ARRAY(
-        SELECT link.parts[1]
-        FROM REGEXP_MATCHES(e.announcement_text, '\[url="?([^"\]]+?)"?\]', 'g') AS link (parts)
-    ) AS link_urls,
-
-    ARRAY(
-        SELECT video.parts[1]
-        FROM REGEXP_MATCHES(e.announcement_text, '\[previewyoutube=([^;\]]+)', 'g') AS video (parts)
-    ) AS youtube_ids
+    ) AS image_urls
 
 FROM {{ ref('steam_event') }} AS e

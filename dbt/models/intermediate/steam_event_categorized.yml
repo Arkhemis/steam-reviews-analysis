@@ -1,12 +1,12 @@
 version: 2
 
 models:
-  - name: steam_event_parsed
+  - name: steam_event_categorized
     description: >
-      Annonces Steam prêtes à l'analyse : une ligne par (app_id, gid), toutes
-      les colonnes du staging plus la catégorie d'événement, le jour de
-      publication et les médias extraits du corps. Le corps lui-même
-      (announcement_text) reste en BBCode brut : son nettoyage viendra plus tard.
+      Annonces Steam prêtes à l'analyse : une ligne par (app_id, gid), réduite
+      aux colonnes utiles au croisement avec la courbe de reviews. Le corps
+      (announcement_text) reste en BBCode brut ; seules les images en sont
+      extraites.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -57,24 +57,26 @@ models:
                   - expo
                   - other
 
+      - name: headline
+        description: Titre de l'annonce.
+
+      - name: announcement_text
+        description: >
+          Corps de l'annonce, en BBCode brut. Son nettoyage n'est pas encore fait.
+
+      - name: votes_up
+        description: Votes positifs sur l'annonce.
+
+      - name: votes_down
+        description: Votes négatifs sur l'annonce.
+
+      - name: comment_count
+        description: Nombre de commentaires sur l'annonce.
+
       - name: image_urls
         description: >
           Images du corps de l'annonce, dans l'ordre d'apparition. Le placeholder
           {STEAM_CLAN_IMAGE} est résolu vers la racine du CDN des groupes Steam.
           Tableau vide si l'annonce n'en contient pas (la moitié des cas).
-        data_tests:
-          - not_null
-
-      - name: link_urls
-        description: >
-          Liens [url=...] du corps, dans l'ordre d'apparition. Tableau vide si
-          l'annonce n'en contient pas.
-        data_tests:
-          - not_null
-
-      - name: youtube_ids
-        description: >
-          Identifiants des vidéos [previewyoutube] du corps. Tableau vide si
-          l'annonce n'en contient pas (la grande majorité).
         data_tests:
           - not_null
