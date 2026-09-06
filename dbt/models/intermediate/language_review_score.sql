@@ -1,3 +1,13 @@
+{{
+    config(
+        indexes=[
+            {'columns': ['app_id'], 'type': 'btree'},
+        ]
+    )
+}}
+
+-- Le site lit ce modèle directement, une fiche de jeu à la fois : sans index sur
+-- app_id, chaque affichage parcourt le million de lignes de la table.
 WITH by_language AS (
 
     SELECT
