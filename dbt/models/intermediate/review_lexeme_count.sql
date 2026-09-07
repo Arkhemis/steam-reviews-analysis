@@ -1,6 +1,6 @@
 {{
     config(
-        pre_hook="SET work_mem = '512MB'; SET hash_mem_multiplier = 4; SET max_parallel_workers_per_gather = 0",
+        pre_hook="SET work_mem = '1GB'; SET hash_mem_multiplier = 8; SET max_parallel_workers_per_gather = 0",
         indexes=[
             {'columns': ['app_id', 'voted_up'], 'type': 'btree'},
             {'columns': ['lexeme'], 'type': 'btree'},
@@ -13,18 +13,7 @@ WITH eligible AS (
     SELECT
         recommendation_id,
         app_id,
-        voted_up,
-        review_text,
-
-        COUNT(*) OVER (PARTITION BY app_id, voted_up) AS reviews_in_cell,
-
-        -- recommendation_id croît avec le temps : trier dessus ne
-        -- retiendrait que les reviews de lancement.
-        ROW_NUMBER() OVER (
-            PARTITION BY app_id, voted_up
-            ORDER BY MD5(recommendation_id::text)
-        ) AS rank_in_cell
-
+        voted_up
     FROM {{ ref('steam_review') }}
     WHERE
         -- Deux réglages distincts : Steam dit « koreana » ou « brazilian »
@@ -36,19 +25,54 @@ WITH eligible AS (
 
 ),
 
-sampled AS (
+ranked AS (
+
+    -- Classer sur les seuls identifiants : porter review_text ici ferait
+    -- trier une quinzaine de Go sur disque.
+    SELECT
+        recommendation_id,
+        app_id,
+        voted_up,
+        COUNT(*) OVER (PARTITION BY app_id, voted_up) AS reviews_in_cell,
+
+        -- recommendation_id croît avec le temps : trier dessus ne
+        -- retiendrait que les reviews de lancement.
+        ROW_NUMBER() OVER (
+            PARTITION BY app_id, voted_up
+            ORDER BY MD5(recommendation_id::text)
+        ) AS rank_in_cell
+
+    FROM eligible
+
+),
+
+selected AS (
 
     -- Le plafond par cellule fait passer la tokenisation de 49,6 M de
     -- reviews à moins de 6 M, sans perte utile pour un log-odds.
-    SELECT DISTINCT ON (app_id, voted_up, MD5(review_text))
+    SELECT
+        recommendation_id,
         app_id,
-        voted_up,
-        review_text
-    FROM eligible
+        voted_up
+    FROM ranked
     WHERE
         reviews_in_cell >= {{ var('min_reviews_per_cell', 50) }}
         AND rank_in_cell <= {{ var('max_reviews_per_cell', 300) }}
-    ORDER BY app_id, voted_up, MD5(review_text), recommendation_id
+
+),
+
+sampled AS (
+
+    SELECT DISTINCT ON (s.app_id, s.voted_up, MD5(r.review_text))
+        s.app_id,
+        s.voted_up,
+        r.review_text
+    FROM selected AS s
+    INNER JOIN {{ ref('steam_review') }} AS r
+        ON
+            r.recommendation_id = s.recommendation_id
+            AND r.app_id = s.app_id
+    ORDER BY s.app_id, s.voted_up, MD5(r.review_text), s.recommendation_id
 
 ),
 
