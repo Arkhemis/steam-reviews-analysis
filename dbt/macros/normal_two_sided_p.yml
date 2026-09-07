@@ -1,0 +1,17 @@
+version: 2
+
+macros:
+  - name: normal_two_sided_p
+    description: |
+      p-value bilatérale d'un score z, sous l'hypothèse normale.
+
+      PostgreSQL 16 n'a pas de fonction d'erreur (`erf` n'arrive qu'en
+      PostgreSQL 18) : la macro développe l'approximation d'Abramowitz &
+      Stegun 26.2.17, vérifiée à moins de 1,4e-7 d'erreur absolue contre erfc.
+
+      L'argument est répété six fois dans l'expression produite : lui passer
+      une colonne, jamais un sous-calcul coûteux.
+    arguments:
+      - name: z
+        type: numeric
+        description: Score z à convertir, de signe quelconque.

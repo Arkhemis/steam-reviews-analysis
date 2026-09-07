@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: game_distinctive_term
+    description: >
+      Termes qui distinguent un jeu du reste du corpus, séparément pour ses
+      reviews positives et négatives, au plus top_n_distinctive_terms par
+      cellule. Un nuage de mots par fréquence brute afficherait « game »,
+      « good », « play » pour tous les jeux ; celui-ci ne garde que l'anormal.
+
+      Méthode : log-odds ratio à prior de Dirichlet informatif (Monroe,
+      Colaresi & Quinn 2008), référence = le reste du corpus de la même
+      polarité.
+
+      À lire avec la bonne échelle : sur des cellules de plusieurs milliers de
+      tokens, presque tout terme spécifique dépasse z = 1,96. Le seuil et le
+      FDR coupent la queue des termes trop peu vus ; la sélection réelle, c'est
+      le tri par z et le plafond de rang.
+
+      La statistique se valide ailleurs : sur deux moitiés aléatoires du même
+      jeu, aucun terme ne doit être retenu. Cf. l'analysis
+      distinctive_term_negative_control, à relancer à chaque révision des
+      seuils.
+
+      Attendu connu : noms de personnages et de lieux dominent les premiers
+      rangs. C'est correct, mais peu actionnable.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - voted_up
+              - lexeme
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam.
+        data_tests:
+          - not_null
+
+      - name: voted_up
+        description: Polarité du nuage.
+        data_tests:
+          - not_null
+
+      - name: lexeme
+        description: >
+          Lexème racinisé, cf. review_lexeme_count.lexeme. L'affichage doit le
+          remonter vers une forme de surface, ou l'assumer tronqué.
+        data_tests:
+          - not_null
+
+      - name: occurrences
+        description: Occurrences du terme dans la cellule.
+        data_tests:
+          - not_null
+
+      - name: reviews
+        description: Reviews distinctes de la cellule contenant le terme.
+        data_tests:
+          - not_null
+
+      - name: log_odds_delta
+        description: >
+          Écart de log-odds entre la cellule et le reste du corpus de sa
+          polarité, prior compris. C'est l'effet ; le z n'en est que la
+          précision.
+        data_tests:
+          - not_null
+
+      - name: z_score
+        description: >
+          log_odds_delta rapporté à son écart-type. Critère de tri, pas mesure
+          d'intérêt : il croît mécaniquement avec la taille de la cellule.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: "{{ var('min_z_score', 1.96) }}"
+
+      - name: p_value
+        description: >
+          p-value bilatérale (macro normal_two_sided_p), conservée pour l'audit
+          du FDR. Vaut zéro en double précision dès |z| > 38.
+        data_tests:
+          - not_null
+
+      - name: rank_in_game
+        description: >
+          Rang dans la cellule, par z décroissant. Permet au site de réduire le
+          nuage sans relancer dbt.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: "{{ var('top_n_distinctive_terms', 30) }}"
