@@ -52,7 +52,7 @@ models:
 
       - name: reviews
         description: >
-          Reviews distinctes contenant le lexème. Garde-fou contre le rédacteur
-          unique qui répète vingt fois le même mot.
+          Textes de reviews distincts conservés dans l'échantillon et contenant
+          le lexème. Les doublons exacts sont retirés avant ce comptage.
         data_tests:
           - not_null
