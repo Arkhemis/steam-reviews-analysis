@@ -6,6 +6,7 @@ from typing import Any, NamedTuple
 
 from dagster import (
     AssetExecutionContext,
+    Config,
     MaterializeResult,
     MetadataValue,
     asset,
@@ -25,11 +26,17 @@ MIN_TOTAL_REVIEWS = 100
 # `success = 42` : Steam n'a pas su résoudre le groupe officiel de cet appid.
 NO_ANNOUNCEMENT_HUB = 42
 
-SELECT_APP_IDS_SQL = """
-SELECT app_id
-FROM raw.steam_review_counts
-WHERE total_reviews >= %s
-ORDER BY total_reviews DESC;
+# has_events distingue les jeux déjà ingérés, qui n'ont plus besoin que de leur
+# page récente, de ceux dont l'historique reste à charger.
+SELECT_APPS_SQL = """
+SELECT
+    c.app_id,
+    EXISTS (
+        SELECT 1 FROM raw.steam_events AS e WHERE e.app_id = c.app_id
+    ) AS has_events
+FROM raw.steam_review_counts AS c
+WHERE c.total_reviews >= %s
+ORDER BY c.total_reviews DESC;
 """
 
 
@@ -45,6 +52,12 @@ SET payload            = EXCLUDED.payload,
 """
 
 
+class SteamEventsConfig(Config):
+    """Exposé dans le Launchpad : rescanne l'historique complet de tous les jeux."""
+
+    full_refresh: bool = False
+
+
 class AppEvents(NamedTuple):
     """Annonces d'un jeu, ou la raison de leur absence."""
 
@@ -57,19 +70,27 @@ class AppEvents(NamedTuple):
 @asset(
     group_name="ingest",
     deps=["steam_review_counts"],
-    description="Annonces Steam (patch notes, MAJ, actus) des jeux au-dessus du seuil",
+    description=(
+        "Annonces Steam (patch notes, MAJ, actus) des jeux au-dessus du seuil. "
+        "Page récente seule pour les jeux déjà ingérés, sauf full_refresh."
+    ),
 )
 def steam_events(
     context: AssetExecutionContext,
+    config: SteamEventsConfig,
     steam: SteamResource,
     postgres: PostgresResource,
 ) -> MaterializeResult:
-    rows = postgres.fetch_all(SELECT_APP_IDS_SQL, (MIN_TOTAL_REVIEWS,))
-    app_ids = [row["app_id"] for row in rows]
-    total = len(app_ids)
+    apps = [
+        (row["app_id"], config.full_refresh or not row["has_events"])
+        for row in postgres.fetch_all(SELECT_APPS_SQL, (MIN_TOTAL_REVIEWS,))
+    ]
+    total = len(apps)
+    full_history = sum(1 for _, whole in apps if whole)
     context.log.info(
         f"Annonces de {total} jeux (>= {MIN_TOTAL_REVIEWS} reviews, "
-        f"{EVENTS_WORKERS} workers, lots de {EVENTS_BATCH_SIZE})"
+        f"{full_history} en historique complet, {EVENTS_WORKERS} workers, "
+        f"lots de {EVENTS_BATCH_SIZE})"
     )
 
     scanned = 0
@@ -83,10 +104,8 @@ def steam_events(
         ThreadPoolExecutor(max_workers=EVENTS_WORKERS) as pool,
     ):
         for batch_start in range(0, total, EVENTS_BATCH_SIZE):
-            batch = app_ids[batch_start : batch_start + EVENTS_BATCH_SIZE]
-            results = list(
-                pool.map(lambda app_id: fetch_app_events(steam, app_id), batch)
-            )
+            batch = apps[batch_start : batch_start + EVENTS_BATCH_SIZE]
+            results = list(pool.map(lambda app: fetch_app_events(steam, *app), batch))
 
             batch_rows = [
                 event_to_row(result.app_id, event)
@@ -121,15 +140,19 @@ def steam_events(
     return MaterializeResult(
         metadata={
             "apps_scanned": MetadataValue.int(scanned),
+            "apps_full_history": MetadataValue.int(full_history),
             "events_upserted": MetadataValue.int(events_upserted),
             "apps_without_hub": MetadataValue.int(apps_without_hub),
             "apps_failed": MetadataValue.int(apps_failed),
+            "full_refresh": MetadataValue.bool(config.full_refresh),
         }
     )
 
 
-def iter_app_events(steam: SteamResource, app_id: int) -> Iterator[dict[str, Any]]:
-    """Pagine les annonces d'un jeu."""
+def iter_app_events(
+    steam: SteamResource, app_id: int, whole_history: bool
+) -> Iterator[dict[str, Any]]:
+    """Pagine les annonces d'un jeu, ou n'en prend que la page la plus récente."""
     offset = 0
     while True:
         page = steam.get_events(app_id, count=EVENTS_PAGE_SIZE, offset=offset)
@@ -137,14 +160,20 @@ def iter_app_events(steam: SteamResource, app_id: int) -> Iterator[dict[str, Any
         if not events:
             return
         yield from events
+        # Steam trie par rtime32_start_time décroissant : la première page suffit
+        # à rattraper un jeu déjà ingéré, aucun n'annonce 100 fois par jour.
+        if not whole_history:
+            return
         offset += len(events)
 
 
-def fetch_app_events(steam: SteamResource, app_id: int) -> AppEvents:
-    """Récupère toutes les annonces d'un jeu sans jamais faire tomber le run."""
+def fetch_app_events(
+    steam: SteamResource, app_id: int, whole_history: bool
+) -> AppEvents:
+    """Récupère les annonces d'un jeu sans jamais faire tomber le run."""
     logger = get_dagster_logger()
     try:
-        return AppEvents(app_id, list(iter_app_events(steam, app_id)))
+        return AppEvents(app_id, list(iter_app_events(steam, app_id, whole_history)))
     except SteamApiError as exc:
         if exc.success == NO_ANNOUNCEMENT_HUB:
             return AppEvents(app_id, [], missing_hub=True)
