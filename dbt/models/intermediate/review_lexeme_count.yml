@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: review_lexeme_count
+    description: >
+      Comptage de lexèmes par jeu et par polarité, sur un échantillon plafonné
+      des reviews éligibles. Unique passe de tokenisation du chantier NLP.
+
+      Le filtre d'éligibilité reprend celui de review_highlight et laisse
+      49,6 M de reviews anglaises ; le plafond par cellule ramène ça sous 6 M.
+      L'échantillon est tiré dans l'ordre de MD5(recommendation_id), ce qui le
+      rend stable d'un build à l'autre.
+
+      Deux limites. Les comptages sont coupés sous min_lexeme_occurrences et
+      les totaux du corpus calculés en aval héritent de cette coupe : le biais
+      se compense presque entre les deux termes du log-odds, et gonfle de
+      quelques pour cent les termes rares mais dispersés. Surtout, seuls les
+      doublons exacts sont écartés : les copypastas retouchés comptent encore
+      plein pot, c'est l'objet du chantier C0 de la spec.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - voted_up
+              - lexeme
+    columns:
+      - name: app_id
+        description: Identifiant de l'application Steam.
+        data_tests:
+          - not_null
+
+      - name: voted_up
+        description: >
+          Polarité de la cellule. Chaque polarité se confronte au corpus de sa
+          propre polarité, jamais à l'autre.
+        data_tests:
+          - not_null
+
+      - name: lexeme
+        description: >
+          Lexème to_tsvector : minusculé, racinisé, mots vides retirés. Forme
+          tronquée (« everi » pour « every »), donc pas affichable telle quelle.
+        data_tests:
+          - not_null
+
+      - name: occurrences
+        description: >
+          Occurrences du lexème dans la cellule, répétitions comprises.
+        data_tests:
+          - not_null
+
+      - name: reviews
+        description: >
+          Textes de reviews distincts conservés dans l'échantillon et contenant
+          le lexème. Les doublons exacts sont retirés avant ce comptage.
+        data_tests:
+          - not_null
