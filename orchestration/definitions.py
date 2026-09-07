@@ -7,6 +7,7 @@ from orchestration.igdb.resources import IGDBResource
 from orchestration.jobs import daily_pipeline_job
 from orchestration.postgres import PostgresResource
 from orchestration.project import dbt_steam_reviews_project
+from orchestration.schedules import daily_pipeline_schedule
 from orchestration.steam import definitions as steam
 from orchestration.steam.resources import SteamResource
 
@@ -18,6 +19,7 @@ defs = Definitions.merge(
     Definitions(
         # Job transverse : il ne peut vivre dans aucun domaine puisqu'il les couvre tous.
         jobs=[daily_pipeline_job],
+        schedules=[daily_pipeline_schedule],
         resources={
             "postgres": PostgresResource(
                 host=EnvVar("POSTGRES_HOST").get_value(),
