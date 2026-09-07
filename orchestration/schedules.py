@@ -8,6 +8,9 @@ daily_pipeline_schedule = ScheduleDefinition(
     name="daily_pipeline_schedule",
     job=daily_pipeline_job,
     cron_schedule="0 0 * * *",
+    # Minuit heure de Paris, pas UTC : la journée de données correspond
+    # à celle des lecteurs du site.
+    execution_timezone="Europe/Paris",
     # Actif dès le déploiement : la chaîne complète doit tourner sans passer
     # par une activation manuelle dans l'UI.
     default_status=DefaultScheduleStatus.RUNNING,
