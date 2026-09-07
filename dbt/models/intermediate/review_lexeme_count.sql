@@ -1,5 +1,6 @@
 {{
     config(
+        tags=['nlp'],
         pre_hook="SET work_mem = '1GB'; SET hash_mem_multiplier = 8; SET max_parallel_workers_per_gather = 0",
         indexes=[
             {'columns': ['app_id', 'voted_up'], 'type': 'btree'},

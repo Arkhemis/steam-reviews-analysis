@@ -1,6 +1,10 @@
+-- join_collapse_limit : sans lui le planificateur joint corpus_term et
+-- cell_size sur voted_up seul, soit 1,7 milliard de lignes à trier.
 {{
     config(
-        pre_hook="SET work_mem = '512MB'; SET hash_mem_multiplier = 4",
+        tags=['nlp'],
+        pre_hook="SET work_mem = '512MB'; SET hash_mem_multiplier = 4;"
+        " SET enable_mergejoin = off; SET join_collapse_limit = 1",
         indexes=[
             {'columns': ['app_id', 'voted_up', 'rank_in_game'], 'type': 'btree'},
         ]
@@ -101,8 +105,9 @@ log_odds AS (
 
 ),
 
-scored AS (
+scored AS MATERIALIZED (
 
+    -- Matérialiser : sinon la macro p-value réexpanse ce calcul six fois.
     SELECT
         *,
         delta / delta_stderr AS z_score
@@ -123,8 +128,10 @@ ranked AS (
 
     SELECT
         *,
+        -- p décroît strictement avec |z| : même classement, sans porter
+        -- le polynôme entier en clé de tri.
         ROW_NUMBER() OVER (
-            PARTITION BY app_id, voted_up ORDER BY p_value ASC, lexeme ASC
+            PARTITION BY app_id, voted_up ORDER BY ABS(z_score) DESC, lexeme ASC
         ) AS p_rank,
         COUNT(*) OVER (PARTITION BY app_id, voted_up) AS tested
     FROM with_p
