@@ -13,6 +13,8 @@ from dagster import (
     get_dagster_logger,
 )
 
+import psycopg
+
 from orchestration.postgres import PostgresResource
 from orchestration.steam.resources import SteamApiError, SteamResource
 
@@ -37,6 +39,14 @@ SELECT
 FROM raw.steam_review_counts AS c
 WHERE c.total_reviews >= %s
 ORDER BY c.total_reviews DESC;
+"""
+
+
+KNOWN_EVENT_SQL = """
+SELECT 1
+FROM raw.steam_events
+WHERE app_id = %s AND gid = ANY(%s)
+LIMIT 1
 """
 
 
@@ -105,7 +115,9 @@ def steam_events(
     ):
         for batch_start in range(0, total, EVENTS_BATCH_SIZE):
             batch = apps[batch_start : batch_start + EVENTS_BATCH_SIZE]
-            results = list(pool.map(lambda app: fetch_app_events(steam, *app), batch))
+            results = list(
+                pool.map(lambda app: fetch_app_events(steam, postgres, *app), batch)
+            )
 
             batch_rows = [
                 event_to_row(result.app_id, event)
@@ -149,10 +161,23 @@ def steam_events(
     )
 
 
+def has_known_event(
+    conn: psycopg.Connection, app_id: int, events: list[dict[str, Any]]
+) -> bool:
+    """Dit si l'une des annonces de la page est déjà en base."""
+    gids = [event_gid(event) for event in events]
+    with conn.cursor() as cur:
+        cur.execute(KNOWN_EVENT_SQL, (app_id, gids))
+        return cur.fetchone() is not None
+
+
 def iter_app_events(
-    steam: SteamResource, app_id: int, whole_history: bool
+    steam: SteamResource,
+    conn: psycopg.Connection,
+    app_id: int,
+    whole_history: bool,
 ) -> Iterator[dict[str, Any]]:
-    """Pagine les annonces d'un jeu, ou n'en prend que la page la plus récente."""
+    """Pagine les annonces d'un jeu jusqu'à retomber sur une annonce déjà connue."""
     offset = 0
     while True:
         page = steam.get_events(app_id, count=EVENTS_PAGE_SIZE, offset=offset)
@@ -160,20 +185,26 @@ def iter_app_events(
         if not events:
             return
         yield from events
-        # Steam trie par rtime32_start_time décroissant : la première page suffit
-        # à rattraper un jeu déjà ingéré, aucun n'annonce 100 fois par jour.
-        if not whole_history:
+        # Steam trie par rtime32_start_time décroissant : un gid déjà en base
+        # signifie que le retard est rattrapé, quel qu'il soit.
+        if not whole_history and has_known_event(conn, app_id, events):
             return
         offset += len(events)
 
 
 def fetch_app_events(
-    steam: SteamResource, app_id: int, whole_history: bool
+    steam: SteamResource,
+    postgres: PostgresResource,
+    app_id: int,
+    whole_history: bool,
 ) -> AppEvents:
     """Récupère les annonces d'un jeu sans jamais faire tomber le run."""
     logger = get_dagster_logger()
     try:
-        return AppEvents(app_id, list(iter_app_events(steam, app_id, whole_history)))
+        with postgres.connect() as conn:
+            return AppEvents(
+                app_id, list(iter_app_events(steam, conn, app_id, whole_history))
+            )
     except SteamApiError as exc:
         if exc.success == NO_ANNOUNCEMENT_HUB:
             return AppEvents(app_id, [], missing_hub=True)
@@ -184,16 +215,19 @@ def fetch_app_events(
         return AppEvents(app_id, [], failed=True)
 
 
-def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
-    """Ligne à upserter pour une annonce."""
-    # Steam laisse gid à 0 sur certaines annonces : le gid du post prend le relais,
-    # sinon elles s'écrasent entre elles sur la PK (app_id, gid).
+def event_gid(event: dict[str, Any]) -> str:
+    """Clé de l'annonce : le gid du post relaie celui de l'événement quand Steam
+    le laisse à 0, sinon elles s'écrasent entre elles sur la PK (app_id, gid)."""
     gid = str(event["gid"])
     if gid == "0":
-        gid = str(event.get("announcement_body", {}).get("gid") or gid)
+        return str(event.get("announcement_body", {}).get("gid") or gid)
+    return gid
 
+
+def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
+    """Ligne à upserter pour une annonce."""
     return (
-        gid,
+        event_gid(event),
         app_id,
         json.dumps(event),
         event.get("rtime32_start_time"),
