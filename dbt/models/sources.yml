@@ -60,9 +60,16 @@ sources:
           - name: review_score_desc
             description: Libellé du score de review.
           - name: checked_at
-            description: Horodatage du dernier recensement.
+            description: Horodatage de la dernière sonde de ce jeu.
           - name: prev_total_reviews
-            description: Nombre total de reviews au recensement précédent.
+            description: >
+              Nombre total de reviews à la sonde précédente de ce jeu. Les jeux
+              n'étant plus sondés à la même fréquence, deux jeux ne sont pas
+              comparables sur cette colonne.
+          - name: last_change_at
+            description: >
+              Horodatage de la dernière sonde où total_reviews a bougé ; pilote
+              la fréquence de recensement du jeu.
           - name: last_backfill_at
             description: Horodatage du dernier backfill complet pour ce jeu.
           - name: total_reviews_backfilled

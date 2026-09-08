@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     review_score_desc  TEXT,
     checked_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     prev_total_reviews BIGINT,
+    -- Dernière sonde où total_reviews a bougé : pilote la fréquence de recensement.
+    last_change_at     TIMESTAMPTZ,
     last_backfill_at   TIMESTAMPTZ,
     last_seen_timestamp_updated BIGINT
 );
@@ -43,6 +45,16 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
 -- démarrage sur un volume vide, cf. docker-entrypoint-initdb.d).
 ALTER TABLE raw.steam_review_counts
     ADD COLUMN IF NOT EXISTS total_reviews_backfilled BIGINT;
+
+ALTER TABLE raw.steam_review_counts
+    ADD COLUMN IF NOT EXISTS last_change_at TIMESTAMPTZ;
+
+-- Amorce last_change_at avec les jeux dont le compteur a bougé à la dernière
+-- sonde : sans elle, tous les jeux démarrent dans le palier le plus lent.
+UPDATE raw.steam_review_counts
+SET last_change_at = checked_at
+WHERE last_change_at IS NULL
+  AND total_reviews IS DISTINCT FROM prev_total_reviews;
 
 
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
