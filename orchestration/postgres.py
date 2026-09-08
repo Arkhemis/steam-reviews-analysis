@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -37,7 +37,7 @@ class PostgresResource(ConfigurableResource):
             conn.close()
 
     def fetch_all(
-        self, query: str, params: tuple[Any, ...] | None = None
+        self, query: str, params: Sequence[Any] | Mapping[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             cur = conn.execute(query, params)
