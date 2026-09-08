@@ -35,7 +35,7 @@ flowchart LR
 ```
 
 1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`), keeps only games linked to a `steam_app_id`, and upserts them into `raw.igdb_games`.
-2. **`steam_review_counts`** — for each game, fetches the Steam summary (`query_summary`: total reviews, score...).
+2. **`steam_review_counts`** — fetches the Steam summary (`query_summary`: total reviews, score...) of every game that is due: nightly for the games whose counters keep moving, once a week for the quiet long tail.
 3. **`steam_reviews_backfill`** — paginates the Steam API (`appreviews`) and loads the full payload of every review into `raw.steam_reviews`, upserting a row only if the review is more recent.
 4. **dbt (staging)** — `stg_steam_review` flattens and types the raw review JSON (casts, renaming, etc.).
 5. **dbt (marts)** — in progress.
