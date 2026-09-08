@@ -16,13 +16,12 @@ from orchestration.steam.resources import SteamResource
 CENSUS_WORKERS = 8
 CENSUS_BATCH_SIZE = 200
 
-# Sondé chaque nuit même à compteur figé : une reprise d'activité ne doit pas
-# attendre son tour sur un gros jeu.
+# Au-dessus de ce seuil, sondé chaque nuit même sans mouvement la veille :
+# sinon un solde ou un review bombing resterait invisible jusqu'au jour de la
+# semaine du jeu.
 CENSUS_HOT_TOTAL_REVIEWS = 1000
 
-# On ne recense que les jeux liés à Steam, et seulement ceux qui sont dus :
-# demander 173 000 fois par nuit à Steam « du neuf ? » coûte 5 h de run
-# (throttle global ~10 req/s) pour 10 000 compteurs qui bougent.
+
 DUE_APP_IDS_SQL = """
 WITH steam_apps AS (
     SELECT DISTINCT steam_app_id AS app_id
