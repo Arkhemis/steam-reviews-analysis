@@ -135,3 +135,44 @@ def test_sync_hands_the_census_total_to_the_paginator(slept: list[float]) -> Non
     assert result.reached_checkpoint
     assert len(conn.inserted) == 86
     assert slept == []
+
+
+class FakeSteamTerminalPage:
+    """Sert la même page non vide sans curseur : la réponse est finale d'emblée."""
+
+    def __init__(self, reviews: list[dict[str, Any]]) -> None:
+        self.reviews = reviews
+        self.calls: list[str] = []
+
+    def get_all_reviews(self, app_id: int, *, cursor: str, language: str) -> dict:
+        self.calls.append(cursor)
+        return {"reviews": self.reviews, "cursor": None}
+
+
+def test_stops_on_a_terminal_page_that_still_carries_reviews(
+    slept: list[float],
+) -> None:
+    """Une dernière page sans curseur doit compter, et servir ses reviews."""
+    steam = FakeSteamTerminalPage(reviews(86))
+    pages = NewReviewPages(
+        steam, app_id=3544130, last_seen_timestamp_updated=0, total_reviews=86
+    )
+
+    served = [review for page in pages for review in page]
+
+    assert len(served) == 86
+    assert pages.reached_checkpoint
+    assert slept == []
+    assert steam.calls == ["*"]
+
+
+def test_does_not_accumulate_the_same_page_across_retries(slept: list[float]) -> None:
+    """Rejouer un curseur ne rapproche pas du total recensé : 100 reviews sur 700."""
+    steam = FakeSteamTerminalPage(reviews(100))
+    pages = NewReviewPages(
+        steam, app_id=3544130, last_seen_timestamp_updated=0, total_reviews=700
+    )
+
+    list(pages)
+
+    assert slept == [5.0, 10.0, 20.0, 40.0, 80.0, 160.0]

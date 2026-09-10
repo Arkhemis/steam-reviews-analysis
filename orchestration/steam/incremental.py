@@ -207,6 +207,7 @@ class NewReviewPages:
         self.has_checkpoint = last_seen_timestamp_updated > 0
         self.reached_checkpoint = False
         self.fetched = 0
+        self.counted_cursor: str | None = None
 
     def census_total_reached(self) -> bool:
         """Vrai si les reviews ramenées couvrent le total recensé, à la tolérance près."""
@@ -244,8 +245,20 @@ class NewReviewPages:
                     self.reached_checkpoint = True
                 page.append(review)
 
+            # Une page rejouée ne rapproche pas du total recensé : on ne compte
+            # qu'une fois par curseur. Compté avant l'examen du signal de fin,
+            # sinon une dernière page non vide ne compterait jamais.
+            if reviews and cursor != self.counted_cursor:
+                self.fetched += len(reviews)
+                self.counted_cursor = cursor
+
             stalled = not reviews or not next_cursor or next_cursor == cursor
             give_up = stalled and stop_retries >= STOP_MAX_RETRIES
+            # Sans checkpoint à rejoindre, c'est le recensement qui fait preuve
+            # d'arrêt : la fin annoncée est vraie dès que l'écart au total
+            # recensé tient dans la tolérance (cf. backfill).
+            if stalled and not self.has_checkpoint and self.census_total_reached():
+                self.reached_checkpoint = True
 
             if page and (self.reached_checkpoint or not stalled or give_up):
                 yield page
@@ -254,12 +267,6 @@ class NewReviewPages:
 
             if stalled:
                 if self.reached_checkpoint:
-                    return
-                # Sans checkpoint à rejoindre, c'est le recensement qui fait
-                # preuve d'arrêt : la fin annoncée est vraie dès que l'écart au
-                # total recensé tient dans la tolérance (cf. backfill).
-                if not self.has_checkpoint and self.census_total_reached():
-                    self.reached_checkpoint = True
                     return
                 # Steam annonce régulièrement une fin de pagination qui n'en est
                 # pas une : tant que le checkpoint n'est pas rejoint, on rejoue le
@@ -286,7 +293,6 @@ class NewReviewPages:
                 continue
 
             stop_retries = 0
-            self.fetched += len(reviews)
             cursor = next_cursor
 
 
