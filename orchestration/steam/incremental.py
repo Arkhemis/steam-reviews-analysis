@@ -28,11 +28,13 @@ FLUSH_REVIEWS = 5000
 PROGRESS_EVERY = 500
 
 
+# Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
+# pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
 RELEVANT_APP_IDS = """
-SELECT app_id, last_seen_timestamp_updated
+SELECT app_id, COALESCE(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
 FROM raw.steam_review_counts
 WHERE COALESCE(total_reviews_backfilled, 0) < total_reviews
-  AND last_seen_timestamp_updated IS NOT NULL
+  AND last_backfill_at IS NOT NULL
 """
 
 INSERT_REVIEW_SQL = """
@@ -80,8 +82,8 @@ class AppSync(NamedTuple):
 
 @asset(
     group_name="load",
-    # Un jeu n'entre dans l'incrémental qu'une fois backfillé : le backfill pose
-    # le `last_seen_timestamp_updated` que RELEVANT_APP_IDS exige.
+    # Un jeu n'entre dans l'incrémental qu'une fois backfillé, sans quoi les deux
+    # loaders pagineraient le même jeu en parallèle.
     deps=["steam_review_counts", "steam_reviews_backfill"],
     description="Incremental backfill des reviews Steam (payload complet) -> raw.steam_reviews.",
 )
