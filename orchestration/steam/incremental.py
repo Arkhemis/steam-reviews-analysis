@@ -17,6 +17,7 @@ from orchestration.postgres import PostgresResource
 from orchestration.steam.backfill import (
     STOP_BACKOFF_BASE_SECONDS,
     STOP_MAX_RETRIES,
+    stop_tolerance,
 )
 from orchestration.steam.resources import SteamResource
 
@@ -31,7 +32,9 @@ PROGRESS_EVERY = 500
 # Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
 # pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
 RELEVANT_APP_IDS = """
-SELECT app_id, COALESCE(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
+SELECT app_id,
+       total_reviews,
+       COALESCE(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
 FROM raw.steam_review_counts
 WHERE COALESCE(total_reviews_backfilled, 0) < total_reviews
   AND last_backfill_at IS NOT NULL
@@ -118,6 +121,7 @@ def steam_reviews_incremental(
                 postgres,
                 row["app_id"],
                 row["last_seen_timestamp_updated"],
+                row["total_reviews"],
             ): row["app_id"]
             for row in relevant_apps
         }
@@ -194,12 +198,21 @@ class NewReviewPages:
         steam: SteamResource,
         app_id: int,
         last_seen_timestamp_updated: int,
+        total_reviews: int | None = None,
     ) -> None:
         self.steam = steam
         self.app_id = app_id
         self.last_seen_timestamp_updated = last_seen_timestamp_updated
+        self.total_reviews = total_reviews
         self.has_checkpoint = last_seen_timestamp_updated > 0
         self.reached_checkpoint = False
+        self.fetched = 0
+
+    def census_total_reached(self) -> bool:
+        """Vrai si les reviews ramenées couvrent le total recensé, à la tolérance près."""
+        if self.total_reviews is None:
+            return False
+        return self.total_reviews - self.fetched <= stop_tolerance(self.total_reviews)
 
     def __iter__(self) -> Iterator[list[dict[str, Any]]]:
         logger = get_dagster_logger()
@@ -242,6 +255,12 @@ class NewReviewPages:
             if stalled:
                 if self.reached_checkpoint:
                     return
+                # Sans checkpoint à rejoindre, c'est le recensement qui fait
+                # preuve d'arrêt : la fin annoncée est vraie dès que l'écart au
+                # total recensé tient dans la tolérance (cf. backfill).
+                if not self.has_checkpoint and self.census_total_reached():
+                    self.reached_checkpoint = True
+                    return
                 # Steam annonce régulièrement une fin de pagination qui n'en est
                 # pas une : tant que le checkpoint n'est pas rejoint, on rejoue le
                 # même curseur plutôt que d'abandonner le jeu (cf. backfill).
@@ -267,6 +286,7 @@ class NewReviewPages:
                 continue
 
             stop_retries = 0
+            self.fetched += len(reviews)
             cursor = next_cursor
 
 
@@ -289,10 +309,11 @@ def sync_app_reviews(
     postgres: PostgresResource,
     app_id: int,
     last_seen_timestamp_updated: int,
+    total_reviews: int | None = None,
 ) -> AppSync:
     """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau."""
     logger = get_dagster_logger()
-    pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated)
+    pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated, total_reviews)
     fetched = 0
     versions_inserted = 0
     max_timestamp_updated = last_seen_timestamp_updated

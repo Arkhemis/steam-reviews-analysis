@@ -90,6 +90,14 @@ def selected_app_ids(conn: psycopg.Connection) -> set[int]:
     return {row["app_id"] for row in conn.execute(RELEVANT_APP_IDS).fetchall()}
 
 
+def selected_row(conn: psycopg.Connection, app_id: int) -> dict:
+    return next(
+        row
+        for row in conn.execute(RELEVANT_APP_IDS).fetchall()
+        if row["app_id"] == app_id
+    )
+
+
 def test_selects_backfilled_game_without_checkpoint(conn: psycopg.Connection) -> None:
     """Un jeu backfillé sans review n'a pas de checkpoint : il doit quand même
     être repris quand des reviews sortent (cf. Soul Chained, app_id 3544130)."""
@@ -140,3 +148,19 @@ def test_ignores_game_not_backfilled_yet(conn: psycopg.Connection) -> None:
     )
 
     assert NEVER_BACKFILLED not in selected_app_ids(conn)
+
+
+def test_exposes_census_total_to_the_paginator(conn: psycopg.Connection) -> None:
+    """Sans checkpoint, le total recensé est la seule preuve d'arrêt disponible."""
+    insert_census_row(
+        conn,
+        BACKFILLED_WITHOUT_CHECKPOINT,
+        total_reviews=86,
+        total_reviews_backfilled=0,
+        last_seen_timestamp_updated=None,
+    )
+
+    row = selected_row(conn, BACKFILLED_WITHOUT_CHECKPOINT)
+
+    assert row["total_reviews"] == 86
+    assert row["last_seen_timestamp_updated"] == 0
