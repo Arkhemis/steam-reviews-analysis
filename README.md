@@ -58,7 +58,7 @@ flowchart LR
 
 - **staging** — `steam_review`, `steam_event`, `igdb_game`, `game_review_count`: flatten and type the raw JSON, and deduplicate reviews down to their latest version. Materialized as **columnar** tables — the raw review table alone is ~180 M rows.
 - **intermediate** — `steam_review_agg` (playtime medians, Steam Deck and refund shares), `language_review_score`, `steam_event_categorized`, and `review_lexeme_count` (the single NLP tokenization pass, tagged `nlp`).
-- **marts** — `game_stats`, `game_review_trend_daily`, `review_highlight`, `game_event_highlight`, `language_review_score_global`, and `game_distinctive_term` (log-odds with an informative Dirichlet prior, Monroe et al. 2008 — the vocabulary that sets a game apart from the corpus, positive and negative reviews separately; tagged `nlp`).
+- **marts** — `game_stats`, `game_review_trend_daily`, `catalogue_review_trend_daily` and `game_window_score` (its daily and per-window rollups, so a consumer reads one row per day or per game instead of re-aggregating a year of `(game, day)`), `review_highlight`, `game_event_highlight`, `language_review_score_global`, and `game_distinctive_term` (log-odds with an informative Dirichlet prior, Monroe et al. 2008 — the vocabulary that sets a game apart from the corpus, positive and negative reviews separately; tagged `nlp`).
 
 ## Jobs and schedules
 

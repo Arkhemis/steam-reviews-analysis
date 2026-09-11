@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: catalogue_review_trend_daily
+    description: >
+      Rollup global de game_review_trend_daily : une ligne par jour, tous jeux
+      confondus. Même rapport à game_review_trend_daily que
+      language_review_score_global à language_review_score.
+
+      Existe pour le grain, pas pour la nouveauté : une courbe de sentiment du
+      catalogue ou un volume d'avis par jour se lisaient jusqu'ici en
+      réagrégeant douze mois de (jeu, jour) à chaque affichage — des centaines
+      de milliers de lignes pour en rendre 365. Ici, une ligne par jour, lue
+      par index.
+
+      Le grain est le jour de création de la review, pas celui de son édition :
+      il vient tel quel du modèle source.
+    data_tests:
+      - unique:
+          column_name: review_date
+    columns:
+      - name: review_date
+        description: Jour de création des reviews agrégées, en date locale UTC.
+        data_tests:
+          - not_null
+
+      - name: games_reviewed
+        description: >
+          Nombre de jeux ayant reçu au moins une review ce jour-là. Compte les
+          jeux, pas les reviews : deux jeux à mille reviews font 2.
+        data_tests:
+          - not_null
+
+      - name: total_reviews
+        description: Nombre de reviews créées ce jour-là, tous jeux confondus.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: Parmi elles, celles marquées voted_up.
+        data_tests:
+          - not_null
+
+      - name: total_negative
+        description: Parmi elles, celles marquées voted_up = false.
+        data_tests:
+          - not_null
+
+      - name: pct_positive
+        description: Part de total_positive sur total_reviews, entre 0 et 1.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
