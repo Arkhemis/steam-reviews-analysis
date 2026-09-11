@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: game_window_score
+    description: >
+      Score de chaque jeu sur les trois fenêtres glissantes que le site
+      affiche : la semaine, les trente jours, et l'année en cours. Une ligne
+      par (fenêtre, jeu).
+
+      Sans lui, chaque podium réagrège game_review_trend_daily à l'affichage —
+      près de 300 000 lignes de (jeu, jour) pour l'année en cours, à chaque
+      expiration de cache. Le classement, lui, ne bouge qu'au rythme du
+      pipeline : il a sa place ici, pas dans la requête du site.
+
+      Aucun seuil de volume n'est appliqué : total_reviews est là pour que le
+      consommateur pose le sien, qui n'est pas le même sur sept jours que sur
+      une année.
+
+      Les bornes sont ancrées sur la dernière date ingérée, pas sur la date du
+      jour ; starts_on et ends_on les portent pour que le site puisse les
+      afficher plutôt que de les recalculer.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - window_name
+              - app_id
+    columns:
+      - name: window_name
+        description: >
+          Fenêtre couverte : week (7 jours), month (30 jours) ou year_to_date
+          (depuis le 1er janvier de la dernière année ingérée).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - week
+                  - month
+                  - year_to_date
+
+      - name: app_id
+        description: Identifiant de l'application Steam.
+        data_tests:
+          - not_null
+
+      - name: starts_on
+        description: Premier jour compris dans la fenêtre.
+        data_tests:
+          - not_null
+
+      - name: ends_on
+        description: >
+          Dernier jour compris dans la fenêtre, soit la dernière date présente
+          dans game_review_trend_daily. Identique sur les trois fenêtres.
+        data_tests:
+          - not_null
+
+      - name: total_reviews
+        description: Reviews reçues par le jeu pendant la fenêtre.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: Parmi elles, celles marquées voted_up.
+        data_tests:
+          - not_null
+
+      - name: pct_positive
+        description: Part de total_positive sur total_reviews, entre 0 et 1.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
