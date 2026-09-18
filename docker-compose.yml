@@ -12,6 +12,8 @@ x-dagster-env: &dagster-env
   IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
   DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
   DISCORD_MENTION_USER_ID: ${DISCORD_MENTION_USER_ID:-}
+  # Vide : le lien de l'alerte pointe sur https://dagster.steam.reviews.
+  DAGSTER_BASE_URL: ${DAGSTER_BASE_URL:-}
 
 # Cité en dur dans deploy/dagster.yaml. Valeur identique au nom implicite de
 # Compose, donc aucun service existant n'est recréé.
