@@ -8,6 +8,7 @@ from orchestration.jobs import daily_pipeline_job
 from orchestration.postgres import PostgresResource
 from orchestration.project import dbt_steam_reviews_project
 from orchestration.schedules import daily_pipeline_schedule
+from orchestration.sensors import discord_run_failure_sensor
 from orchestration.steam import definitions as steam
 from orchestration.steam.resources import SteamResource
 
@@ -20,6 +21,8 @@ defs = Definitions.merge(
         # Job transverse : il ne peut vivre dans aucun domaine puisqu'il les couvre tous.
         jobs=[daily_pipeline_job],
         schedules=[daily_pipeline_schedule],
+        # Surveille tous les jobs du code location, pas seulement les transverses.
+        sensors=[discord_run_failure_sensor],
         resources={
             "postgres": PostgresResource(
                 host=EnvVar("POSTGRES_HOST").get_value(),

@@ -10,6 +10,8 @@ x-dagster-env: &dagster-env
   POSTGRES_DB: ${POSTGRES_DB}
   IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
   IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
+  DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+  DISCORD_MENTION_USER_ID: ${DISCORD_MENTION_USER_ID:-}
 
 # Cité en dur dans deploy/dagster.yaml. Valeur identique au nom implicite de
 # Compose, donc aucun service existant n'est recréé.
