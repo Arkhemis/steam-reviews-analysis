@@ -111,9 +111,6 @@ def steam_reviews_incremental(
     processed = 0
 
     with ThreadPoolExecutor(max_workers=INCREMENTAL_WORKERS) as pool:
-        # Chaque tâche écrit elle-même en base et ne renvoie que des compteurs :
-        # les `Future` restent vivantes jusqu'à la fin du run, elles ne doivent
-        # donc rien retenir de volumineux.
         futures = {
             pool.submit(
                 sync_app_reviews,

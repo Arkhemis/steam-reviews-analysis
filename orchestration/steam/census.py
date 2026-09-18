@@ -24,9 +24,10 @@ CENSUS_HOT_TOTAL_REVIEWS = 1000
 
 DUE_APP_IDS_SQL = """
 WITH steam_apps AS (
-    SELECT DISTINCT steam_app_id AS app_id
+    SELECT steam_app_id AS app_id, min(first_release_date) AS first_release_date
     FROM raw.igdb_games
     WHERE steam_app_id IS NOT NULL
+    GROUP BY steam_app_id
 )
 SELECT a.app_id
 FROM steam_apps AS a
@@ -42,7 +43,9 @@ WHERE %(full_refresh)s
    -- étalée sur sept nuits au lieu de retomber d'un bloc.
    OR a.app_id %% 7 = extract(dow FROM now())::int
    -- Filet si une nuit a sauté : le jour fixe du jeu ne revient qu'en fin de semaine.
-   OR c.checked_at < now() - interval '8 days';
+   OR c.checked_at < now() - interval '8 days'
+   -- ... A moins que le jeu ne sorte dans les 7 jours du stale !
+   OR a.first_release_date BETWEEN current_date - 7 AND current_date;
 """
 
 # Upsert : l'ancien total_reviews est copié dans prev_total_reviews, ce qui en
