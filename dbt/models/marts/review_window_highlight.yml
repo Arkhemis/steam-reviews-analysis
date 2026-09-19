@@ -1,0 +1,140 @@
+version: 2
+
+models:
+  - name: review_window_highlight
+    description: >
+      Reviews à la une de la page d'accueil : pour chaque fenêtre glissante
+      (week, month), chaque catégorie (funny, helpful) et chaque langue, les
+      cinq reviews récentes les mieux votées. Une ligne par (fenêtre,
+      catégorie, langue, rang).
+
+      Une review est éligible si elle a été écrite pendant la fenêtre, qu'elle
+      dépasse min_review_length caractères (le même seuil que
+      review_highlight) et qu'elle n'est pas une checklist générique. Un jeu
+      ne peut occuper qu'une place par podium : sa meilleure review est
+      retenue d'abord, puis les jeux sont classés entre eux.
+
+      Sans ce modèle, le site devrait parcourir staging.steam_review — une
+      table columnar de plusieurs dizaines de Go, sans index — à chaque
+      expiration de cache. Le scan est fait ici une fois par nuit, restreint
+      aux trente derniers jours.
+
+      Les bornes sont ancrées sur la dernière date présente dans
+      game_review_trend_daily, pas sur la date du jour, comme dans
+      game_window_score.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - window_name
+              - category
+              - language
+              - rank
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - window_name
+              - category
+              - language
+              - app_id
+    columns:
+      - name: window_name
+        description: >
+          Fenêtre couverte : week (7 jours) ou month (30 jours), mêmes bornes
+          que dans game_window_score.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - week
+                  - month
+
+      - name: category
+        description: >
+          Podium auquel appartient la review. funny classe par votes « drôle »
+          (votes_funny), puis votes_up ; helpful classe par score pondéré de
+          Steam (weighted_vote_score), puis votes_up. L'identifiant de la
+          review départage les ex æquo restants.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - funny
+                  - helpful
+
+      - name: language
+        description: Langue déclarée de la review (code langue Steam, ex. french, english).
+        data_tests:
+          - not_null
+
+      - name: rank
+        description: >
+          Place de la review sur son podium (fenêtre, catégorie, langue), de 1
+          à top_n_window_reviews (5 par défaut). Une langue peu représentée
+          peut compter moins de cinq places.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: "{{ var('top_n_window_reviews', 5) }}"
+
+      - name: starts_on
+        description: Premier jour compris dans la fenêtre.
+        data_tests:
+          - not_null
+
+      - name: ends_on
+        description: >
+          Dernier jour compris dans la fenêtre, soit la dernière date présente
+          dans game_review_trend_daily.
+        data_tests:
+          - not_null
+
+      - name: recommendation_id
+        description: Identifiant Steam de la review (unique par jeu, pas globalement).
+        data_tests:
+          - not_null
+
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: review_text
+        description: Texte libre de la review.
+
+      - name: voted_up
+        description: Vrai si la review est positive (recommandation), faux sinon.
+
+      - name: votes_up
+        description: >
+          Nombre de votes "utile" reçus par la review. Strictement positif sur
+          le podium helpful.
+
+      - name: votes_funny
+        description: >
+          Nombre de votes "drôle" reçus par la review. Strictement positif sur
+          le podium funny : les valeurs négatives que staging hérite de la
+          sérialisation uint32 de l'API Steam en sont exclues.
+
+      - name: weighted_vote_score
+        description: Score de pertinence pondéré utilisé par Steam pour le tri des reviews.
+
+      - name: author_personaname
+        description: Pseudo affiché de l'auteur au moment de la review.
+
+      - name: author_avatar
+        description: URL de l'avatar de l'auteur.
+
+      - name: author_playtime_at_review_minutes
+        description: Temps de jeu de l'auteur au moment de la review, en minutes.
+
+      - name: created_at
+        description: >
+          Horodatage de création de la review. Sa date tombe toujours entre
+          starts_on et ends_on.
+        data_tests:
+          - not_null

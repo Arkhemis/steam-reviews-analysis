@@ -66,7 +66,9 @@ SELECT
     s.author_avatar,
     s.author_profile_url,
     s.author_playtime_at_review_minutes,
-    s.author_last_played_at
+    s.author_last_played_at,
+
+    s.created_at
 
 FROM top_reviews AS t
 INNER JOIN {{ ref('steam_review') }} AS s
