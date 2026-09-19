@@ -27,6 +27,17 @@ windows AS (
 
     UNION ALL
 
+    -- Les sept jours qui précèdent immédiatement 'week' : c'est la base de
+    -- comparaison qui permet au site de repérer un retour en grâce ou une
+    -- chute d'une semaine sur l'autre.
+    SELECT
+        'previous_week' AS window_name,
+        (latest - INTERVAL '13 days')::DATE AS starts_on,
+        (latest - INTERVAL '7 days')::DATE AS ends_on
+    FROM bounds
+
+    UNION ALL
+
     SELECT
         'month' AS window_name,
         (latest - INTERVAL '29 days')::DATE AS starts_on,
