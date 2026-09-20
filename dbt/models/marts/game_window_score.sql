@@ -46,6 +46,18 @@ windows AS (
 
     UNION ALL
 
+    -- Les trente jours qui précèdent immédiatement 'month', comme
+    -- 'previous_week' pour la semaine. Sans eux, le site refait la bascule
+    -- trente jours contre trente jours à l'affichage : une agrégation de
+    -- 460 000 lignes de (jeu, jour) pour la moindre vignette du catalogue.
+    SELECT
+        'previous_month' AS window_name,
+        (latest - INTERVAL '59 days')::DATE AS starts_on,
+        (latest - INTERVAL '30 days')::DATE AS ends_on
+    FROM bounds
+
+    UNION ALL
+
     SELECT
         'year_to_date' AS window_name,
         DATE_TRUNC('year', latest)::DATE AS starts_on,

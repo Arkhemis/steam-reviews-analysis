@@ -4,9 +4,9 @@ models:
   - name: game_window_score
     description: >
       Score de chaque jeu sur les fenêtres glissantes que le site affiche :
-      la semaine, les trente jours, et l'année en cours, plus la semaine
-      précédente qui sert de point de comparaison à la semaine. Une ligne par
-      (fenêtre, jeu).
+      la semaine, les trente jours, et l'année en cours, chacune doublée de la
+      période qui la précède immédiatement — previous_week, previous_month —
+      qui lui sert de point de comparaison. Une ligne par (fenêtre, jeu).
 
       Sans lui, chaque podium réagrège game_review_trend_daily à l'affichage —
       près de 300 000 lignes de (jeu, jour) pour l'année en cours, à chaque
@@ -30,7 +30,8 @@ models:
       - name: window_name
         description: >
           Fenêtre couverte : week (7 jours), previous_week (les 7 jours qui
-          précèdent week, de J-13 à J-7), month (30 jours) ou year_to_date
+          précèdent week, de J-13 à J-7), month (30 jours), previous_month
+          (les 30 jours qui précèdent month, de J-59 à J-30) ou year_to_date
           (depuis le 1er janvier de la dernière année ingérée).
         data_tests:
           - not_null
@@ -40,6 +41,7 @@ models:
                   - week
                   - previous_week
                   - month
+                  - previous_month
                   - year_to_date
 
       - name: app_id
@@ -56,8 +58,9 @@ models:
         description: >
           Dernier jour compris dans la fenêtre, soit la dernière date présente
           dans game_review_trend_daily. Identique sur week, month et
-          year_to_date ; previous_week s'arrête sept jours plus tôt, la veille
-          du premier jour de week.
+          year_to_date ; les fenêtres de comparaison s'arrêtent la veille du
+          premier jour de la leur — previous_week sept jours plus tôt,
+          previous_month trente.
         data_tests:
           - not_null
 
