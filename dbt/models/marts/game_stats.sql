@@ -3,6 +3,7 @@
         indexes=[
             {'columns': ['steam_app_id'], 'type': 'btree'},
             {'columns': ['total_reviews'], 'type': 'btree'},
+            {'columns': ['parent_steam_app_id'], 'type': 'btree'},
         ]
     )
 }}
@@ -17,7 +18,6 @@ SELECT
     i.publishers,
     i.cover_url,
     i.first_release_date,
-
 
     g.parent_steam_app_id,
     g.price_usd,
