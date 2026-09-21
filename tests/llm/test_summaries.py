@@ -23,11 +23,57 @@ def valid_response(**overrides) -> str:
 
 
 def test_build_prompt_marks_polarity_and_truncates_normalized_text():
-    prompt = build_prompt([(True, "Great\n\n  game"), (False, "x" * 2000)])
+    prompt, kept = build_prompt([(True, "Great\n\n  game"), (False, "x" * 2000)])
 
     assert "[+] Great game" in prompt
     assert f"[-] {'x' * summaries.MAX_REVIEW_CHARS}\n" in prompt + "\n"
     assert "x" * (summaries.MAX_REVIEW_CHARS + 1) not in prompt
+    assert kept == 2
+
+
+def test_build_prompt_drops_lowest_ranked_reviews_of_the_larger_side_over_budget(
+    monkeypatch,
+):
+    monkeypatch.setattr(summaries, "MAX_PROMPT_TOKENS", 4)
+    # Chaque ligne, préfixe "[±] " compris, est estimée à 2 tokens.
+    reviews = [
+        (True, "good"),
+        (True, "fine"),
+        (True, "late"),
+        (False, "差"),
+        (False, "bad!"),
+    ]
+
+    prompt, kept = build_prompt(reviews)
+
+    assert kept == 2
+    assert "[+] good" in prompt and "[-] 差" in prompt
+    assert "late" not in prompt and "bad!" not in prompt
+
+
+def test_select_reviews_sql_mixes_most_useful_and_funniest_per_side():
+    sql = summaries.select_reviews_sql([730, 570])
+
+    assert "WHERE app_id IN (730, 570)" in sql
+    assert f"useful_rank <= {summaries.USEFUL_PER_SIDE}" in sql
+    assert f"OR funny_rank <= {summaries.FUNNY_PER_SIDE}" in sql
+
+
+def test_ollama_generate_rejects_a_prompt_that_filled_the_context(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "prompt_eval_count": summaries.NUM_CTX,
+                "response": valid_response(),
+            }
+
+    monkeypatch.setattr(summaries.httpx, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(ValueError, match="tronqué"):
+        summaries.ollama_generate("m", "prompt")
 
 
 def test_parse_summary_accepts_a_valid_response_and_caps_lists():

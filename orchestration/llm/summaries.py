@@ -24,8 +24,13 @@ DEFAULT_HOST = "deploy@167.235.145.180"
 DEFAULT_MODEL = "qwen3:8b"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
-REVIEWS_PER_SIDE = 20
+# Par polarité : les plus utiles et les plus drôles, sans doublon.
+USEFUL_PER_SIDE = 15
+FUNNY_PER_SIDE = 15
 MAX_REVIEW_CHARS = 800
+NUM_CTX = 24576
+# Marge pour le gabarit et la réponse ; au-delà, Ollama tronque le début du prompt sans erreur.
+MAX_PROMPT_TOKENS = NUM_CTX - 2048
 MAX_POINTS = 5
 # Un résumé est régénéré quand le jeu a pris 25 % de reviews depuis.
 REGENERATE_GROWTH = 1.25
@@ -94,22 +99,40 @@ COPY (
             ROW_NUMBER() OVER (
                 PARTITION BY app_id, voted_up
                 ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id
-            ) AS rank_in_side
+            ) AS useful_rank,
+            ROW_NUMBER() OVER (
+                PARTITION BY app_id, voted_up
+                ORDER BY votes_funny DESC, recommendation_id
+            ) AS funny_rank
         FROM marts.review_highlight
         WHERE app_id IN ({", ".join(map(str, app_ids))})
     ) AS r
-    WHERE rank_in_side <= {REVIEWS_PER_SIDE}
-    ORDER BY app_id, voted_up DESC, rank_in_side
+    WHERE useful_rank <= {USEFUL_PER_SIDE} OR funny_rank <= {FUNNY_PER_SIDE}
+    ORDER BY app_id, voted_up DESC, LEAST(useful_rank, funny_rank), useful_rank
 ) TO STDOUT WITH (FORMAT csv);
 """
 
 
-def build_prompt(reviews: list[Review]) -> str:
-    lines = []
+def estimate_tokens(text: str) -> int:
+    # Un idéogramme CJK coûte environ un token, le reste environ un token pour 4 caractères.
+    cjk = len(re.findall(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", text))
+    return cjk + (len(text) - cjk) // 4
+
+
+def build_prompt(reviews: list[Review]) -> tuple[str, int]:
+    """Renvoie le prompt et le nombre de reviews gardées sous MAX_PROMPT_TOKENS."""
+    sides = {True: [], False: []}
     for voted_up, text in reviews:
         text = re.sub(r"\s+", " ", text).strip()[:MAX_REVIEW_CHARS]
-        lines.append(f"[{'+' if voted_up else '-'}] {text}")
-    return PROMPT_TEMPLATE.format(reviews="\n".join(lines))
+        sides[voted_up].append(f"[{'+' if voted_up else '-'}] {text}")
+    # Retire la review la moins bien classée du côté le plus fourni.
+    while (
+        sum(estimate_tokens(line) for side in sides.values() for line in side)
+        > MAX_PROMPT_TOKENS
+    ):
+        max(sides.values(), key=len).pop()
+    lines = sides[True] + sides[False]
+    return PROMPT_TEMPLATE.format(reviews="\n".join(lines)), len(lines)
 
 
 def _points(value) -> list[str]:
@@ -199,12 +222,15 @@ def ollama_generate(model: str, prompt: str) -> str:
             "stream": False,
             "think": False,
             "format": "json",
-            "options": {"num_ctx": 8192, "temperature": 0.3},
+            "options": {"num_ctx": NUM_CTX, "temperature": 0.3},
         },
         timeout=300,
     )
     response.raise_for_status()
-    return response.json()["response"]
+    body = response.json()
+    if body["prompt_eval_count"] >= NUM_CTX - 1024:
+        raise ValueError(f"prompt tronqué ({body['prompt_eval_count']} tokens)")
+    return body["response"]
 
 
 def run(
@@ -238,13 +264,14 @@ def run(
                 log.warning(f"app_id={app_id} : aucune review dans review_highlight")
                 stats["no_reviews"] += 1
                 continue
+            prompt, reviews_used = build_prompt(reviews[app_id])
             try:
-                summary = parse_summary(generate(model, build_prompt(reviews[app_id])))
+                summary = parse_summary(generate(model, prompt))
             except (ValueError, httpx.HTTPError) as exc:
                 log.warning(f"app_id={app_id} : génération en échec ({exc})")
                 stats["failed"] += 1
                 continue
-            rows.append((app_id, summary, len(reviews[app_id]), total))
+            rows.append((app_id, summary, reviews_used, total))
 
         if rows:
             run_psql(upsert_sql(rows, model))
