@@ -61,7 +61,7 @@ PROMPT_TEMPLATE = """Steam reviews of one game ([+] recommended, [-] not recomme
 Summarize what players say, based only on these reviews. Reviews marked "joke" are humorous:
 use them only to gauge the mood, never as a pro or a con. Pros and cons are specific
 fragments naming concrete features or issues, not full sentences. Answer in English, as JSON:
-{{"summary": "<3-4 sentence paragraph>", "pros": ["<up to 5 short points>"], "cons": ["<up to 5 short points>"]}}"""
+{{"summary": "<3-4 sentence paragraph>", "pros": ["<1 to 5 points>"], "cons": ["<1 to 5 points>"]}}"""
 
 UPSERT_COLUMNS = (
     "app_id, summary, pros, cons, model, reviews_used, total_reviews_at_generation"
@@ -86,7 +86,7 @@ COPY (
     WHERE
         c.total_positive >= {min_per_side}
         AND c.total_reviews - c.total_positive >= {min_per_side}
-        AND (s.app_id IS NULL OR c.total_reviews > s.total_reviews_at_generation * {REGENERATE_GROWTH})
+        AND (s.app_id IS NULL OR c.total_reviews >= s.total_reviews_at_generation * {REGENERATE_GROWTH})
     ORDER BY c.total_reviews DESC
     {f"LIMIT {limit}" if limit else ""}
 ) TO STDOUT WITH (FORMAT csv);

@@ -150,7 +150,10 @@ def test_select_games_sql_requires_both_sides_and_regenerates_after_growth():
 
     assert "total_positive >= 250" in sql
     assert "total_reviews - c.total_positive >= 250" in sql
-    assert f"* {summaries.REGENERATE_GROWTH}" in sql
+    assert (
+        f"c.total_reviews >= s.total_reviews_at_generation * {summaries.REGENERATE_GROWTH}"
+        in sql
+    )
     assert "LIMIT 10" in sql
 
 
