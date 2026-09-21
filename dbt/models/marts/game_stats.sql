@@ -18,6 +18,13 @@ SELECT
     i.cover_url,
     i.first_release_date,
 
+    g.price_usd,
+    g.app_type,
+    g.is_free,
+    g.is_early_access,
+    g.is_coming_soon,
+    g.is_available,
+
     grc.total_reviews,
     ROUND(
         100.0 * grc.total_positive
@@ -32,6 +39,8 @@ SELECT
 
 FROM {{ ref('igdb_game') }} AS i
 LEFT JOIN {{ ref('game_review_count') }} AS grc
-    ON grc.steam_app_id = i.steam_app_id
+    USING (steam_app_id)
 LEFT JOIN {{ ref('steam_review_agg') }} AS review_agg
     ON review_agg.steam_app_id = i.steam_app_id
+LEFT JOIN {{ ref('game_detail') }} AS g
+    ON i.steam_app_id = g.steam_app_id
