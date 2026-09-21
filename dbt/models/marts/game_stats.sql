@@ -3,6 +3,7 @@
         indexes=[
             {'columns': ['steam_app_id'], 'type': 'btree'},
             {'columns': ['total_reviews'], 'type': 'btree'},
+            {'columns': ['parent_steam_app_id'], 'type': 'btree'},
         ]
     )
 }}
