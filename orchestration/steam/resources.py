@@ -3,11 +3,13 @@
 Endpoints :
 - reviews   : https://store.steampowered.com/appreviews/{app_id}
 - annonces  : https://store.steampowered.com/events/ajaxgetpartnereventspageable/
+- fiches    : https://api.steampowered.com/IStoreBrowseService/GetItems/v1/
 
-Les deux tapent le même host, donc le même budget de rate limit : ils doivent
-partager cette resource, et donc son throttle.
+Reviews et annonces tapent le même host, donc le même budget de rate limit :
+ils doivent partager cette resource, et donc son throttle.
 """
 
+import json
 import threading
 import time
 from typing import Any
@@ -17,6 +19,8 @@ from dagster import ConfigurableResource, InitResourceContext, get_dagster_logge
 from pydantic import PrivateAttr
 
 BASE_URL = "https://store.steampowered.com"
+# Endpoint non documenté, sans clé ; au-delà de ~250 ids l'URL devient trop longue (400).
+STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 
 
 class SteamApiError(Exception):
@@ -48,7 +52,7 @@ class SteamApiError(Exception):
 
 
 class SteamResource(ConfigurableResource):
-    """Client Steam (reviews + annonces) avec rate limit + retries."""
+    """Client Steam (reviews, annonces, fiches store) avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
     max_retries: int = 5
@@ -164,3 +168,25 @@ class SteamResource(ConfigurableResource):
         if data.get("success") != 1:
             raise SteamApiError(app_id, data.get("success"), data.get("err_msg", ""))
         return data
+
+    def get_store_items(
+        self, app_ids: list[int], country_code: str = "US"
+    ) -> list[dict[str, Any]]:
+        """Fiches store d'un lot d'apps (type, DLC parent, early access, dates)."""
+        data = self._get(
+            STORE_ITEMS_URL,
+            {
+                "input_json": json.dumps(
+                    {
+                        "ids": [{"appid": app_id} for app_id in app_ids],
+                        "context": {"country_code": country_code},
+                        "data_request": {"include_release": True},
+                    }
+                )
+            },
+            app_id=app_ids[0],
+        )
+        items = data.get("response", {}).get("store_items")
+        if items is None:
+            raise SteamApiError(app_ids[0], "HTTP 200", "réponse sans store_items")
+        return items
