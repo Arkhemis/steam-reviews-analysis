@@ -19,7 +19,6 @@ SELECT
     i.cover_url,
     i.first_release_date,
 
-
     g.parent_steam_app_id,
     g.price_usd,
     g.app_type,
