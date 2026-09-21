@@ -11,12 +11,13 @@ import json
 import logging
 import re
 import subprocess
-import time
 from collections import defaultdict
 from collections.abc import Callable
 from typing import NamedTuple
 
 import httpx
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 log = logging.getLogger(__name__)
 
@@ -280,35 +281,36 @@ def run(
     log.info(f"{len(games)} jeux à résumer (≥ {min_per_side} reviews de chaque côté)")
 
     stats = {"generated": 0, "failed": 0, "no_reviews": 0}
-    start = time.monotonic()
-    for batch in itertools.batched(games, batch_size):
-        reviews: dict[int, list[Review]] = defaultdict(list)
-        output = run_psql(select_reviews_sql([app_id for app_id, _ in batch]))
-        for app_id, voted_up, is_joke, text in csv.reader(io.StringIO(output)):
-            reviews[int(app_id)].append((voted_up == "t", is_joke == "t", text))
+    with tqdm(total=len(games), unit="jeu") as progress, logging_redirect_tqdm():
+        for batch in itertools.batched(games, batch_size):
+            reviews: dict[int, list[Review]] = defaultdict(list)
+            output = run_psql(select_reviews_sql([app_id for app_id, _ in batch]))
+            for app_id, voted_up, is_joke, text in csv.reader(io.StringIO(output)):
+                reviews[int(app_id)].append((voted_up == "t", is_joke == "t", text))
 
-        rows = []
-        for app_id, total in batch:
-            if not reviews[app_id]:
-                log.warning(f"app_id={app_id} : aucune review dans review_highlight")
-                stats["no_reviews"] += 1
-                continue
-            prompt, reviews_used = build_prompt(reviews[app_id])
-            try:
-                summary = parse_summary(generate(model, prompt))
-            except (ValueError, httpx.HTTPError) as exc:
-                log.warning(f"app_id={app_id} : génération en échec ({exc})")
-                stats["failed"] += 1
-                continue
-            rows.append((app_id, summary, reviews_used, total))
+            rows = []
+            for app_id, total in batch:
+                progress.update()
+                if not reviews[app_id]:
+                    log.warning(
+                        f"app_id={app_id} : aucune review dans review_highlight"
+                    )
+                    stats["no_reviews"] += 1
+                    continue
+                prompt, reviews_used = build_prompt(reviews[app_id])
+                try:
+                    summary = parse_summary(generate(model, prompt))
+                except (ValueError, httpx.HTTPError) as exc:
+                    log.warning(f"app_id={app_id} : génération en échec ({exc})")
+                    stats["failed"] += 1
+                    continue
+                rows.append((app_id, summary, reviews_used, total))
 
-        if rows:
-            run_psql(upsert_sql(rows, model))
-        stats["generated"] += len(rows)
-        done = sum(stats.values())
-        log.info(
-            f"{done}/{len(games)} — {done / (time.monotonic() - start):.2f} jeux/s — {stats}"
-        )
+            # "generated" ne compte que les résumés effectivement écrits en prod.
+            if rows:
+                run_psql(upsert_sql(rows, model))
+            stats["generated"] += len(rows)
+            progress.set_postfix(stats)
     return stats
 
 
