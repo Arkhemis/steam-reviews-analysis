@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: game_detail
+    description: >
+      Fiches store Steam typées à partir du payload de IStoreBrowseService/GetItems,
+      apps retirées du store comprises (is_available = false).
+    columns:
+      - name: steam_app_id
+        description: Identifiant de l'application Steam.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: name
+        description: Nom de l'app sur le store, NULL pour les apps retirées.
+
+      - name: app_type
+        description: >
+          Type d'app Steam (game, demo, mod, dlc, music), 'other' pour les autres
+          types (playtest, software, vidéo…) et pour les apps retirées.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - game
+                  - demo
+                  - mod
+                  - dlc
+                  - music
+                  - other
+
+      - name: parent_steam_app_id
+        description: >
+          Jeu parent, renseigné pour les DLC, les playtests et quelques apps
+          publicitaires ou mods.
+
+      - name: is_available
+        description: Faux quand l'app a été retirée du store (Steam renvoie une fiche vide).
+        data_tests:
+          - not_null
+
+      - name: is_visible
+        description: Visibilité de la fiche sur le store.
+
+      - name: is_unlisted
+        description: App accessible par lien mais absente de la recherche du store.
+
+      - name: is_free
+        description: App gratuite.
+
+      - name: is_early_access
+        description: App en accès anticipé.
+
+      - name: is_coming_soon
+        description: App pas encore sortie.
+
+      - name: price_usd
+        description: >
+          Prix de base en dollars, hors promo en cours. NULL pour les apps
+          gratuites ou qui ne sont pas en vente.
+
+      - name: steam_release_date
+        description: Date de sortie sur Steam, prévue et non effective quand is_coming_soon.
+
+      - name: original_release_date
+        description: >
+          Date de sortie d'origine hors Steam, pour les jeux sortis ailleurs
+          avant d'arriver sur Steam.
+
+      - name: release_from_early_access_date
+        description: Date de sortie de l'accès anticipé, quand Steam la connaît.

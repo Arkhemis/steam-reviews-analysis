@@ -135,3 +135,22 @@ sources:
               courbe de reviews.
           - name: loaded_at
             description: Horodatage de chargement par Dagster.
+
+      - name: steam_game_details
+        description: >
+          Fiches store Steam par jeu (type d'app, jeu parent des DLC, early access,
+          dates de sortie), apps retirées du store comprises.
+        config:
+          meta:
+            dagster:
+              asset_key: ['steam_game_details']
+        columns:
+          - name: app_id
+            description: Identifiant de l'application Steam (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: payload
+            description: Item JSON brut de IStoreBrowseService/GetItems.
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.
