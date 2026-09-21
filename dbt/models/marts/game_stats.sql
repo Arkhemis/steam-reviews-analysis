@@ -39,7 +39,7 @@ SELECT
 
 FROM {{ ref('igdb_game') }} AS i
 LEFT JOIN {{ ref('game_review_count') }} AS grc
-    ON grc.steam_app_id = i.steam_app_id
+    USING (steam_app_id)
 LEFT JOIN {{ ref('steam_review_agg') }} AS review_agg
     ON review_agg.steam_app_id = i.steam_app_id
 LEFT JOIN {{ ref('game_detail') }} AS g
