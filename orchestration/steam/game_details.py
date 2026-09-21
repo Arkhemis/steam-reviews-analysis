@@ -8,6 +8,8 @@ from orchestration.postgres import PostgresResource
 from orchestration.steam.resources import SteamResource
 
 GAME_DETAILS_BATCH_SIZE = 200
+# Enchaînés sans pause, les lots prennent un 429 toutes les ~30 requêtes.
+GAME_DETAILS_PAUSE_SECONDS = 0.5
 
 SELECT_APPS_SQL = """
 SELECT DISTINCT app_id
@@ -72,6 +74,7 @@ def steam_game_details(
                 f"Scanné {scanned}/{total} ({scanned / total:.0%}) "
                 f"— {scanned / elapsed:.0f} jeux/s — {unavailable} indisponibles"
             )
+            time.sleep(GAME_DETAILS_PAUSE_SECONDS)
 
     if batches_failed:
         context.log.warning(f"{batches_failed} lots en échec, repris au prochain run")
