@@ -67,3 +67,13 @@ CREATE TABLE IF NOT EXISTS raw.steam_events (
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (app_id, gid)
 );
+
+-- ---------------------------------------------------------------------------
+-- Fiches store Steam par jeu (type, DLC parent, early access, dates)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw.steam_game_details (
+    app_id    BIGINT PRIMARY KEY,
+    -- Item brut de IStoreBrowseService/GetItems, apps retirées comprises.
+    payload   JSONB  NOT NULL,
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

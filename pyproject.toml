@@ -17,6 +17,7 @@ dependencies = [
     "httpx>=0.28",
     "psycopg[binary]>=3.2",
     "tenacity>=9.0",
+    "duckdb"
 ]
 
 [dependency-groups]
@@ -26,6 +27,8 @@ dev = [
     "sqlfluff>=4.2.2",
     "sqlfluff-templater-dbt>=4.2.2",
     "pre-commit>=4.6.1",
+    "ipykernel",
+    "ipython"
 ]
 
 # Dagster code location (cf. CLAUDE.md : package `orchestration`).
