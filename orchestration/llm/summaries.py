@@ -25,8 +25,8 @@ DEFAULT_MODEL = "qwen3:8b"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
 # Par polarité : les plus utiles et les plus drôles, sans doublon.
-USEFUL_PER_SIDE = 15
-FUNNY_PER_SIDE = 15
+USEFUL_PER_SIDE = 25
+FUNNY_PER_SIDE = 5
 MAX_REVIEW_CHARS = 800
 NUM_CTX = 24576
 # Marge pour le gabarit et la réponse ; au-delà, Ollama tronque le début du prompt sans erreur.
@@ -54,17 +54,20 @@ CREATE TABLE IF NOT EXISTS raw.game_review_summaries (
 );
 """
 
-PROMPT_TEMPLATE = """Steam reviews of one game ([+] recommended, [-] not recommended):
+PROMPT_TEMPLATE = """Steam reviews of one game ([+] recommended, [-] not recommended), in several languages:
 {reviews}
 
-Summarize what players say, based only on these reviews. Answer in English, as JSON:
+Summarize what players say, based only on these reviews. Reviews marked "joke" are humorous:
+use them only to gauge the mood, never as a pro or a con. Pros and cons are specific
+fragments naming concrete features or issues, not full sentences. Answer in English, as JSON:
 {{"summary": "<3-4 sentence paragraph>", "pros": ["<up to 5 short points>"], "cons": ["<up to 5 short points>"]}}"""
 
 UPSERT_COLUMNS = (
     "app_id, summary, pros, cons, model, reviews_used, total_reviews_at_generation"
 )
 
-Review = tuple[bool, str]
+# (recommandée, retenue seulement pour son humour, texte)
+Review = tuple[bool, bool, str]
 
 
 class Summary(NamedTuple):
@@ -92,20 +95,45 @@ COPY (
 def select_reviews_sql(app_ids: list[int]) -> str:
     return f"""
 COPY (
-    SELECT app_id, voted_up, left(review_text, {MAX_REVIEW_CHARS * 2})
+    SELECT
+        app_id,
+        voted_up,
+        useful_rank > {USEFUL_PER_SIDE} AS is_joke,
+        left(review_text, {MAX_REVIEW_CHARS * 2})
     FROM (
+        -- Places réparties entre langues au prorata de leur volume (Sainte-Laguë) :
+        -- aucune langue ne monopolise l'échantillon, les langues > ~2 % y figurent.
         SELECT
-            app_id, voted_up, review_text,
+            *,
             ROW_NUMBER() OVER (
                 PARTITION BY app_id, voted_up
-                ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id
+                ORDER BY (useful_rank_in_language - 0.5) / language_reviews, language
             ) AS useful_rank,
             ROW_NUMBER() OVER (
                 PARTITION BY app_id, voted_up
-                ORDER BY votes_funny DESC, recommendation_id
+                ORDER BY (funny_rank_in_language - 0.5) / language_reviews, language
             ) AS funny_rank
-        FROM marts.review_highlight
-        WHERE app_id IN ({", ".join(map(str, app_ids))})
+        FROM (
+            SELECT
+                h.app_id, h.voted_up, h.review_text, h.language,
+                GREATEST(
+                    CASE WHEN h.voted_up THEN l.total_positive
+                         ELSE l.total_reviews - l.total_positive END,
+                    1
+                ) AS language_reviews,
+                ROW_NUMBER() OVER (
+                    PARTITION BY h.app_id, h.voted_up, h.language
+                    ORDER BY h.weighted_vote_score DESC, h.votes_up DESC, h.recommendation_id
+                ) AS useful_rank_in_language,
+                ROW_NUMBER() OVER (
+                    PARTITION BY h.app_id, h.voted_up, h.language
+                    ORDER BY h.votes_funny DESC, h.recommendation_id
+                ) AS funny_rank_in_language
+            FROM marts.review_highlight AS h
+            LEFT JOIN intermediate.language_review_score AS l
+                ON l.app_id = h.app_id AND l.language = h.language
+            WHERE h.app_id IN ({", ".join(map(str, app_ids))})
+        ) AS by_language
     ) AS r
     WHERE useful_rank <= {USEFUL_PER_SIDE} OR funny_rank <= {FUNNY_PER_SIDE}
     ORDER BY app_id, voted_up DESC, LEAST(useful_rank, funny_rank), useful_rank
@@ -122,9 +150,10 @@ def estimate_tokens(text: str) -> int:
 def build_prompt(reviews: list[Review]) -> tuple[str, int]:
     """Renvoie le prompt et le nombre de reviews gardées sous MAX_PROMPT_TOKENS."""
     sides = {True: [], False: []}
-    for voted_up, text in reviews:
+    for voted_up, is_joke, text in reviews:
         text = re.sub(r"\s+", " ", text).strip()[:MAX_REVIEW_CHARS]
-        sides[voted_up].append(f"[{'+' if voted_up else '-'}] {text}")
+        tag = ("+" if voted_up else "-") + (" joke" if is_joke else "")
+        sides[voted_up].append(f"[{tag}] {text}")
     # Retire la review la moins bien classée du côté le plus fourni.
     while (
         sum(estimate_tokens(line) for side in sides.values() for line in side)
@@ -140,7 +169,7 @@ def _points(value) -> list[str]:
         raise ValueError(f"liste de points attendue, reçu {value!r}")
     if not all(isinstance(p, str) and p.strip() for p in value):
         raise ValueError(f"point vide ou non textuel dans {value!r}")
-    return [p.strip() for p in value[:MAX_POINTS]]
+    return [p.strip().rstrip(".") for p in value[:MAX_POINTS]]
 
 
 def parse_summary(raw: str) -> Summary:
@@ -255,8 +284,8 @@ def run(
     for batch in itertools.batched(games, batch_size):
         reviews: dict[int, list[Review]] = defaultdict(list)
         output = run_psql(select_reviews_sql([app_id for app_id, _ in batch]))
-        for app_id, voted_up, text in csv.reader(io.StringIO(output)):
-            reviews[int(app_id)].append((voted_up == "t", text))
+        for app_id, voted_up, is_joke, text in csv.reader(io.StringIO(output)):
+            reviews[int(app_id)].append((voted_up == "t", is_joke == "t", text))
 
         rows = []
         for app_id, total in batch:

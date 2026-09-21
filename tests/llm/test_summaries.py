@@ -23,7 +23,9 @@ def valid_response(**overrides) -> str:
 
 
 def test_build_prompt_marks_polarity_and_truncates_normalized_text():
-    prompt, kept = build_prompt([(True, "Great\n\n  game"), (False, "x" * 2000)])
+    prompt, kept = build_prompt(
+        [(True, False, "Great\n\n  game"), (False, False, "x" * 2000)]
+    )
 
     assert "[+] Great game" in prompt
     assert f"[-] {'x' * summaries.MAX_REVIEW_CHARS}\n" in prompt + "\n"
@@ -37,11 +39,11 @@ def test_build_prompt_drops_lowest_ranked_reviews_of_the_larger_side_over_budget
     monkeypatch.setattr(summaries, "MAX_PROMPT_TOKENS", 4)
     # Chaque ligne, préfixe "[±] " compris, est estimée à 2 tokens.
     reviews = [
-        (True, "good"),
-        (True, "fine"),
-        (True, "late"),
-        (False, "差"),
-        (False, "bad!"),
+        (True, False, "good"),
+        (True, False, "fine"),
+        (True, False, "late"),
+        (False, False, "差"),
+        (False, False, "bad!"),
     ]
 
     prompt, kept = build_prompt(reviews)
@@ -51,10 +53,21 @@ def test_build_prompt_drops_lowest_ranked_reviews_of_the_larger_side_over_budget
     assert "late" not in prompt and "bad!" not in prompt
 
 
-def test_select_reviews_sql_mixes_most_useful_and_funniest_per_side():
+def test_build_prompt_tags_reviews_kept_only_for_their_humor():
+    prompt, _ = build_prompt(
+        [(True, True, "10/10 would crash again"), (False, False, "Bugs")]
+    )
+
+    assert "[+ joke] 10/10 would crash again" in prompt
+    assert "[-] Bugs" in prompt
+
+
+def test_select_reviews_sql_apportions_useful_and_funniest_by_language_volume():
     sql = summaries.select_reviews_sql([730, 570])
 
-    assert "WHERE app_id IN (730, 570)" in sql
+    assert "WHERE h.app_id IN (730, 570)" in sql
+    assert "(useful_rank_in_language - 0.5) / language_reviews" in sql
+    assert f"useful_rank > {summaries.USEFUL_PER_SIDE} AS is_joke" in sql
     assert f"useful_rank <= {summaries.USEFUL_PER_SIDE}" in sql
     assert f"OR funny_rank <= {summaries.FUNNY_PER_SIDE}" in sql
 
@@ -82,6 +95,12 @@ def test_parse_summary_accepts_a_valid_response_and_caps_lists():
     assert summary == Summary(
         "Players love it.", [f"p{i}" for i in range(5)], ["Short"]
     )
+
+
+def test_parse_summary_strips_trailing_periods_from_points():
+    summary = parse_summary(valid_response(pros=["Great story."], cons=["Bugs"]))
+
+    assert summary.pros == ["Great story"]
 
 
 @pytest.mark.parametrize(
@@ -144,7 +163,7 @@ def test_run_skips_failed_games_and_upserts_the_rest():
             return "1,500\n2,600\n3,700\n"
         if "FROM marts.review_highlight" in sql:
             # Le jeu 3 n'a aucune review éligible dans review_highlight.
-            return '1,t,Good\n1,f,Bad\n2,t,"Nice, really"\n2,f,Meh\n'
+            return '1,t,f,Good\n1,f,f,Bad\n2,t,t,"Nice, really"\n2,f,f,Meh\n'
         return ""
 
     responses = iter([valid_response(), "broken"])
