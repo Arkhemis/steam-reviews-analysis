@@ -70,9 +70,7 @@ sampled AS (
         r.review_text
     FROM selected AS s
     INNER JOIN {{ ref('steam_review') }} AS r
-        ON
-            r.recommendation_id = s.recommendation_id
-            AND r.app_id = s.app_id
+        USING (recommendation_id, app_id)
     ORDER BY s.app_id, s.voted_up, MD5(r.review_text), s.recommendation_id
 
 ),

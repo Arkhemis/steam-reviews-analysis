@@ -180,8 +180,6 @@ SELECT
 
 FROM ranked AS k
 INNER JOIN windows AS w
-    ON k.window_name = w.window_name
+    USING (window_name)
 INNER JOIN recent_reviews AS r
-    ON
-        k.recommendation_id = r.recommendation_id
-        AND k.app_id = r.app_id
+    USING (recommendation_id, app_id)
