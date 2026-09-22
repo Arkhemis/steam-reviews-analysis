@@ -30,10 +30,8 @@ source_versions AS (
     (
         SELECT DISTINCT ON (s.recommendation_id, s.app_id) s.*
         FROM {{ source('raw', 'steam_reviews') }} AS s
-        INNER JOIN contested AS c
-            ON
-                c.recommendation_id = s.recommendation_id
-                AND c.app_id = s.app_id
+        INNER JOIN contested
+            USING (recommendation_id, app_id)
         ORDER BY
             s.recommendation_id ASC,
             s.app_id ASC,

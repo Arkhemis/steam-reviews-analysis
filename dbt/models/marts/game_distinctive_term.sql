@@ -78,15 +78,11 @@ confronted AS (
 
     FROM cell_term AS c
     INNER JOIN corpus_term AS k
-        ON
-            k.voted_up = c.voted_up
-            AND k.lexeme = c.lexeme
+        USING (voted_up, lexeme)
     INNER JOIN cell_size AS cs
-        ON
-            cs.app_id = c.app_id
-            AND cs.voted_up = c.voted_up
+        USING (app_id, voted_up)
     INNER JOIN corpus_size AS ks
-        ON ks.voted_up = c.voted_up
+        USING (voted_up)
 
 ),
 

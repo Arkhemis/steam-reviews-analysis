@@ -26,8 +26,8 @@ eligible AS (
             PARTITION BY r.app_id ORDER BY MD5(r.recommendation_id::text)
         ) AS rank_in_game
     FROM {{ ref('steam_review') }} AS r
-    INNER JOIN candidate AS c
-        ON c.app_id = r.app_id
+    INNER JOIN candidate
+        USING (app_id)
     WHERE
         r.language = '{{ var("terms_language", "english") }}'
         AND r.author_playtime_at_review_minutes > 120
@@ -128,15 +128,11 @@ confronted AS (
         gs.tokens::double precision AS alpha_total
     FROM half_term AS h
     INNER JOIN game_term AS g
-        ON
-            g.app_id = h.app_id
-            AND g.lexeme = h.lexeme
+        USING (app_id, lexeme)
     INNER JOIN half_size AS hs
-        ON
-            hs.app_id = h.app_id
-            AND hs.half_b = h.half_b
+        USING (app_id, half_b)
     INNER JOIN game_size AS gs
-        ON gs.app_id = h.app_id
+        USING (app_id)
 
 ),
 

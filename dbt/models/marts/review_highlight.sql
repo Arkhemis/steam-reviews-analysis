@@ -72,6 +72,4 @@ SELECT
 
 FROM top_reviews AS t
 INNER JOIN {{ ref('steam_review') }} AS s
-    ON
-        t.recommendation_id = s.recommendation_id
-        AND t.app_id = s.app_id
+    USING (recommendation_id, app_id)

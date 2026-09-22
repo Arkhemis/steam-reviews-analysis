@@ -120,7 +120,5 @@ SELECT
     ) AS is_well_received
 
 FROM eligible_events AS e
-INNER JOIN selected AS s
-    ON
-        e.app_id = s.app_id
-        AND e.gid = s.gid
+INNER JOIN selected
+    USING (app_id, gid)
