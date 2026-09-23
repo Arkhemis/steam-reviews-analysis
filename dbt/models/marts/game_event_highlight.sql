@@ -192,7 +192,6 @@ SELECT
         ORDER BY e.total_votes DESC, e.comment_count DESC, e.gid ASC
     ) AS rank_in_year,
 
-
     e.image_urls[1] AS image_url,
 
     ROUND(e.pct_negative, 4) AS pct_negative,
