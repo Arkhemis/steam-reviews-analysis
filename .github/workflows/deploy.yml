@@ -24,3 +24,90 @@ jobs:
           install -m 600 -D /dev/null "$HOME/.ssh/known_hosts"
           echo "167.235.145.180 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILlhrq4pbJh/BjQo3kZff7cDtSfCsVX+6SMfZQu4tRqE" > "$HOME/.ssh/known_hosts"
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/deploy_key" deploy@167.235.145.180 deploy
+
+  dbt-modified-models:
+    name: Run modified dbt models
+    needs: deploy
+    # Un workflow_dispatch n'a pas de commit de référence à comparer.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # `dbt parse` rend le profile sans ouvrir de connexion.
+    env:
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: ci
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --frozen --no-dev
+
+      # state:modified couvre aussi les changements de config, de yml et de macros.
+      # Aval inclus, sauf les modèles nlp non modifiés : même règle que daily_pipeline.
+      - name: List modified models
+        id: models
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          before="$RUNNER_TEMP/before"
+          git worktree add "$before" "$BEFORE"
+          uv run dbt -q deps --project-dir "$before/dbt" --profiles-dir "$before/dbt"
+          uv run dbt -q parse --project-dir "$before/dbt" --profiles-dir "$before/dbt"
+          uv run dbt -q deps --project-dir dbt --profiles-dir dbt
+          uv run dbt -q ls --project-dir dbt --profiles-dir dbt \
+            --resource-type model --select state:modified+ --exclude tag:nlp,state:unmodified \
+            --state "$before/dbt/target" --output name > "$RUNNER_TEMP/models.txt"
+          cat "$RUNNER_TEMP/models.txt"
+          echo "count=$(grep -c . "$RUNNER_TEMP/models.txt" || true)" >> "$GITHUB_OUTPUT"
+
+      # Passe par la file de Dagster : visible dans l'UI et couvert par l'alerte Discord.
+      - name: Launch Dagster run
+        if: steps.models.outputs.count != '0'
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          install -m 600 -D /dev/null "$HOME/.ssh/deploy_key"
+          echo "$VPS_DEPLOY_KEY" > "$HOME/.ssh/deploy_key"
+          install -m 600 -D /dev/null "$HOME/.ssh/known_hosts"
+          echo "167.235.145.180 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILlhrq4pbJh/BjQo3kZff7cDtSfCsVX+6SMfZQu4tRqE" > "$HOME/.ssh/known_hosts"
+          ssh -fN -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/deploy_key" \
+            -L 3001:127.0.0.1:3001 deploy@167.235.145.180
+
+          # Le webserver vient d'être recréé par le deploy : on attend qu'il réponde.
+          gql() {
+            curl -sS --fail --retry 12 --retry-delay 5 --retry-all-errors \
+              -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:3001/graphql
+          }
+
+          keys=$(jq -R '{path: [.]}' "$RUNNER_TEMP/models.txt" | jq -sc .)
+
+          # Sans sélection explicite des checks, le run exclut les tests dbt.
+          checks=$(jq -n --argjson keys "$keys" '{
+            query: "query ($keys: [AssetKeyInput!]) { assetNodes(assetKeys: $keys) { assetKey { path } assetChecksOrError { ... on AssetChecks { checks { name } } } } }",
+            variables: {keys: $keys}
+          }' | gql | jq -c '[.data.assetNodes[] | .assetKey as $k | .assetChecksOrError.checks[]? | {assetKey: {path: $k.path}, name}]')
+
+          result=$(jq -n --argjson keys "$keys" --argjson checks "$checks" '{
+            query: "mutation ($selector: JobOrPipelineSelector!) { launchRun(executionParams: {selector: $selector}) { __typename ... on LaunchRunSuccess { run { runId } } ... on Error { message } } }",
+            variables: {selector: {
+              repositoryLocationName: "steam_reviews",
+              repositoryName: "__repository__",
+              jobName: "__ASSET_JOB",
+              assetSelection: $keys,
+              assetCheckSelection: $checks
+            }}
+          }' | gql)
+          echo "$result" | jq .
+
+          run_id=$(echo "$result" | jq -er '.data.launchRun | select(.__typename == "LaunchRunSuccess") | .run.runId')
+          echo "Run lancé : https://dagster.steam.reviews/runs/$run_id" >> "$GITHUB_STEP_SUMMARY"
