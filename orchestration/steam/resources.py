@@ -109,7 +109,7 @@ class SteamResource(ConfigurableResource):
                 time.sleep(delay)
 
     def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
-        """Recensement : renvoie `query_summary` (total_reviews, review_score, ...) pour un jeu."""
+        """Recensement : renvoie la réponse entière, dont `query_summary` (total_reviews, review_score, ...)."""
         data = self._get(
             f"{BASE_URL}/appreviews/{app_id}",
             {
@@ -122,7 +122,7 @@ class SteamResource(ConfigurableResource):
             },
             app_id=app_id,
         )
-        return data.get("query_summary", {})
+        return data
 
     def get_all_reviews(
         self,

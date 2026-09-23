@@ -1,3 +1,4 @@
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -105,6 +106,8 @@ def steam_review_counts(
     )
 
     probed = 0
+    skipped = 0
+    first_empty: tuple[int, dict] | None = None
     start = time.monotonic()
     with (
         postgres.connect() as conn,
@@ -112,11 +115,18 @@ def steam_review_counts(
     ):
         for batch_start in range(0, total, CENSUS_BATCH_SIZE):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
-            summaries = pool.map(
+            responses = pool.map(
                 lambda app_id: steam.get_summary(app_id, language="all"), batch
             )
             with conn.cursor() as cur:
-                for app_id, summary in zip(batch, summaries):
+                for app_id, data in zip(batch, responses):
+                    summary = data.get("query_summary") or {}
+                    # Steam renvoie parfois un 200 sans query_summary : on garde l'ancien recensement.
+                    if summary.get("total_reviews") is None:
+                        if first_empty is None:
+                            first_empty = (app_id, data)
+                        skipped += 1
+                        continue
                     cur.execute(
                         UPSERT_COUNTS_SQL,
                         (
@@ -134,8 +144,20 @@ def steam_review_counts(
             rate = probed / elapsed if elapsed > 0 else 0
             eta_min = (total - probed) / rate / 60 if rate > 0 else float("inf")
             context.log.info(
-                f"Recensé {probed}/{total} ({probed / total:.0%}) "
+                f"Recensé {probed}/{total} ({probed / total:.0%}, {skipped} réponses vides) "
                 f"— {rate:.2f} jeux/s — ETA {eta_min:.0f} min"
             )
 
-    return MaterializeResult(metadata={"apps_probed": MetadataValue.int(probed)})
+    if first_empty is not None:
+        app_id, data = first_empty
+        context.log.warning(
+            f"{skipped} jeux sans query_summary, recensement conservé. "
+            f"Premier : app_id={app_id}, success={data.get('success')}, "
+            f"clés={sorted(data)}, corps={json.dumps(data)[:500]}"
+        )
+    return MaterializeResult(
+        metadata={
+            "apps_probed": MetadataValue.int(probed),
+            "apps_skipped": MetadataValue.int(skipped),
+        }
+    )
