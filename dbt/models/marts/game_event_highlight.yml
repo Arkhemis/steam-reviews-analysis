@@ -5,18 +5,6 @@ models:
     description: >
       Annonces marquantes d'un jeu, prêtes à annoter la courbe de reviews :
       une ligne par (app_id, gid), réduite aux événements news et update.
-      Trois sélections s'additionnent. Chaque année d'un jeu retient les trois
-      annonces qui ont le plus fait réagir : ce sont ses jalons. Chaque mois
-      repêche l'annonce la plus rejetée, s'il y en a une. Chaque mois où la
-      courbe décroche repêche enfin celle qui explique le décrochage, même si
-      l'annonce elle-même n'a pas été votée contre — c'est le cas courant, les
-      joueurs mécontents écrivent un avis plutôt que de descendre le post.
-      Les deux repêchages sont mensuels comme la courbe annotée : à la maille
-      annuelle, un jeu très actif reste des mois sans repère et un scandale
-      isolé vide le quota de toute son année. Le corps de l'annonce
-      (announcement_text) n'est pas repris : l'infobulle n'affiche que le
-      titre, les compteurs et une vignette, et le BBCode brut pèse plus que
-      tout le reste du modèle réuni.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -83,8 +71,7 @@ models:
           Rang de l'annonce parmi celles retenues pour son jeu et son année,
           classées par volume de votes décroissant. Va de 1 au cumul des trois
           plafonds : les annonces discutées de l'année, plus au pire un
-          repêchage de chaque sorte par mois, soit 27 par défaut. Permet au
-          site de réduire encore l'affichage sans relancer dbt.
+          repêchage de chaque sorte par mois, soit 27 par défaut.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
@@ -114,12 +101,6 @@ models:
           Faux quand l'annonce dépasse le seuil de controverse
           (controversy_pct_negative, 25 % de votes négatifs par défaut) tout
           en réunissant assez de votes pour que le ratio veuille dire quelque
-          chose (controversy_min_votes, 100 par défaut). Mêmes seuils que le
-          repêchage mensuel, pour que le contour rouge de l'infobulle désigne
-          exactement ce que le modèle appelle une controverse. Le site en fait la
-          couleur du contour de l'infobulle. Le seuil est volontairement plus
-          bas que la majorité absolue : à 36 % de votes négatifs, l'annonce du
-          report de Cyberpunk 2077 était un rejet, et la compter comme bien
-          reçue aurait été un contresens.
+          chose (controversy_min_votes, 100 par défaut).
         data_tests:
           - not_null

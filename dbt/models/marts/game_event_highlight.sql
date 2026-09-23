@@ -30,11 +30,6 @@ WITH eligible_events AS (
 
 ),
 
--- Le score mensuel du jeu et sa référence : la part d'avis positifs cumulée
--- sur tout ce qui précède le mois. Cette référence-là ne se laisse pas
--- entraîner, à la différence d'une moyenne glissante — pendant un review bomb
--- qui dure, le deuxième mois de chute paraît normal en regard du premier,
--- et son patch passerait inaperçu.
 monthly_score AS (
 
     SELECT
@@ -106,26 +101,6 @@ most_discussed AS (
 
 ),
 
--- Premier repêchage : l'annonce la plus rejetée du mois. Mensuel, là où la
--- sélection des jalons ci-dessus raisonne en année, pour deux raisons :
---
--- 1. La courbe qu'on annote est mensuelle. Un quota annuel laisse un jeu très
---    actif sans repère pendant des mois : Helldivers 2 a publié 71 annonces
---    éligibles en 2024 pour 4 retenues, et la seule d'août était le message
---    d'excuses du game director — pas le patch Escalation of Freedom qui, la
---    semaine d'avant, avait fait tomber le score mensuel de 84 % à 58 %.
---
--- 2. Un quota annuel se fait vider par un seul scandale. Toujours en 2024,
---    l'annonce du compte PSN a réuni 190 200 votes négatifs : classées au
---    volume, elle et une autre prenaient les deux places de l'année, et toutes
---    les controverses suivantes tombaient, si violentes soient-elles.
---
--- Le classement se fait sur votes_down et non sur le total des votes ni sur le
--- ratio seul. Le total des votes fait gagner l'annonce la plus bruyante, pas la
--- plus rejetée — un trailer applaudi par 34 000 personnes passe devant le patch
--- qui a cassé le jeu. Le ratio seul fait l'inverse et couronne une annonce
--- confidentielle à 95 % de négatif sur 101 votants. Le nombre de mécontents
--- porte les deux à la fois.
 controversial AS (
 
     SELECT
@@ -143,21 +118,12 @@ controversial AS (
         WHERE
             pct_negative > {{ var('controversy_pct_negative', 0.25) }}
 
-            -- Plancher de volume : à trois votes contre un, le ratio ne dit
-            -- rien du jeu, seulement que quatre personnes sont passées par là.
             AND total_votes >= {{ var('controversy_min_votes', 100) }}
     ) AS ranked
     WHERE rk <= {{ var('top_n_controversial_per_month', 1) }}
 
 ),
 
--- Deuxième repêchage, celui qui part de la courbe et non de l'annonce. Une
--- partie des review bombs ne laisse aucune trace sur l'annonce elle-même :
--- les joueurs vont écrire un avis négatif, pas descendre le post. Ces mois-là
--- n'ont donc pas de controverse à repêcher, alors que le décrochage est bien
--- visible sur la courbe qu'on annote — sur les 279 mois de chute sans repère
--- du catalogue, le repêchage par controverse seul n'en explique que 18.
---
 -- On retient donc, pour chaque mois qui décroche, l'annonce dont l'accueil va
 -- dans le sens du décrochage : la plus rejetée quand le score tombe, la mieux
 -- reçue quand il remonte.
@@ -226,15 +192,11 @@ SELECT
         ORDER BY e.total_votes DESC, e.comment_count DESC, e.gid ASC
     ) AS rank_in_year,
 
-    -- Première image du corps de l'annonce, NULL quand il n'y en a pas (la
-    -- moitié des cas) : c'est la vignette de l'infobulle, pas une galerie.
+
     e.image_urls[1] AS image_url,
 
     ROUND(e.pct_negative, 4) AS pct_negative,
 
-    -- Même seuil et même plancher que le repêchage ci-dessus, pour que le
-    -- contour rouge de l'infobulle désigne exactement ce que le modèle
-    -- appelle une controverse.
     (
         e.pct_negative <= {{ var('controversy_pct_negative', 0.25) }}
         OR e.total_votes < {{ var('controversy_min_votes', 100) }}
