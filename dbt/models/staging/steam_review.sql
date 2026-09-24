@@ -98,6 +98,7 @@ SELECT
     -- attributs dérivés de review_text, matérialisés ici 
     -- afin d'éviter de décompresser encore en aval
     LENGTH(review_text) AS review_text_length,
-    COALESCE(review_text ~ '[✅☐]', FALSE) AS is_generic
+    COALESCE(review_text ~ '[✅☐]', FALSE) AS is_generic,
+    {{ has_profanity('review_text', 'language') }} AS has_profanity
 
 FROM renamed

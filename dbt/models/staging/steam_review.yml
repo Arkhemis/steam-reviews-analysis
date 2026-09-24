@@ -74,6 +74,14 @@ models:
         data_tests:
           - not_null
 
+      - name: has_profanity
+        description: >
+          Vrai si la review est grossière : une série de cœurs de Steam
+          (« ♥♥♥♥ ») ou un gros mot écrit en clair dans sa langue. Voir la
+          macro has_profanity.
+        data_tests:
+          - not_null
+
       - name: language
         description: Langue déclarée de la review (code langue Steam, ex. french, english).
 
