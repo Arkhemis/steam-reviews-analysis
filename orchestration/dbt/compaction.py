@@ -25,7 +25,10 @@ COUNT_OUTDATED_SQL = "SELECT count(*) AS n FROM staging.steam_review_outdated"
 
 
 def count_outdated(postgres: PostgresResource) -> int | None:
-    """Taille du registre, None avant le premier build."""
+    """Return the number of outdated versions, or None if the registry does not exist.
+
+    Exceptions raised by the database query propagate to the caller.
+    """
     if not postgres.fetch_all(OUTDATED_EXISTS_SQL)[0]["exists"]:
         return None
     return postgres.fetch_all(COUNT_OUTDATED_SQL)[0]["n"]
@@ -37,9 +40,14 @@ def compact_steam_review_if_needed(
     postgres: PostgresResource,
     force: bool,
 ) -> Iterator[dg.AssetObservation]:
-    """Compacte si le registre dépasse le seuil, ou sur demande (full refresh).
+    """Compact when the registry exceeds three million rows or force is set.
 
-    Les deux modèles ont `full_refresh=false` : un full refresh passe donc par ici.
+    Skip the check if the versions asset is not selected or the registry does not
+    exist, even when forced. Otherwise, yield an observation with the registry
+    count before compaction, the threshold, and whether compaction ran. A forced
+    call is used for full refresh because both tables disable dbt full refresh.
+    Exceptions raised by the database or dbt CLI propagate before the
+    observation is yielded.
     """
     if VERSIONS_KEY not in context.selected_asset_keys:
         return
