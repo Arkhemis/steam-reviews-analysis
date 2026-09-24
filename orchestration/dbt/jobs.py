@@ -1,16 +1,28 @@
 import dagster as dg
 from dagster_dbt import build_dbt_asset_selection
 
-from orchestration.dbt.assets import DbtRunConfig, dbt_steam_reviews_models
+from orchestration.dbt.assets import (
+    DbtRunConfig,
+    dbt_steam_reviews_bridge_models,
+    dbt_steam_reviews_models,
+)
+
+
+def _dbt_selection(dbt_select: str) -> dg.AssetSelection:
+    # build_dbt_asset_selection n'accepte qu'une définition à la fois.
+    return build_dbt_asset_selection(
+        [dbt_steam_reviews_models], dbt_select=dbt_select
+    ) | build_dbt_asset_selection(
+        [dbt_steam_reviews_bridge_models], dbt_select=dbt_select
+    )
+
 
 # Les couches sont déjà taguées par dossier dans dbt/dbt_project.yml.
-dbt_all = build_dbt_asset_selection([dbt_steam_reviews_models], dbt_select="fqn:*")
+dbt_all = _dbt_selection("fqn:*")
 
 
 def _layer_selection(layer: str) -> dg.AssetSelection:
-    return build_dbt_asset_selection(
-        [dbt_steam_reviews_models], dbt_select=f"tag:{layer}"
-    )
+    return _dbt_selection(f"tag:{layer}")
 
 
 dbt_build_job = dg.define_asset_job(
@@ -42,7 +54,10 @@ dbt_full_refresh_job = dg.define_asset_job(
     selection=dbt_all,
     description="Matérialise tout le projet dbt en full refresh.",
     config=dg.RunConfig(
-        ops={"dbt_steam_reviews_models": DbtRunConfig(full_refresh=True)},
+        ops={
+            op: DbtRunConfig(full_refresh=True)
+            for op in ("dbt_steam_reviews_models", "dbt_steam_reviews_bridge_models")
+        },
     ),
 )
 

@@ -40,18 +40,14 @@ class LayerGroupedDbtTranslator(DagsterDbtTranslator):
         return group_from_dbt_resource_props_fallback_to_directory(dbt_resource_props)
 
 
-@dbt_assets(
-    manifest=dbt_steam_reviews_project.manifest_path,
-    dagster_dbt_translator=LayerGroupedDbtTranslator(),
-    # Une seule définition couvre tout le projet : un nœud dbt ne peut être
-    # produit que par une AssetsDefinition, sinon les clés se dupliquent.
-    select="fqn:*",
-    exclude="resource_type:seed",
-)
-def dbt_steam_reviews_models(
-    context: dg.AssetExecutionContext,
-    dbt: DbtCliResource,
-    config: DbtRunConfig,
+# Modèles qui joignent deux branches d'ingestion. Dagster découpe une définition
+# en steps par profondeur d'ingestion amont : dans la définition principale, ils
+# feraient attendre steam_events au step de steam_review (+1 h 30 par nuit).
+BRIDGE_MODELS = "game_detail game_event_highlight"
+
+
+def _dbt_build(
+    context: dg.AssetExecutionContext, dbt: DbtCliResource, config: DbtRunConfig
 ):
     """`dbt build` (modèles + tests dans l'ordre du DAG) sur les assets sélectionnés.
 
@@ -60,3 +56,32 @@ def dbt_steam_reviews_models(
     """
     args = ["build", "--full-refresh"] if config.full_refresh else ["build"]
     yield from dbt.cli(args, context=context).stream()
+
+
+@dbt_assets(
+    manifest=dbt_steam_reviews_project.manifest_path,
+    dagster_dbt_translator=LayerGroupedDbtTranslator(),
+    # Un nœud dbt ne peut être produit que par une AssetsDefinition, sinon les
+    # clés se dupliquent : les deux sélections sont disjointes.
+    select="fqn:*",
+    exclude=f"resource_type:seed {BRIDGE_MODELS}",
+)
+def dbt_steam_reviews_models(
+    context: dg.AssetExecutionContext,
+    dbt: DbtCliResource,
+    config: DbtRunConfig,
+):
+    yield from _dbt_build(context, dbt, config)
+
+
+@dbt_assets(
+    manifest=dbt_steam_reviews_project.manifest_path,
+    dagster_dbt_translator=LayerGroupedDbtTranslator(),
+    select=BRIDGE_MODELS,
+)
+def dbt_steam_reviews_bridge_models(
+    context: dg.AssetExecutionContext,
+    dbt: DbtCliResource,
+    config: DbtRunConfig,
+):
+    yield from _dbt_build(context, dbt, config)
