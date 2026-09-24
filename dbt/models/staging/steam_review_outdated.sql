@@ -41,14 +41,20 @@
 
 {% else %}
 
-    -- Reviews touchées depuis la dernière nuit réussie du registre, avec 3 jours de recouvrement.
+    -- Depuis la dernière nuit du registre (max outdated_at), 3 jours de recouvrement ;
+    -- registre vidé par la compaction : repli sur versions. Littéral, pour Citus.
+    {%- set last_night = run_query("SELECT MAX(outdated_at) FROM " ~ this).columns[0].values()[0] if execute %}
     WITH touched AS (
 
         SELECT DISTINCT
             app_id,
             recommendation_id
         FROM {{ source('raw', 'steam_reviews') }}
-        WHERE loaded_at > {{ steam_review_outdated_watermark(3) }}
+        WHERE loaded_at > {% if last_night -%}
+            '{{ last_night.isoformat() }}'::timestamptz - INTERVAL '3 days'
+        {%- else -%}
+            {{ steam_review_watermark(ref('steam_review_versions'), 3) }}
+        {%- endif %}
 
     ),
 

@@ -130,21 +130,6 @@ source_versions AS (
 {% endmacro %}
 
 
-{#- Watermark du registre : sa dernière nuit réussie (max outdated_at), pas versions,
-    qui a déjà rattrapé un éventuel retard. Registre vide (compaction) : repli sur versions. -#}
-{% macro steam_review_outdated_watermark(overlap_days) %}
-    {%- if not execute -%}
-        {{ return("'1970-01-01'::timestamptz") }}
-    {%- endif -%}
-    {%- set query = "SELECT MAX(outdated_at) - INTERVAL '" ~ overlap_days ~ " days' FROM " ~ this -%}
-    {%- set watermark = run_query(query).columns[0].values()[0] -%}
-    {%- if watermark is none -%}
-        {{ return(steam_review_watermark(ref('steam_review_versions'), overlap_days)) }}
-    {%- endif -%}
-    {{ return("'" ~ watermark.isoformat() ~ "'::timestamptz") }}
-{% endmacro %}
-
-
 {#- Premier jour du mois (ou var) : le registre est recalculé depuis versions pour se corriger. -#}
 {% macro steam_review_outdated_full_rebuild() %}
     {{ return(not is_incremental() or var('rebuild_steam_review_outdated', run_started_at.day == 1)) }}
