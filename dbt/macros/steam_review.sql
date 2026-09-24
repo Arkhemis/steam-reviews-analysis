@@ -139,9 +139,16 @@ source_versions AS (
 {#- Compaction en place : le TRUNCATE est commité à part pour libérer le disque
     avant l'INSERT (pas de pic). Lancée par Dagster, voir orchestration/dbt/compaction.py. -#}
 {% macro compact_steam_review() %}
-    {%- set versions = ref('steam_review_versions') -%}
+    {%- set versions = ref('steam_review_versions').incorporate(type='table') -%}
     {%- set outdated = ref('steam_review_outdated') -%}
-    {%- set columns = adapter.get_columns_in_relation(versions) | map(attribute='quoted') | join(', ') -%}
+    {#- Colonnes de steam_review_parse, pas de la table : une colonne ajoutée est créée
+        puis remplie par la réinsertion, une colonne retirée reste à NULL. -#}
+    {%- set probe = make_temp_relation(versions) -%}
+    {%- set empty_raw = "(SELECT * FROM " ~ source('raw', 'steam_reviews') ~ " LIMIT 0) AS empty_raw" -%}
+    {% do run_query(get_create_table_as_sql(True, probe, steam_review_parse(empty_raw))) %}
+    {% do process_schema_changes('append_new_columns', probe, versions) %}
+    {% do adapter.commit() %}
+    {%- set columns = adapter.get_columns_in_relation(probe) | map(attribute='quoted') | join(', ') -%}
 
     {% do log("Compaction : TRUNCATE de " ~ versions ~ " et " ~ outdated, info=true) %}
     {% do _commit_statement("TRUNCATE " ~ versions ~ ", " ~ outdated) %}

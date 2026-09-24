@@ -79,7 +79,7 @@ Signé par les quatre experts, avec amendements (intégrés ci-dessous). Le chan
 - Dédoublonnage du delta : `DISTINCT ON (app_id, recommendation_id, timestamp_updated)`, plus un anti-join contre les triplets déjà présents.
 - **Un seul scan étroit de `versions` par nuit** : il sert à la fois à ce dédoublonnage et à l'alimentation du registre.
 - Parsing JSON dans **une macro commune** au modèle, à la compaction et au full refresh.
-- `on_schema_change='append_new_columns'`. Un nouveau champ JSON exige ensuite une compaction pour remplir l'historique.
+- `on_schema_change='append_new_columns'`. Pour une nouvelle colonne, un seul run avec compaction forcée suffit : la compaction la crée depuis `steam_review_parse` puis remplit l'historique.
 - L'append ne fait qu'un `INSERT` dans la table existante : pas de swap, donc la vue n'est pas supprimée.
 
 **2. `steam_review_outdated`, heap incrémental**
