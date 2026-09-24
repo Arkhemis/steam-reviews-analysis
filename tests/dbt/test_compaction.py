@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import dagster as dg
+import pytest
 
 from orchestration.dbt import compaction
 from orchestration.dbt.compaction import (
@@ -41,6 +42,7 @@ def test_below_threshold_only_reports_the_registry_size(monkeypatch):
     assert isinstance(event, dg.AssetObservation)
     assert event.asset_key == OUTDATED_KEY
     assert event.metadata["outdated_rows"].value == COMPACTION_THRESHOLD
+    assert event.metadata["compaction_threshold"].value == COMPACTION_THRESHOLD
     assert event.metadata["compacted"].value is False
 
 
@@ -72,3 +74,109 @@ def test_skipped_before_the_first_build(monkeypatch):
 
     assert calls == []
     assert events == []
+
+
+class FakePostgres:
+    def __init__(self, exists, count=None, error=None):
+        self.exists = exists
+        self.count = count
+        self.error = error
+        self.queries = []
+
+    def fetch_all(self, query):
+        self.queries.append(query)
+        if self.error is not None:
+            raise self.error
+        if query == compaction.OUTDATED_EXISTS_SQL:
+            return [{"exists": self.exists}]
+        if query == compaction.COUNT_OUTDATED_SQL:
+            return [{"n": self.count}]
+        raise AssertionError(f"Unexpected query: {query}")
+
+
+def test_count_outdated_does_not_query_a_missing_registry():
+    postgres = FakePostgres(exists=False)
+
+    assert compaction.count_outdated(postgres) is None
+    assert postgres.queries == [compaction.OUTDATED_EXISTS_SQL]
+
+
+def test_count_outdated_preserves_an_empty_registry_count():
+    postgres = FakePostgres(exists=True, count=0)
+
+    assert compaction.count_outdated(postgres) == 0
+    assert postgres.queries == [
+        compaction.OUTDATED_EXISTS_SQL,
+        compaction.COUNT_OUTDATED_SQL,
+    ]
+
+
+def test_count_outdated_propagates_database_errors():
+    error = RuntimeError("database unavailable")
+    postgres = FakePostgres(exists=True, error=error)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        compaction.count_outdated(postgres)
+    assert postgres.queries == [compaction.OUTDATED_EXISTS_SQL]
+
+
+def test_non_selected_step_never_queries_the_registry():
+    postgres = FakePostgres(exists=True, count=COMPACTION_THRESHOLD + 1)
+    context = SimpleNamespace(selected_asset_keys=set())
+
+    assert (
+        list(compact_steam_review_if_needed(context, FakeDbt(), postgres, True)) == []
+    )
+    assert postgres.queries == []
+
+
+def test_empty_registry_does_not_compact_without_force():
+    postgres = FakePostgres(exists=True, count=0)
+    context = SimpleNamespace(selected_asset_keys={VERSIONS_KEY})
+    dbt = FakeDbt()
+
+    [event] = compact_steam_review_if_needed(context, dbt, postgres, False)
+
+    assert dbt.calls == []
+    assert event.metadata["outdated_rows"].value == 0
+    assert event.metadata["compacted"].value is False
+
+
+def test_observation_is_yielded_only_after_compaction_finishes():
+    steps = []
+
+    class WaitingDbt:
+        def cli(self, args):
+            steps.append(("cli", args))
+            return SimpleNamespace(wait=lambda: steps.append(("wait", None)))
+
+    context = SimpleNamespace(
+        selected_asset_keys={VERSIONS_KEY},
+        log=SimpleNamespace(info=lambda message: steps.append(("log", message))),
+    )
+    postgres = FakePostgres(exists=True, count=COMPACTION_THRESHOLD + 1)
+
+    [event] = compact_steam_review_if_needed(context, WaitingDbt(), postgres, False)
+
+    assert [step[0] for step in steps] == ["log", "cli", "wait"]
+    assert steps[1][1] == ["run-operation", "compact_steam_review"]
+    assert event.asset_key == OUTDATED_KEY
+    assert event.metadata["compacted"].value is True
+
+
+def test_failed_compaction_does_not_report_success():
+    class FailingDbt:
+        def cli(self, _args):
+            def fail():
+                raise RuntimeError("dbt operation failed")
+
+            return SimpleNamespace(wait=fail)
+
+    context = SimpleNamespace(
+        selected_asset_keys={VERSIONS_KEY},
+        log=SimpleNamespace(info=lambda _message: None),
+    )
+    postgres = FakePostgres(exists=True, count=COMPACTION_THRESHOLD + 1)
+
+    with pytest.raises(RuntimeError, match="dbt operation failed"):
+        list(compact_steam_review_if_needed(context, FailingDbt(), postgres, False))
