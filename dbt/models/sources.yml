@@ -76,14 +76,7 @@ sources:
           meta:
             dagster:
               asset_key: ['steam_reviews_incremental']
-        data_tests:
-          - dbt_utils.unique_combination_of_columns:
-              arguments:
-                combination_of_columns:
-                  - recommendation_id
-                  - app_id
-              config:
-                severity: warn
+        # Pas de test d'unicité : raw garde toutes les versions de chaque review.
         columns:
           - name: recommendation_id
             description: Identifiant Steam de la review (unique par jeu, pas globalement).

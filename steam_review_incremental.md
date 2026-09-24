@@ -9,14 +9,14 @@ Arrêter de reconstruire les 183 M lignes chaque nuit.
 - `staging.steam_review` devient une table **append-only versionnée**, alimentée chaque nuit par le seul delta de raw.
 - Un petit **registre des versions périmées** complète cette table.
 - Une **vue** assemble les deux pour donner la dernière version de chaque review.
-- Une **compaction en place** a lieu environ tous les 4 mois (registre > 2 M lignes, voir la validation en prod).
+- Une **compaction en place** a lieu environ tous les 10 mois (registre > 3 M lignes, voir la validation en prod).
 
 Signé par les quatre experts, avec amendements (intégrés ci-dessous). Le changement de moteur (Timescale) est écarté à l'unanimité.
 
 | | Aujourd'hui | Cible (estimé) |
 | --- | --- | --- |
 | `steam_review` + tests, chaque nuit | 2 h 09 + ~20 min | ~5 min (append) + 2-4 min (registre) + tests du delta |
-| Surcoût pour les marts aval | 0 | +20 à 30 min (anti-join de la vue, +4 min 34 par scan mesuré en prod) |
+| Surcoût pour les marts aval | 0 | +37 % par scan de la vue avec le registre actuel, +68 % à 5 M lignes (mesuré en prod) |
 | Durée du daily (après le fix des steps) | ~4 h 40 | **~3 h 10**. La branche events (~3 h 10) devient le chemin critique. |
 | Pic disque chaque nuit | +32 Go (copie `__dbt_tmp`) sur 42 Go libres | **0** |
 | Marge disque dans 12 mois | négative avec le swap dbt | ~12 Go au rythme de septembre (à confirmer) |
@@ -99,7 +99,7 @@ Signé par les quatre experts, avec amendements (intégrés ci-dessous). Le chan
   2. un seul `INSERT INTO versions`, avec la macro de parsing et le dédoublonnage en une passe sur le payload.
 - Pas de pic disque. La vue et le site ne sont pas touchés.
 - Si la compaction échoue, le garde-fou « table vide » bloque le run suivant, et dbt ne lance pas les marts aval.
-- **Déclenchement quand le registre dépasse 2 M lignes**, soit environ tous les 4 mois au rythme mesuré. Vers 3,5 M, l'anti-join déborde sur disque (voir la validation en prod). C'est aussi le chemin du full refresh.
+- **Déclenchement quand le registre dépasse 3 M lignes**, soit environ tous les 10 mois au rythme mesuré. Vers 3,5 M, le hash du registre dépasse la mémoire allouée (voir la validation en prod). C'est aussi le chemin du full refresh.
 
 **5. Tests**
 - Unicité et not_null sur les clés du delta, chaque nuit.
@@ -160,7 +160,7 @@ CREATE TABLE staging.steam_review_versions (
 
 ### `staging.steam_review_outdated`
 
-Heap, petite table (< 2 M lignes avant compaction).
+Heap, petite table (< 3 M lignes avant compaction).
 
 ```sql
 CREATE TABLE staging.steam_review_outdated (
@@ -173,7 +173,7 @@ CREATE TABLE staging.steam_review_outdated (
 ```
 
 - Heap : `default_table_access_method = 'columnar'` du dossier staging est surchargé dans la config du modèle.
-- La PK coûte ~100 Mo à 2 M lignes. Elle rend l'alimentation idempotente (relance Dagster, fenêtre de recouvrement).
+- La PK coûte ~150 Mo à 3 M lignes. Elle rend l'alimentation idempotente (relance Dagster, fenêtre de recouvrement).
 - `ANALYZE` en post-hook : le planner doit la voir petite pour la prendre comme côté hash.
 
 ### `staging.steam_review`
@@ -243,7 +243,7 @@ Deux choses arrivent en même temps :
 
 Le triplet `(1086940, 201934577, 2026-09-23 09:47:55)` existe déjà dans `versions`. L'anti-join de l'append l'écarte. Rien n'est ajouté à `versions` ni au registre, et la vue ne bouge pas. C'est ce qui rend le recouvrement idempotent.
 
-### Compaction (registre > 2 M lignes)
+### Compaction (registre > 3 M lignes)
 
 Deux étapes :
 1. `TRUNCATE` commité des deux tables ;
@@ -253,37 +253,59 @@ Après compaction, `versions` ne contient plus que la ligne du 23/09, et le regi
 
 ## Validation en prod (24/09)
 
-Mesures faites en prod, sur `staging.steam_review` actuel et un registre simulé en table temporaire, avec les pre-hooks prévus (`work_mem = 128MB`, `enable_mergejoin = off`). Le serveur était chargé par le site pendant les mesures : les durées sont indicatives.
+Mesures faites en prod le soir du 24/09, serveur au repos, en trois passes : témoin sans registre, puis avec registre, puis de nouveau témoin. On a utilisé `staging.steam_review` actuel et un registre simulé en table temporaire, avec les pre-hooks prévus (`work_mem = 128MB`, `enable_mergejoin = off`). Une première série, faite l'après-midi, était faussée : le site chargeait le serveur, et une limite de test de 10 Go sur les fichiers temporaires était plus basse que celle de la prod (30 Go).
 
 **1. Coût de l'anti-join, sur `game_review_trend_daily`**
 
-| Registre | Durée | Écart |
-| --- | --- | --- |
-| aucun (aujourd'hui) | 6 min 34 | — |
-| 612 k lignes (taille actuelle) | 11 min 08 | **+70 %** |
-| 5 M lignes (un an sans compaction) | échec après 9 min 14 | dépasse la limite de 10 Go de fichiers temporaires |
+| Registre | Écart avec le témoin |
+| --- | --- |
+| 637 k clés (taille actuelle) | **+37 %** |
+| 5,1 M clés (plus d'un an sans compaction) | **+68 %**, ~11 Go de fichiers temporaires au pic, sous la limite de 30 Go |
 
-- Vers 3,5 M lignes (256 Mo à ~70 o par entrée), le hash du registre ne tient plus dans la mémoire allouée. La jointure passe alors en lots et écrit les 183 M lignes lues sur disque, en plus des 5,9 Go que l'agrégation écrit déjà.
-- Conséquence : **seuil de compaction abaissé de 3 M à 2 M lignes**, pour garder de la marge sous ce point. Cela fait une compaction environ tous les 4 mois, et un surcoût aval de +20 à 30 min par nuit au lieu de +9 à 13. Le gain net passe d'environ 2 h à environ 1 h 30.
-- Si ce rythme de compaction gêne, l'autre option est une table fusionnée au lieu d'une vue : c'est la variante P1, écartée pendant le débat.
+- Vers 3,5 M lignes (256 Mo à ~70 o par entrée), le hash du registre ne tient plus dans la mémoire allouée. La jointure passe alors en lots et écrit sur disque, sans échouer.
+- Conséquence : **seuil de compaction à 3 M lignes**, sous ce point.
 
-**2. Taille du registre**
-- raw ne date que de l'été : 0,9 M lignes en juillet, 178 M en août (le backfill initial), 5,1 M du 1er au 24 septembre.
-- Sur les 30 derniers jours, ~450 k versions sont devenues périmées, soit **~5,5 M par an**. C'est dans la fourchette de 4 à 8 M estimée.
-- Construire le registre (jointure de hachage entre le delta et tout l'historique, colonnes de clé seules) a pris 3 min 52 pour 5 M clés. L'estimation de 2 à 4 min tient.
-- Toujours prévu : un compteur dans les métadonnées Dagster.
+**2. Croissance, mesurée sur les derniers jours (hors backfills du début septembre)**
+- raw reçoit ~77 k lignes par jour, et ~10 k versions deviennent périmées chaque jour.
+- Cela fait **~3,7 M versions périmées par an**, soit une compaction environ tous les 10 mois.
+- Construire le registre a pris 3 min 52 pour 5 M clés : l'estimation de 2 à 4 min tient.
 
 **3. Marge disque**
-- raw reçoit ~210 k lignes par jour en septembre, et non 80 k.
-- À ce rythme, il faut compter **~30 Go par an** (17 pour raw, 13 pour `versions`) pour 42 Go libres, soit le double des 13 à 15 Go estimés.
+- ~11 Go par an (raw et `versions`), pour 41 Go libres le 24/09.
 - À suivre chaque trimestre.
 
-**Encore à mesurer, pendant une heure creuse**
-- Une seconde passe sans registre, pour isoler l'effet du cache sur les +70 %.
-- Le registre de 5 M avec une limite de fichiers temporaires plus haute.
-- La croissance jour par jour sur les 10 derniers jours. Elle dira si septembre contient encore des backfills de nouveaux jeux, ce qui gonflerait les chiffres des points 2 et 3.
-
 **Filet de sécurité non retenu par défaut.** PGDATA est sur un volume Hetzner Cloud agrandissable à chaud (`resize2fs`, sans coupure), pour environ 5 € par mois pour 100 Go (tarif non vérifié). L'expert P3 le préférait à la compaction en place. La majorité l'a jugé inutile avec une compaction qui ne fait pas de pic, mais c'est la sortie la plus simple si la marge fond plus vite que prévu.
+
+## Implémentation (PR #48)
+
+Trois écarts au design, et la procédure de mise en production.
+
+**Écarts**
+- **Deux scans étroits de `versions` par nuit, au lieu d'un.** L'anti-join de l'append et l'alimentation du registre sont deux modèles dbt. Le registre part des reviews touchées dans raw (watermark − 3 jours) et garde, pour chacune, les versions qui ne sont pas la plus récente.
+- **La compaction est lancée par l'op dbt de Dagster, juste avant le `dbt build`** (`orchestration/dbt/compaction.py`), et non par un op séparé. Ainsi, rien ne peut s'intercaler entre la compaction et l'append. La taille du registre est publiée en observation Dagster de `steam_review_outdated` à chaque run.
+- **Les compteurs d'une version sont figés à sa première capture.** Aujourd'hui, une review re-scrapée avec le même `timestamp_updated` (seconde-frontière, re-backfill d'un jeu) prend les `votes_up` et temps de jeu les plus récents. Désormais, seule la compaction les rafraîchit.
+
+**Réglages**
+- Les tests complets (unicité sur la vue, comparaison à raw sur 20 jeux tirés au sort) ne tournent que le dimanche, ou avec `--vars '{full_tests: true}'`. Les autres jours, ils passent à vide.
+- Le registre est recalculé en entier le 1er du mois, ou avec `--vars '{rebuild_steam_review_outdated: true}'`.
+- `versions` et le registre ont `full_refresh=false`. Un full refresh depuis Dagster passe par la compaction. À la main : `dbt run-operation compact_steam_review`.
+
+**Mise en production**
+
+La table actuelle contient déjà la dernière version de chaque review, c'est-à-dire l'état après compaction. On la renomme donc au lieu de la reconstruire : on évite ainsi 2 h de build et un pic de 30 Go.
+
+1. Merger dans la journée, et loin de 22:00 UTC : la CD reconstruit ensuite tout l'aval de `steam_review`, soit plusieurs heures.
+2. Juste avant le merge, sans run dbt en cours :
+   ```sql
+   BEGIN;
+   ALTER TABLE staging.steam_review RENAME TO steam_review_versions;
+   CREATE VIEW staging.steam_review AS SELECT * FROM staging.steam_review_versions;
+   COMMIT;
+   ```
+3. La CD append le delta, construit le registre en entier, puis remplace la vue temporaire par la vraie et reconstruit l'aval.
+4. Si le run CD n'est pas fini avant 22:00 UTC, mettre en pause le daily de ce soir-là.
+
+Sans l'étape 2, dbt reconstruit `versions` depuis raw, avec 2 h de build et +30 Go pendant que l'ancienne table existe encore.
 
 ## Chantiers annexes repérés
 

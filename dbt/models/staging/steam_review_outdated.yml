@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: steam_review_outdated
+    description: >
+      Registre des versions de steam_review_versions dépassées par une version plus
+      récente. Alimenté chaque nuit depuis le delta, recalculé en entier le 1er du
+      mois, vidé par la compaction. L'index unique rend l'alimentation idempotente.
+    columns:
+      - name: updated_at
+        description: Horodatage de la version périmée.
+      - name: outdated_at
+        description: Nuit de détection, pour le suivi.

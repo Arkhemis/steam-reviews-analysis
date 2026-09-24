@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: steam_review_versions
+    description: >
+      Toutes les versions de chaque review Steam, en append-only (columnar). Une
+      version est identifiée par (app_id, recommendation_id, updated_at). Lire
+      plutôt la vue steam_review, qui ne garde que la dernière.
+    # Tests limités au delta des derniers jours : l'historique ne change jamais.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - recommendation_id
+              - updated_at
+          config:
+            where: "loaded_at > now() - interval '3 days'"
+    columns:
+      - name: recommendation_id
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: app_id
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: voted_up
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: is_generic
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: created_at
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: updated_at
+        description: Horodatage de la version ; avec la clé de la review, identifie la ligne.
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
+      - name: loaded_at
+        description: Horodatage de chargement dans raw ; sert au watermark, pas à l'identité.
