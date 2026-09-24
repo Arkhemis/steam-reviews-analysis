@@ -1,8 +1,10 @@
+-- (app_id, review_date) : sans lui, MAX(review_date) WHERE app_id = $1 remonte
+-- à rebours l'index review_date, plusieurs minutes pour un petit jeu.
 {{
     config(
         indexes=[
             {'columns': ['review_date'], 'type': 'btree'},
-            {'columns': ['app_id'], 'type': 'btree'},
+            {'columns': ['app_id', 'review_date'], 'type': 'btree'},
         ]
     )
 }}
