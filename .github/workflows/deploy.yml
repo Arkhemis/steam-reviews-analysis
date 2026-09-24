@@ -83,10 +83,10 @@ jobs:
           ssh -fN -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/deploy_key" \
             -L 3001:127.0.0.1:3001 deploy@167.235.145.180
 
-          # Le webserver vient d'être recréé par le deploy : on attend qu'il réponde.
+          # Le webserver vient d'être recréé par le deploy : les lectures réessaient.
+          # launchRun, lui, ne réessaie jamais : une 500 peut suivre un run déjà créé.
           gql() {
-            curl -sS --fail --retry 12 --retry-delay 5 --retry-all-errors \
-              -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:3001/graphql
+            curl -sS --fail -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:3001/graphql "$@"
           }
 
           keys=$(jq -R '{path: [.]}' "$RUNNER_TEMP/models.txt" | jq -sc .)
@@ -95,7 +95,7 @@ jobs:
           checks=$(jq -n --argjson keys "$keys" '{
             query: "query ($keys: [AssetKeyInput!]) { assetNodes(assetKeys: $keys) { assetKey { path } assetChecksOrError { ... on AssetChecks { checks { name } } } } }",
             variables: {keys: $keys}
-          }' | gql | jq -c '[.data.assetNodes[] | .assetKey as $k | .assetChecksOrError.checks[]? | {assetKey: {path: $k.path}, name}]')
+          }' | gql --retry 12 --retry-delay 5 --retry-all-errors | jq -c '[.data.assetNodes[] | .assetKey as $k | .assetChecksOrError.checks[]? | {assetKey: {path: $k.path}, name}]')
 
           result=$(jq -n --argjson keys "$keys" --argjson checks "$checks" '{
             query: "mutation ($selector: JobOrPipelineSelector!) { launchRun(executionParams: {selector: $selector}) { __typename ... on LaunchRunSuccess { run { runId } } ... on Error { message } } }",
