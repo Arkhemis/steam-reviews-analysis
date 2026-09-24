@@ -41,14 +41,14 @@
 
 {% else %}
 
-    -- Reviews touchées par les dernières nuits ; recouvrement plus large que versions.
+    -- Reviews touchées depuis la dernière nuit réussie du registre, avec 3 jours de recouvrement.
     WITH touched AS (
 
         SELECT DISTINCT
             app_id,
             recommendation_id
         FROM {{ source('raw', 'steam_reviews') }}
-        WHERE loaded_at > {{ steam_review_watermark(ref('steam_review_versions'), 3) }}
+        WHERE loaded_at > {{ steam_review_outdated_watermark(3) }}
 
     ),
 

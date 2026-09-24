@@ -10,4 +10,4 @@ models:
       - name: updated_at
         description: Horodatage de la version périmée.
       - name: outdated_at
-        description: Nuit de détection, pour le suivi.
+        description: Nuit de détection ; son max sert de watermark au registre.
