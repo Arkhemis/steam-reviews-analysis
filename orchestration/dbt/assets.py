@@ -74,6 +74,12 @@ def dbt_steam_reviews_models(
     postgres: PostgresResource,
     config: DbtRunConfig,
 ):
+    """Build selected dbt assets after checking whether review compaction is needed.
+
+    A full refresh forces compaction when the versions asset is selected and the
+    outdated table exists. Yield its registry observation, if any, before dbt
+    build events. Database and dbt execution errors propagate.
+    """
     yield from compact_steam_review_if_needed(
         context, dbt, postgres, force=config.full_refresh
     )
