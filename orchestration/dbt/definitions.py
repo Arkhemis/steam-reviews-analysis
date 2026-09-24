@@ -1,6 +1,9 @@
 from dagster import Definitions
 
-from orchestration.dbt.assets import dbt_steam_reviews_models
+from orchestration.dbt.assets import (
+    dbt_steam_reviews_bridge_models,
+    dbt_steam_reviews_models,
+)
 from orchestration.dbt.jobs import (
     dbt_build_job,
     dbt_full_refresh_job,
@@ -10,7 +13,7 @@ from orchestration.dbt.jobs import (
 )
 
 defs = Definitions(
-    assets=[dbt_steam_reviews_models],
+    assets=[dbt_steam_reviews_models, dbt_steam_reviews_bridge_models],
     jobs=[
         dbt_build_job,
         dbt_staging_job,
