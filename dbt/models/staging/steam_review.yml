@@ -3,9 +3,12 @@ version: 2
 models:
   - name: steam_review
     description: >
-      Reviews Steam nettoyées et typées à partir du payload JSON brut.
+      Dernière version de chaque review Steam, nettoyée et typée depuis le payload
+      JSON brut. Vue : steam_review_versions privée de steam_review_outdated.
+    # Tests complets le dimanche seulement : chacun relit les 183 M lignes à travers l'anti-join.
+    # Le delta de chaque nuit est testé sur steam_review_versions.
     data_tests:
-      - dbt_utils.unique_combination_of_columns:
+      - weekly_unique_combination_of_columns:
           arguments:
             combination_of_columns:
               - recommendation_id
@@ -17,13 +20,9 @@ models:
     columns:
       - name: recommendation_id
         description: Identifiant Steam de la review (unique par jeu, pas globalement).
-        data_tests:
-          - not_null
 
       - name: app_id
         description: Identifiant de l'application Steam concernée.
-        data_tests:
-          - not_null
 
       - name: author_steamid
         description: Identifiant Steam (64 bits) de l'auteur de la review.
@@ -71,16 +70,18 @@ models:
         description: >
           Vrai si la review est mise en forme en checklist (✅ / ☐), un gabarit
           récurrent qui produit peu de texte utile.
-        data_tests:
-          - not_null
+
+      - name: has_profanity
+        description: >
+          Vrai si la review est grossière : une série de cœurs de Steam
+          (« ♥♥♥♥ ») ou un gros mot écrit en clair dans sa langue. Voir la
+          macro has_profanity.
 
       - name: language
         description: Langue déclarée de la review (code langue Steam, ex. french, english).
 
       - name: voted_up
         description: Vrai si la review est positive (recommandation), faux sinon.
-        data_tests:
-          - not_null
 
       - name: votes_up
         description: Nombre de votes "utile" reçus par la review.
@@ -117,13 +118,9 @@ models:
 
       - name: created_at
         description: Horodatage de création de la review.
-        data_tests:
-          - not_null
 
       - name: updated_at
         description: Horodatage de dernière mise à jour de la review.
-        data_tests:
-          - not_null
 
       - name: loaded_at
         description: Horodatage de chargement de la review par Dagster.

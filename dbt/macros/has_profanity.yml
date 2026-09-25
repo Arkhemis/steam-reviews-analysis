@@ -1,0 +1,17 @@
+version: 2
+
+macros:
+  - name: has_profanity
+    description: |
+      Vrai si une review est grossière : elle garde une série de cœurs de
+      Steam (« ♥♥♥♥ ») ou un gros mot écrit en clair dans sa langue.
+
+      Chaque review passe par une vingtaine d'alternatives de regex : appelée
+      dans staging.steam_review, elle y est calculée une fois par review.
+    arguments:
+      - name: text_column
+        type: text
+        description: Colonne du texte de la review.
+      - name: language_column
+        type: text
+        description: Colonne de la langue Steam de la review (`english`, `french`…).

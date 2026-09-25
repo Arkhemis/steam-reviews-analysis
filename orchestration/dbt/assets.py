@@ -12,6 +12,8 @@ from dagster_dbt import (
 )
 from dagster_dbt.asset_utils import group_from_dbt_resource_props_fallback_to_directory
 
+from orchestration.dbt.compaction import compact_steam_review_if_needed
+from orchestration.postgres import PostgresResource
 from orchestration.project import dbt_steam_reviews_project
 
 
@@ -69,8 +71,18 @@ def _dbt_build(
 def dbt_steam_reviews_models(
     context: dg.AssetExecutionContext,
     dbt: DbtCliResource,
+    postgres: PostgresResource,
     config: DbtRunConfig,
 ):
+    """Check for compaction before streaming the selected dbt build events.
+
+    A full refresh forces compaction when the versions asset and registry exist.
+    Any registry observation is yielded before the build events. Exceptions
+    raised during compaction or the dbt build propagate to the caller.
+    """
+    yield from compact_steam_review_if_needed(
+        context, dbt, postgres, force=config.full_refresh
+    )
     yield from _dbt_build(context, dbt, config)
 
 

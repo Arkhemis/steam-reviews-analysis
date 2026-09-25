@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: steam_review_outdated
+    description: >
+      Registre des versions de steam_review_versions dépassées par une version plus
+      récente. Alimenté chaque nuit depuis le delta, recalculé en entier le 1er du
+      mois, vidé par la compaction. L'index unique rend l'alimentation idempotente.
+    columns:
+      - name: updated_at
+        description: >
+          Date d'édition de la version périmée. 
+          Avec app_id et recommendation_id, désigne la ligne de
+          steam_review_versions que la vue steam_review masque.
+      - name: detected_at
+        description: Nuit de détection ; son max sert de watermark au registre.

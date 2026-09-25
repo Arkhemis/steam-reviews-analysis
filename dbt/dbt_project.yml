@@ -3,7 +3,7 @@ version: '1.0.0'
 
 profile: 'steam_reviews'
 
-macro-paths: ['macros', 'tests'] # Some tests are declared as macros
+macro-paths: ['macros', 'tests/generic'] # Some tests are declared as macros
 test-paths: ['tests/singular']
 docs-paths: ['docs']
 clean-targets: [target, logs]
@@ -20,8 +20,12 @@ models:
       +materialized: table
       +tags: [staging]
       +pre-hook: "SET default_table_access_method = 'columnar'; SET max_parallel_workers_per_gather = 0; SET work_mem = '256MB'"
-      +post-hook: "ANALYZE {{ this }}"
+      +post-hook: "{{ analyze_model() }}"
+    # steam_review est une vue à anti-join : sans ces réglages, merge join et tri des 183 M lignes.
+    # Les pre-hooks propres à un modèle passent après et l'emportent.
     intermediate:
       +tags: [intermediate]
+      +pre-hook: "SET work_mem = '128MB'; SET enable_mergejoin = off"
     marts:
       +tags: [marts]
+      +pre-hook: "SET work_mem = '128MB'; SET enable_mergejoin = off"
