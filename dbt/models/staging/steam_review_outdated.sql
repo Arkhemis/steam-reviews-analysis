@@ -31,19 +31,17 @@
         v.app_id,
         v.recommendation_id,
         v.updated_at,
-        NOW() AS outdated_at
+        NOW() AS detected_at
     FROM {{ ref('steam_review_versions') }} AS v
     INNER JOIN contested AS c
-        ON
-            v.app_id = c.app_id
-            AND v.recommendation_id = c.recommendation_id
+    USING(app_id, recommendation_id)
     WHERE v.updated_at < c.latest_updated_at
 
 {% else %}
 
-    -- Depuis la dernière nuit du registre (max outdated_at), 3 jours de recouvrement ;
+    -- Depuis la dernière nuit du registre (max detected_at), 3 jours de recouvrement ;
     -- registre vidé par la compaction : repli sur versions. Littéral, pour Citus.
-    {%- set last_night = run_query("SELECT MAX(outdated_at) FROM " ~ this).columns[0].values()[0] if execute %}
+    {%- set last_night = run_query("SELECT MAX(detected_at) FROM " ~ this).columns[0].values()[0] if execute %}
     WITH touched AS (
 
         SELECT DISTINCT
@@ -79,7 +77,7 @@
         c.app_id,
         c.recommendation_id,
         c.updated_at,
-        NOW() AS outdated_at
+        NOW() AS detected_at
     FROM candidates AS c
     WHERE
         c.updated_at < c.latest_updated_at

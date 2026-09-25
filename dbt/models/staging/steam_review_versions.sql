@@ -11,7 +11,6 @@
 
 {% if is_incremental() %}
 
-    -- Une version = (app_id, recommendation_id, timestamp_updated) ; loaded_at n'en fait pas partie.
     WITH delta AS (
 
         SELECT DISTINCT ON (app_id, recommendation_id, timestamp_updated) *

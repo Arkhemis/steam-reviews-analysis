@@ -37,7 +37,7 @@ def warehouse():
         conn.execute(
             "CREATE TABLE staging.steam_review_outdated ("
             "app_id INTEGER, recommendation_id INTEGER, updated_at TIMESTAMPTZ, "
-            "outdated_at TIMESTAMPTZ)"
+            "detected_at TIMESTAMPTZ)"
         )
         yield conn
 

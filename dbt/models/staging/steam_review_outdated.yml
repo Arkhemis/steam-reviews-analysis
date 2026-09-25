@@ -8,6 +8,9 @@ models:
       mois, vidé par la compaction. L'index unique rend l'alimentation idempotente.
     columns:
       - name: updated_at
-        description: Horodatage de la version périmée.
-      - name: outdated_at
+        description: >
+          Date d'édition de la version périmée. 
+          Avec app_id et recommendation_id, désigne la ligne de
+          steam_review_versions que la vue steam_review masque.
+      - name: detected_at
         description: Nuit de détection ; son max sert de watermark au registre.

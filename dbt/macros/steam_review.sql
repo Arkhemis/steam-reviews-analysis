@@ -107,8 +107,8 @@ source_versions AS (
 {% endmacro %}
 
 
-{#- Littéral `max(loaded_at) − recouvrement` : une sous-requête empêcherait Citus
-    de sauter les chunk groups de raw. Le premier max se limite aux 30 derniers jours. -#}
+{#- Renvoie la date à partir de laquelle relire raw : dernier chargement moins quelques jours de marge.
+    La date est calculée avant la requête et collée en dur dedans. -#}
 {% macro steam_review_watermark(relation, overlap_days) %}
     {%- if not execute -%}
         {{ return("'1970-01-01'::timestamptz") }}
@@ -136,7 +136,7 @@ source_versions AS (
 {% endmacro %}
 
 
-{#- Compaction en place : le TRUNCATE est commité à part pour libérer le disque
+{#- Compaction en place : le TRUNCATE est commité à part pour libérer le disque 
     avant l'INSERT (pas de pic). Lancée par Dagster, voir orchestration/dbt/compaction.py. -#}
 {% macro compact_steam_review() %}
     {%- set versions = ref('steam_review_versions').incorporate(type='table') -%}

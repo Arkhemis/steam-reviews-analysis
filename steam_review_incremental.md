@@ -164,16 +164,18 @@ Heap, petite table (< 3 M lignes avant compaction).
 
 ```sql
 CREATE TABLE staging.steam_review_outdated (
-    app_id            bigint      NOT NULL,
-    recommendation_id bigint      NOT NULL,
-    updated_at        timestamptz NOT NULL,  -- version périmée
-    outdated_at       timestamptz NOT NULL DEFAULT now(),  -- nuit de détection, pour le suivi
-    PRIMARY KEY (app_id, recommendation_id, updated_at)
-);
+    app_id            bigint,
+    recommendation_id bigint,
+    updated_at        timestamptz,  -- date d'édition de la version périmée, clé vers versions
+    detected_at       timestamptz   -- nuit de détection : sert de watermark au registre
+) USING heap;
+
+CREATE UNIQUE INDEX ON staging.steam_review_outdated (app_id, recommendation_id, updated_at);
 ```
 
-- Heap : `default_table_access_method = 'columnar'` du dossier staging est surchargé dans la config du modèle.
-- La PK coûte ~150 Mo à 3 M lignes. Elle rend l'alimentation idempotente (relance Dagster, fenêtre de recouvrement).
+- Heap : le pre-hook du modèle remplace `default_table_access_method = 'columnar'` du dossier staging.
+- dbt crée la table par `CREATE TABLE AS` : pas de `NOT NULL` ni de `DEFAULT`, et `detected_at` vaut `NOW()` dans le `SELECT`.
+- L'index unique coûte ~150 Mo à 3 M lignes. Le `NOT EXISTS` contre `{{ this }}` rend l'alimentation idempotente (relance Dagster, fenêtre de recouvrement), et l'index sert de garde-fou.
 - `ANALYZE` en post-hook : le planner doit la voir petite pour la prendre comme côté hash.
 
 ### `staging.steam_review`
@@ -229,7 +231,7 @@ Raw reçoit une **nouvelle ligne** pour la même clé, avec un `updated_at` plus
 
 `steam_review_outdated`
 
-| app_id | recommendation_id | updated_at | outdated_at |
+| app_id | recommendation_id | updated_at | detected_at |
 | --- | --- | --- | --- |
 | 1086940 | 201934577 | 2026-09-20 18:02:11+00 | 2026-09-23 23:12:08+00 |
 
@@ -281,7 +283,7 @@ Mesures faites en prod le soir du 24/09, serveur au repos, en trois passes : té
 Trois écarts au design, et la procédure de mise en production.
 
 **Écarts**
-- **Deux scans étroits de `versions` par nuit, au lieu d'un.** L'anti-join de l'append et l'alimentation du registre sont deux modèles dbt. Le registre part des reviews touchées dans raw et garde, pour chacune, les versions qui ne sont pas la plus récente. Son watermark est sa propre dernière nuit réussie (`max(outdated_at)` − 3 jours), avec repli sur `versions` quand la compaction l'a vidé. Le déduire de `versions`, qui a déjà rattrapé son retard dans le même build, oublierait les reviews éditées au début d'une panne de plus de 3 jours.
+- **Deux scans étroits de `versions` par nuit, au lieu d'un.** L'anti-join de l'append et l'alimentation du registre sont deux modèles dbt. Le registre part des reviews touchées dans raw et garde, pour chacune, les versions qui ne sont pas la plus récente. Son watermark est sa propre dernière nuit réussie (`max(detected_at)` − 3 jours), avec repli sur `versions` quand la compaction l'a vidé. Le déduire de `versions`, qui a déjà rattrapé son retard dans le même build, oublierait les reviews éditées au début d'une panne de plus de 3 jours.
 - **La compaction est lancée par l'op dbt de Dagster, juste avant le `dbt build`** (`orchestration/dbt/compaction.py`), et non par un op séparé. Ainsi, rien ne peut s'intercaler entre la compaction et l'append. La taille du registre est publiée en observation Dagster de `steam_review_outdated` à chaque run.
 - **Les compteurs d'une version sont figés à sa première capture.** Aujourd'hui, une review re-scrapée avec le même `timestamp_updated` (seconde-frontière, re-backfill d'un jeu) prend les `votes_up` et temps de jeu les plus récents. Désormais, seule la compaction les rafraîchit.
 
