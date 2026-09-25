@@ -27,7 +27,7 @@ class SteamApiError(Exception):
     """Erreur permanente de l'API Steam (4xx hors 429, ou `success` != 1).
 
     Elle échappe volontairement au `except` de `_get` : retenter un appid sans
-    hub d'annonces coûterait 62 s de backoff pour un échec certain.
+    hub d'annonces coûterait 254 s de backoff pour un échec certain.
     """
 
     def __init__(self, app_id: int, success: Any, err_msg: str) -> None:
@@ -55,7 +55,8 @@ class SteamResource(ConfigurableResource):
     """Client Steam (reviews, annonces, fiches store) avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
-    max_retries: int = 5
+    # 7 retries = 254 s cumulés : le blocage 429 du 25/09 a duré plus de 2 min.
+    max_retries: int = 7
     # Backoff exponentiel sur 429 / timeout / 5xx.
     backoff_base_seconds: float = 2.0
     request_timeout_seconds: float = 20.0
@@ -103,6 +104,15 @@ class SteamResource(ConfigurableResource):
                     )
                     raise
                 delay = self.backoff_base_seconds**attempt
+                if (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code == 429
+                ):
+                    # Le 429 vise l'IP : on suspend tous les threads, pas seulement celui-ci.
+                    with self._lock:
+                        self._next_slot_ts = max(
+                            self._next_slot_ts, time.monotonic() + delay
+                        )
                 logger.warning(
                     f"app_id={app_id}: erreur ({exc}); retry {attempt}/{self.max_retries} dans {delay:.0f}s"
                 )
