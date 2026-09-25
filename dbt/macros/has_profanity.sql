@@ -190,9 +190,9 @@
     COALESCE(
         CASE {{ language_column }}
         {%- for language, pattern in crude_patterns.items() %}
-            WHEN '{{ language }}' THEN {{ text_column }} ~* '{{ pattern }}'
+            WHEN '{{ language }}' THEN ({{ text_column }} COLLATE "und-x-icu") ~* '{{ pattern }}'
         {%- endfor %}
-            ELSE {{ text_column }} ~* '{{ crude_patterns["english"] }}'
+            ELSE ({{ text_column }} COLLATE "und-x-icu") ~* '{{ crude_patterns["english"] }}'
         END,
         FALSE
     )
