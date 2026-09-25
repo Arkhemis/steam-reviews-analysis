@@ -108,4 +108,4 @@ models:
         description: Nombre de commentaires sur l'annonce.
 
       - name: loaded_at
-        description: Horodatage de chargement par Dagster.
+        description: Dernière modification du payload, réécrit par Dagster seulement s'il a changé.
