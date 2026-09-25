@@ -16,6 +16,7 @@ from jinja2 import Environment, StrictUndefined
 
 MODELS = Path(__file__).resolve().parents[2] / "dbt" / "models" / "staging"
 MACROS = Path(__file__).resolve().parents[2] / "dbt" / "macros" / "steam_review.sql"
+PARSE_MACRO = MACROS.with_name("steam_review_parse.sql")
 ENV = Environment(undefined=StrictUndefined)
 
 
@@ -94,10 +95,14 @@ def render_model(
         "steam_review_outdated_full_rebuild": lambda: full_rebuild,
         "steam_review_watermark": lambda _relation, _days: watermark,
         "run_query": run_query,
+        # PostgreSQL-only regexes; covered by the dbt tests on the warehouse.
+        "has_profanity": lambda _text, _language: "FALSE",
     }
     if name == "steam_review_versions":
         # These two dbt macros generate the actual parse and first-build SQL.
-        macro_source = MACROS.read_text().split("{% macro steam_review_watermark", 1)[0]
+        macro_source = PARSE_MACRO.read_text() + MACROS.read_text().split(
+            "{% macro steam_review_watermark", 1
+        )[0]
         macro_module = ENV.from_string(macro_source).make_module(context)
         context.update(
             {
