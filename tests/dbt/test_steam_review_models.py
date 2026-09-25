@@ -100,9 +100,10 @@ def render_model(
     }
     if name == "steam_review_versions":
         # These two dbt macros generate the actual parse and first-build SQL.
-        macro_source = PARSE_MACRO.read_text() + MACROS.read_text().split(
-            "{% macro steam_review_watermark", 1
-        )[0]
+        macro_source = (
+            PARSE_MACRO.read_text()
+            + MACROS.read_text().split("{% macro steam_review_watermark", 1)[0]
+        )
         macro_module = ENV.from_string(macro_source).make_module(context)
         context.update(
             {

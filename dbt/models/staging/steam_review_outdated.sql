@@ -39,7 +39,7 @@
         NOW() AS detected_at
     FROM {{ ref('steam_review_versions') }} AS v
     INNER JOIN contested AS c
-    USING(app_id, recommendation_id)
+        USING (app_id, recommendation_id)
     WHERE v.updated_at < c.latest_updated_at
 
 {% else %}

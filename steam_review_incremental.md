@@ -294,17 +294,22 @@ Trois écarts au design, et la procédure de mise en production.
 
 **Mise en production**
 
-La table actuelle contient déjà la dernière version de chaque review, c'est-à-dire l'état après compaction. On la renomme donc au lieu de la reconstruire : on évite ainsi 2 h de build et un pic de 30 Go.
+La table actuelle contient déjà la dernière version de chaque review, c'est-à-dire l'état après compaction. On la renomme donc au lieu de la reconstruire : on évite ainsi le pic de 30 Go. Il lui manque en revanche `has_profanity` : une compaction la remplit avant que l'aval ne la lise.
 
-1. Merger dans la journée, et loin de 22:00 UTC : la CD reconstruit ensuite tout l'aval de `steam_review`, soit plusieurs heures.
+1. Merger dans la journée, et loin de 22:00 UTC : la compaction puis la CD, qui reconstruit tout l'aval de `steam_review`, prennent plusieurs heures.
 2. Juste avant le merge, sans run dbt en cours :
    ```sql
    BEGIN;
    ALTER TABLE staging.steam_review RENAME TO steam_review_versions;
    CREATE VIEW staging.steam_review AS SELECT * FROM staging.steam_review_versions;
+   CREATE TABLE staging.steam_review_outdated (
+       app_id bigint, recommendation_id bigint, updated_at timestamptz, detected_at timestamptz
+   ) USING heap;
+   CREATE UNIQUE INDEX ON staging.steam_review_outdated (app_id, recommendation_id, updated_at);
    COMMIT;
    ```
-3. La CD append le delta, construit le registre en entier, puis remplace la vue temporaire par la vraie et reconstruit l'aval.
+   Puis, depuis la branche : `dbt run-operation compact_steam_review`. Elle ajoute `has_profanity` à `versions` et la remplit pour tout l'historique (~2 h, sans pic).
+3. La CD append le delta, alimente le registre, puis remplace la vue temporaire par la vraie et reconstruit l'aval.
 4. Si le run CD n'est pas fini avant 22:00 UTC, mettre en pause le daily de ce soir-là.
 
 Sans l'étape 2, dbt reconstruit `versions` depuis raw, avec 2 h de build et +30 Go pendant que l'ancienne table existe encore.
