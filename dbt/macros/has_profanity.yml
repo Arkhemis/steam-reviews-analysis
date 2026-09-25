@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: has_profanity
+    description: |
+      Vrai si une review est grossière : elle garde une série de cœurs de
+      Steam (« ♥♥♥♥ ») ou un gros mot écrit en clair dans sa langue.
+
+      Les gros mots par langue sont recopiés de `SWEARS` dans le site
+      (steam-reviews-website, `src/lib/censored.ts`) : mot entier, pluriel en
+      -s/-es au-delà de trois lettres, accents
+      indifférents pour les lettres latines, jurons anglais reconnus partout. Le
+      chinois, le japonais, le coréen et le thaï s'écrivent sans espaces :
+      leurs gros mots s'y cherchent n'importe où. Le site refait la détection
+      finement ; la macro sert à la présélection.
+
+      Chaque review passe par une vingtaine d'alternatives de regex : appelée
+      dans staging.steam_review, elle y est calculée une fois par review.
+    arguments:
+      - name: text_column
+        type: text
+        description: Colonne du texte de la review.
+      - name: language_column
+        type: text
+        description: Colonne de la langue Steam de la review (`english`, `french`…).
