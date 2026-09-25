@@ -17,7 +17,8 @@ dependencies = [
     "httpx>=0.28",
     "psycopg[binary]>=3.2",
     "tenacity>=9.0",
-    "duckdb"
+    "duckdb",
+    "tqdm>=4.68.4",
 ]
 
 [dependency-groups]

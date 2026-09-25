@@ -154,3 +154,28 @@ sources:
             description: Item JSON brut de IStoreBrowseService/GetItems.
           - name: loaded_at
             description: Horodatage de chargement par Dagster.
+
+      - name: game_review_summaries
+        description: >
+          Résumés LLM des reviews par jeu (paragraphe + points pour/contre), générés
+          en local par orchestration/llm/summaries.py, hors Dagster.
+        columns:
+          - name: app_id
+            description: Identifiant de l'application Steam (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: summary
+            description: Paragraphe de 3-4 phrases sur ce qu'en disent les joueurs, en anglais.
+          - name: pros
+            description: Jusqu'à 5 points positifs.
+          - name: cons
+            description: Jusqu'à 5 points négatifs.
+          - name: model
+            description: Modèle Ollama ayant généré le résumé.
+          - name: reviews_used
+            description: Nombre de reviews de review_highlight passées au modèle.
+          - name: total_reviews_at_generation
+            description: total_reviews du jeu à la génération, pour décider d'une régénération.
+          - name: generated_at
+            description: Horodatage de génération.

@@ -77,3 +77,17 @@ CREATE TABLE IF NOT EXISTS raw.steam_game_details (
     payload   JSONB  NOT NULL,
     loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Résumés LLM des reviews par jeu (orchestration/llm/summaries.py, lancé en local)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw.game_review_summaries (
+    app_id                      BIGINT PRIMARY KEY,
+    summary                     TEXT   NOT NULL,
+    pros                        TEXT[] NOT NULL,
+    cons                        TEXT[] NOT NULL,
+    model                       TEXT   NOT NULL,
+    reviews_used                INT    NOT NULL,
+    total_reviews_at_generation BIGINT NOT NULL,
+    generated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);

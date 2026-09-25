@@ -2262,6 +2262,7 @@ dependencies = [
     { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "tenacity" },
+    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
@@ -2289,6 +2290,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "tenacity", specifier = ">=9.0" },
+    { name = "tqdm", specifier = ">=4.68.4" },
 ]
 
 [package.metadata.requires-dev]
