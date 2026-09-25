@@ -15,6 +15,10 @@
 
 {% if steam_review_outdated_full_rebuild() %}
 
+    -- Reconstruction complète (1er du mois) : on repart de zéro et on relit toutes les versions.
+
+    -- Étape 1 : les reviews qui ont plusieurs versions (les autres n'ont rien de périmé),
+    -- avec la date de leur version la plus récente.
     WITH contested AS (
 
         SELECT
@@ -27,6 +31,7 @@
 
     )
 
+    -- Étape 2 : pour ces reviews, toute version plus ancienne que la dernière est périmée, que l'on garde.
     SELECT
         v.app_id,
         v.recommendation_id,
@@ -39,9 +44,14 @@
 
 {% else %}
 
+    -- Nuit normale : on ne regarde que les reviews rechargées récemment.
+
     -- Depuis la dernière nuit du registre (max detected_at), 3 jours de recouvrement ;
     -- registre vidé par la compaction : repli sur versions. Littéral, pour Citus.
     {%- set last_night = run_query("SELECT MAX(detected_at) FROM " ~ this).columns[0].values()[0] if execute %}
+
+    -- Étape 1 : les reviews que le loader a rechargées depuis la dernière nuit.
+    -- Seules elles peuvent avoir reçu une nouvelle version.
     WITH touched AS (
 
         SELECT DISTINCT
@@ -56,6 +66,8 @@
 
     ),
 
+    -- Étape 2 : toutes les versions de ces reviews, chacune accompagnée
+    -- de la date de la version la plus récente de sa review.
     candidates AS (
 
         SELECT
@@ -66,13 +78,13 @@
                 PARTITION BY v.app_id, v.recommendation_id
             ) AS latest_updated_at
         FROM {{ ref('steam_review_versions') }} AS v
-        INNER JOIN touched AS t
-            ON
-                v.app_id = t.app_id
-                AND v.recommendation_id = t.recommendation_id
+        INNER JOIN touched
+            USING (app_id, recommendation_id)
 
     )
 
+    -- Étape 3 : on garde les versions plus anciennes que la dernière (donc périmées),
+    -- sauf celles déjà dans le registre (le recouvrement de 3 jours les relit).
     SELECT
         c.app_id,
         c.recommendation_id,

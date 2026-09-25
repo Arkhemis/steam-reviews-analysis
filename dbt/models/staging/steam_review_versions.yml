@@ -37,6 +37,11 @@ models:
           - not_null:
               config:
                 where: "loaded_at > now() - interval '3 days'"
+      - name: has_profanity
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - interval '3 days'"
       - name: created_at
         data_tests:
           - not_null:
