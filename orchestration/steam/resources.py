@@ -69,22 +69,30 @@ class SteamResource(ConfigurableResource):
         self._client = httpx.Client(timeout=self.request_timeout_seconds)
         self._lock = threading.Lock()
 
-    def _throttle(self) -> None:
+    def _throttle(self, min_interval_seconds: float | None = None) -> None:
         """Réserve le prochain créneau disponible (thread-safe)."""
+        interval = min_interval_seconds or self.min_interval_seconds
         with self._lock:
             now = time.monotonic()
             start_at = max(now, self._next_slot_ts)
-            self._next_slot_ts = start_at + self.min_interval_seconds
+            self._next_slot_ts = start_at + interval
         wait = start_at - now
         if wait > 0:
             time.sleep(wait)
 
-    def _get(self, url: str, params: dict[str, Any], *, app_id: int) -> dict[str, Any]:
+    def _get(
+        self,
+        url: str,
+        params: dict[str, Any],
+        *,
+        app_id: int,
+        min_interval_seconds: float | None = None,
+    ) -> dict[str, Any]:
         """Requête GET avec throttle + backoff exponentiel (`app_id` sert aux logs)."""
         logger = get_dagster_logger()
         attempt = 0
         while True:
-            self._throttle()
+            self._throttle(min_interval_seconds)
             try:
                 # httpx URL-encode les query params (dont le cursor) automatiquement.
                 resp = self._client.get(url, params=params)
@@ -118,7 +126,12 @@ class SteamResource(ConfigurableResource):
                 )
                 time.sleep(delay)
 
-    def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
+    def get_summary(
+        self,
+        app_id: int,
+        language: str = "all",
+        min_interval_seconds: float | None = None,
+    ) -> dict[str, Any]:
         """Recensement : renvoie la réponse entière, dont `query_summary` (total_reviews, review_score, ...)."""
         data = self._get(
             f"{BASE_URL}/appreviews/{app_id}",
@@ -131,6 +144,7 @@ class SteamResource(ConfigurableResource):
                 "filter_offtopic_activity": 0,  # inclus le review bombing (aligné avec get_all_reviews)
             },
             app_id=app_id,
+            min_interval_seconds=min_interval_seconds,
         )
         return data
 

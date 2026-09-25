@@ -16,6 +16,9 @@ from orchestration.steam.resources import SteamResource
 
 CENSUS_WORKERS = 8
 CENSUS_BATCH_SIZE = 200
+# Depuis le 24/09, /appreviews bloque l'IP du VPS au bout de ~300 requêtes à 10/s
+# (les autres endpoints passent) : ~5 h 30 de recensement au lieu de ~1 h.
+CENSUS_MIN_INTERVAL_SECONDS = 0.5
 
 # Au-dessus de ce seuil, sondé chaque nuit même sans mouvement la veille :
 # sinon un solde ou un review bombing resterait invisible jusqu'au jour de la
@@ -102,6 +105,7 @@ def steam_review_counts(
     total = len(app_ids)
     context.log.info(
         f"Recensement de {total} jeux Steam dus ({CENSUS_WORKERS} workers, "
+        f"une requête toutes les {CENSUS_MIN_INTERVAL_SECONDS}s, "
         f"lots de {CENSUS_BATCH_SIZE})"
     )
 
@@ -116,7 +120,12 @@ def steam_review_counts(
         for batch_start in range(0, total, CENSUS_BATCH_SIZE):
             batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
             responses = pool.map(
-                lambda app_id: steam.get_summary(app_id, language="all"), batch
+                lambda app_id: steam.get_summary(
+                    app_id,
+                    language="all",
+                    min_interval_seconds=CENSUS_MIN_INTERVAL_SECONDS,
+                ),
+                batch,
             )
             with conn.cursor() as cur:
                 for app_id, data in zip(batch, responses):
