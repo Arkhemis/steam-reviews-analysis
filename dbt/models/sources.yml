@@ -134,7 +134,7 @@ sources:
               Timestamp Unix de publication de l'annonce, borne du croisement avec la
               courbe de reviews.
           - name: loaded_at
-            description: Horodatage de chargement par Dagster.
+            description: Dernière modification du payload, réécrit par Dagster seulement s'il a changé.
 
       - name: steam_game_details
         description: >

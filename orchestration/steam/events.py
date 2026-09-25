@@ -59,6 +59,9 @@ ON CONFLICT (app_id, gid) DO UPDATE
 SET payload            = EXCLUDED.payload,
     rtime32_start_time = EXCLUDED.rtime32_start_time,
     loaded_at          = now()
+-- Chaque page récente revient en entier : sans ce filtre, on réécrirait
+-- chaque nuit des annonces inchangées et loaded_at ne dirait plus rien.
+WHERE raw.steam_events.payload IS DISTINCT FROM EXCLUDED.payload
 """
 
 
@@ -105,6 +108,7 @@ def steam_events(
 
     scanned = 0
     events_upserted = 0
+    events_written = 0
     apps_without_hub = 0
     apps_failed = 0
     start = time.monotonic()
@@ -127,6 +131,7 @@ def steam_events(
             if batch_rows:
                 with conn.cursor() as cur:
                     cur.executemany(UPSERT_EVENT_SQL, batch_rows)
+                    events_written += cur.rowcount
             conn.commit()
 
             scanned += len(batch)
@@ -139,7 +144,7 @@ def steam_events(
             eta_min = (total - scanned) / rate / 60 if rate > 0 else float("inf")
             context.log.info(
                 f"Scanné {scanned}/{total} ({scanned / total:.0%}) "
-                f"— {rate:.2f} jeux/s — {events_upserted} annonces — ETA {eta_min:.0f} min"
+                f"— {rate:.2f} jeux/s — {events_upserted} annonces ({events_written} écrites) — ETA {eta_min:.0f} min"
             )
 
     if apps_without_hub:
@@ -154,6 +159,7 @@ def steam_events(
             "apps_scanned": MetadataValue.int(scanned),
             "apps_full_history": MetadataValue.int(full_history),
             "events_upserted": MetadataValue.int(events_upserted),
+            "events_written": MetadataValue.int(events_written),
             "apps_without_hub": MetadataValue.int(apps_without_hub),
             "apps_failed": MetadataValue.int(apps_failed),
             "full_refresh": MetadataValue.bool(config.full_refresh),
