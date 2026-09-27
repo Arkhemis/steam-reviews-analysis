@@ -32,7 +32,7 @@ deploy/             # Dagster config (dagster.yaml, workspace.yaml), Caddyfile, 
 ```mermaid
 flowchart LR
     IGDB[IGDB API\ndata dumps] -->|igdb_games| RAW1[(raw.igdb_games)]
-    RAW1 --> CENSUS[steam_review_counts\nquery_summary census]
+    RAW1 --> CENSUS[steam_review_counts\nGetItems review counts]
     CENSUS --> RAW2[(raw.steam_review_counts)]
     RAW2 --> BACKFILL[steam_reviews_backfill\ncursor pagination]
     RAW2 --> EVENTS[steam_events\nstore announcements]
@@ -49,9 +49,9 @@ flowchart LR
 ### Ingestion (Dagster assets)
 
 1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`, `genres`, `companies`, `involved_companies`, `covers`), keeps only games linked to a `steam_app_id`, and upserts them into `raw.igdb_games` with resolved genres, studios, publishers and cover URL.
-2. **`steam_review_counts`** — fetches the Steam summary (`query_summary`: total reviews, score…) of every game that is *due*: nightly for games above 1 000 reviews or whose counters moved the day before, otherwise one fixed weekday per game so the quiet long tail is spread over seven nights. `full_refresh` in the Launchpad probes everything.
-3. **`steam_reviews_backfill`** — first load of a game: paginates `appreviews` by cursor and writes the full payload of every review into `raw.steam_reviews`, stopping within a tolerance of the census count (Steam never serves some of the reviews it counts).
-4. **`steam_reviews_incremental`** — nightly catch-up for games already backfilled: walks the `updated`-sorted pages until it reaches the last seen `timestamp_updated`, so both new reviews and edits of old ones land as new versions.
+2. **`steam_review_counts`** — reads the review count of every game from `IStoreBrowseService/GetItems`, 200 games per request (a few minutes for the whole catalogue). That count only covers Steam purchases, so it is a "has this game moved?" signal, not the total: since 24/09/2026 `appreviews` is rate-limited per IP (~0.96 req/s sustained), too slow to probe every game.
+3. **`steam_reviews_backfill`** — first load of a game: paginates `appreviews` by cursor and writes the full payload of every review into `raw.steam_reviews`, stopping within a tolerance of the total read on page 1 (Steam never serves some of the reviews it counts). Page 1 also refreshes the game's totals and score.
+4. **`steam_reviews_incremental`** — nightly catch-up for games already backfilled whose GetItems count moved since their last sync, plus one weekday per game above 1 000 reviews: walks the `updated`-sorted pages until it reaches the last seen `timestamp_updated`, so both new reviews and edits of old ones land as new versions.
 5. **`steam_events`** — store announcements (patch notes, updates, news) of games above the review threshold; recent page only for games already ingested, full history on `full_refresh`.
 
 ### Transformation (dbt)
@@ -66,7 +66,6 @@ flowchart LR
 | --- | --- | --- |
 | `daily_pipeline` | every day at midnight, Europe/Paris (on by default) | everything except the `nlp` assets |
 | `igdb_ingest_job` | every day at 03:00 | `igdb_games` alone |
-| `steam_census_full_refresh` | manual | probes every game, ignoring per-game frequency |
 | `steam_events_full_refresh` | manual | rescans the full announcement history |
 | `dbt_build` / `dbt_staging` / `dbt_intermediate` / `dbt_marts` | manual | `dbt build` on the whole project or one layer |
 | `dbt_full_refresh` | manual | whole dbt project, `--full-refresh` |

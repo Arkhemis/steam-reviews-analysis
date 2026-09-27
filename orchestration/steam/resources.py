@@ -5,14 +5,16 @@ Endpoints :
 - annonces  : https://store.steampowered.com/events/ajaxgetpartnereventspageable/
 - fiches    : https://api.steampowered.com/IStoreBrowseService/GetItems/v1/
 
-Reviews et annonces tapent le même host, donc le même budget de rate limit :
-ils doivent partager cette resource, et donc son throttle.
+Depuis le 24/09, /appreviews a sa propre limite par IP (réserve de ~270
+requêtes rechargée à ~0,96/s, blocage de ~4 min 30) : il a son propre throttle,
+plus lent et adaptatif ; les autres endpoints gardent le throttle rapide.
 """
 
 import json
 import threading
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import httpx
 from dagster import ConfigurableResource, InitResourceContext, get_dagster_logger
@@ -21,6 +23,23 @@ from pydantic import PrivateAttr
 BASE_URL = "https://store.steampowered.com"
 # Endpoint non documenté, sans clé ; au-delà de ~250 ids l'URL devient trop longue (400).
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
+
+# Après autant de succès d'affilée, l'intervalle /appreviews redescend de 5 %.
+REVIEWS_SPEEDUP_AFTER = 500
+REVIEWS_SPEEDUP_FACTOR = 0.95
+REVIEWS_SLOWDOWN_FACTOR = 1.5
+
+Lane = Literal["default", "reviews"]
+
+
+@dataclass
+class _LaneState:
+    """Créneaux d'un endpoint : partagés par tous les threads de la resource."""
+
+    interval: float
+    next_slot_ts: float = 0.0
+    paused_until: float = 0.0
+    ok_streak: int = 0
 
 
 class SteamApiError(Exception):
@@ -55,7 +74,12 @@ class SteamResource(ConfigurableResource):
     """Client Steam (reviews, annonces, fiches store) avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
-    # 7 retries = 254 s cumulés : le blocage 429 du 25/09 a duré plus de 2 min.
+    # Plancher /appreviews : 0,8 req/s, sous la recharge mesurée (~0,96/s).
+    reviews_min_interval_seconds: float = 1.25
+    reviews_max_interval_seconds: float = 5.0
+    # Couvre le blocage mesuré (~4 min 30) d'une seule attente.
+    rate_limit_pause_seconds: float = 300.0
+    # Sur 429, chaque retry coûte une pause entière, pas le backoff.
     max_retries: int = 7
     # Backoff exponentiel sur 429 / timeout / 5xx.
     backoff_base_seconds: float = 2.0
@@ -63,22 +87,69 @@ class SteamResource(ConfigurableResource):
 
     _client: httpx.Client = PrivateAttr()
     _lock: threading.Lock = PrivateAttr()
-    _next_slot_ts: float = PrivateAttr(default=0.0)
+    _lanes: dict[str, _LaneState] = PrivateAttr()
 
     def setup_for_execution(self, context: InitResourceContext) -> None:
         self._client = httpx.Client(timeout=self.request_timeout_seconds)
         self._lock = threading.Lock()
+        self._lanes = {
+            "default": _LaneState(self.min_interval_seconds),
+            "reviews": _LaneState(self.reviews_min_interval_seconds),
+        }
 
-    def _throttle(self, min_interval_seconds: float | None = None) -> None:
-        """Réserve le prochain créneau disponible (thread-safe)."""
-        interval = min_interval_seconds or self.min_interval_seconds
+    def _throttle(self, lane: Lane) -> None:
+        """Réserve le prochain créneau disponible de l'endpoint (thread-safe)."""
         with self._lock:
+            state = self._lanes[lane]
             now = time.monotonic()
-            start_at = max(now, self._next_slot_ts)
-            self._next_slot_ts = start_at + interval
+            start_at = max(now, state.next_slot_ts)
+            state.next_slot_ts = start_at + state.interval
         wait = start_at - now
         if wait > 0:
             time.sleep(wait)
+
+    def _on_success(self, lane: Lane) -> None:
+        if lane != "reviews":
+            return
+        with self._lock:
+            state = self._lanes[lane]
+            state.ok_streak += 1
+            if (
+                state.ok_streak >= REVIEWS_SPEEDUP_AFTER
+                and state.interval > self.reviews_min_interval_seconds
+            ):
+                state.interval = max(
+                    self.reviews_min_interval_seconds,
+                    state.interval * REVIEWS_SPEEDUP_FACTOR,
+                )
+                state.ok_streak = 0
+
+    def _on_rate_limited(self, lane: Lane, app_id: int) -> None:
+        """Le 429 vise l'IP : on gèle l'endpoint pour tous les threads."""
+        with self._lock:
+            state = self._lanes[lane]
+            now = time.monotonic()
+            state.ok_streak = 0
+            # Les requêtes déjà en vol pendant la pause ne ralentissent pas une 2e fois.
+            if now < state.paused_until:
+                return
+            state.paused_until = now + self.rate_limit_pause_seconds
+            state.next_slot_ts = max(state.next_slot_ts, state.paused_until)
+            if lane == "reviews":
+                state.interval = min(
+                    self.reviews_max_interval_seconds,
+                    state.interval * REVIEWS_SLOWDOWN_FACTOR,
+                )
+            interval = state.interval
+        get_dagster_logger().warning(
+            f"app_id={app_id}: 429 sur {lane}, pause de "
+            f"{self.rate_limit_pause_seconds:.0f}s puis une requête toutes les {interval:.2f}s"
+        )
+
+    def reviews_interval_seconds(self) -> float:
+        """Intervalle /appreviews atteint, pour les métadonnées des assets."""
+        with self._lock:
+            return self._lanes["reviews"].interval
 
     def _get(
         self,
@@ -86,13 +157,13 @@ class SteamResource(ConfigurableResource):
         params: dict[str, Any],
         *,
         app_id: int,
-        min_interval_seconds: float | None = None,
+        lane: Lane = "default",
     ) -> dict[str, Any]:
         """Requête GET avec throttle + backoff exponentiel (`app_id` sert aux logs)."""
         logger = get_dagster_logger()
         attempt = 0
         while True:
-            self._throttle(min_interval_seconds)
+            self._throttle(lane)
             try:
                 # httpx URL-encode les query params (dont le cursor) automatiquement.
                 resp = self._client.get(url, params=params)
@@ -103,7 +174,9 @@ class SteamResource(ConfigurableResource):
                 if 400 <= resp.status_code < 500:
                     raise SteamApiError.from_response(app_id, resp)
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
+                self._on_success(lane)
+                return data
             except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
                 attempt += 1
                 if attempt > self.max_retries:
@@ -111,27 +184,20 @@ class SteamResource(ConfigurableResource):
                         f"app_id={app_id}: abandon après {self.max_retries} retries ({exc})"
                     )
                     raise
-                delay = self.backoff_base_seconds**attempt
                 if (
                     isinstance(exc, httpx.HTTPStatusError)
                     and exc.response.status_code == 429
                 ):
-                    # Le 429 vise l'IP : on suspend tous les threads, pas seulement celui-ci.
-                    with self._lock:
-                        self._next_slot_ts = max(
-                            self._next_slot_ts, time.monotonic() + delay
-                        )
+                    # Pas de sleep ici : le prochain créneau tombe après la pause.
+                    self._on_rate_limited(lane, app_id)
+                    continue
+                delay = self.backoff_base_seconds**attempt
                 logger.warning(
                     f"app_id={app_id}: erreur ({exc}); retry {attempt}/{self.max_retries} dans {delay:.0f}s"
                 )
                 time.sleep(delay)
 
-    def get_summary(
-        self,
-        app_id: int,
-        language: str = "all",
-        min_interval_seconds: float | None = None,
-    ) -> dict[str, Any]:
+    def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
         """Recensement : renvoie la réponse entière, dont `query_summary` (total_reviews, review_score, ...)."""
         data = self._get(
             f"{BASE_URL}/appreviews/{app_id}",
@@ -144,7 +210,7 @@ class SteamResource(ConfigurableResource):
                 "filter_offtopic_activity": 0,  # inclus le review bombing (aligné avec get_all_reviews)
             },
             app_id=app_id,
-            min_interval_seconds=min_interval_seconds,
+            lane="reviews",
         )
         return data
 
@@ -168,6 +234,7 @@ class SteamResource(ConfigurableResource):
                 "cursor": cursor,
             },
             app_id=app_id,
+            lane="reviews",
         )
 
     def get_events(
@@ -194,9 +261,14 @@ class SteamResource(ConfigurableResource):
         return data
 
     def get_store_items(
-        self, app_ids: list[int], country_code: str = "US"
+        self,
+        app_ids: list[int],
+        country_code: str = "US",
+        *,
+        include_release: bool = True,
+        include_reviews: bool = False,
     ) -> list[dict[str, Any]]:
-        """Fiches store d'un lot d'apps (type, DLC parent, early access, dates)."""
+        """Fiches store d'un lot d'apps (type, DLC parent, early access, dates, reviews)."""
         data = self._get(
             STORE_ITEMS_URL,
             {
@@ -204,7 +276,10 @@ class SteamResource(ConfigurableResource):
                     {
                         "ids": [{"appid": app_id} for app_id in app_ids],
                         "context": {"country_code": country_code},
-                        "data_request": {"include_release": True},
+                        "data_request": {
+                            "include_release": include_release,
+                            "include_reviews": include_reviews,
+                        },
                     }
                 )
             },

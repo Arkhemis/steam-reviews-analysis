@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
 ALTER TABLE raw.steam_review_counts
     ADD COLUMN IF NOT EXISTS total_reviews_backfilled BIGINT;
 
+-- Recensement GetItems (achats Steam seuls, sans les clés activées ailleurs) :
+-- steam_count est le compteur du jour, synced_steam_count sa valeur à la
+-- dernière synchronisation des reviews. Tant qu'ils diffèrent, le jeu a bougé.
+ALTER TABLE raw.steam_review_counts
+    ADD COLUMN IF NOT EXISTS steam_count BIGINT,
+    ADD COLUMN IF NOT EXISTS synced_steam_count BIGINT,
+    ADD COLUMN IF NOT EXISTS steam_count_checked_at TIMESTAMPTZ;
+
 
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
     recommendation_id  BIGINT NOT NULL,

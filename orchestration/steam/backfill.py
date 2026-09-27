@@ -1,6 +1,7 @@
 import json
 import time
 from collections.abc import Iterator
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dagster import (
@@ -28,16 +29,20 @@ STOP_TOLERANCE_RATIO = 0.15
 STOP_TOLERANCE_MIN = 50
 STOP_MAX_RETRIES = 6
 STOP_BACKOFF_BASE_SECONDS = 5.0
+# Relances de la page 1 quand Steam omet son query_summary.
+SUMMARY_RETRIES = 2
 
 
 def stop_tolerance(total_reviews: int | None) -> int:
     return max(STOP_TOLERANCE_MIN, int((total_reviews or 0) * STOP_TOLERANCE_RATIO))
 
 
+# Un jeu apparu au recensement GetItems n'a pas encore de total : son compteur
+# Steam (sans les clés) sert d'ordre de grandeur pour le classer.
 ABSENT_STEAM_IDS = """
-SELECT app_id, total_reviews FROM raw.steam_review_counts
+SELECT app_id, total_reviews, steam_count FROM raw.steam_review_counts
 WHERE last_backfill_at IS NULL
-ORDER BY total_reviews ASC NULLS FIRST
+ORDER BY COALESCE(total_reviews, steam_count) ASC NULLS FIRST
 """
 
 INSERT_REVIEWS_SQL = """
@@ -54,66 +59,126 @@ SET last_backfill_at = now(),
     last_seen_timestamp_updated = GREATEST(
         COALESCE(last_seen_timestamp_updated, 0),
         %s
-    )
+    ),
+    synced_steam_count = steam_count
 WHERE app_id = %s;
 """
+
+# Totaux de la page 1 de /appreviews, écrits même si la pagination échoue :
+# ils restent vrais, et servent de garde-fou d'arrêt au run suivant.
+UPDATE_SUMMARY_SQL = """
+UPDATE raw.steam_review_counts
+SET prev_total_reviews = total_reviews,
+    total_reviews      = %s,
+    total_positive     = %s,
+    total_negative     = %s,
+    review_score       = %s,
+    review_score_desc  = %s,
+    checked_at         = now()
+WHERE app_id = %s;
+"""
+
+
+def fetch_first_page(
+    steam: SteamResource, app_id: int
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Page 1 et son query_summary (mêmes champs que l'ancien recensement).
+
+    Steam omet parfois le résumé : la page est rejouée, puisque sans total le
+    garde-fou contre les fausses fins de pagination est désactivé.
+    """
+    for _ in range(SUMMARY_RETRIES + 1):
+        review_page = steam.get_all_reviews(app_id, cursor="*", language="all")
+        summary = review_page.get("query_summary") or {}
+        if summary.get("total_reviews") is not None:
+            return review_page, summary
+    get_dagster_logger().warning(
+        f"app_id={app_id}: page 1 sans query_summary après {SUMMARY_RETRIES} relances"
+    )
+    return review_page, None
+
+
+def summary_params(app_id: int, summary: dict[str, Any]) -> tuple:
+    return (
+        summary.get("total_reviews"),
+        summary.get("total_positive"),
+        summary.get("total_negative"),
+        summary.get("review_score"),
+        summary.get("review_score_desc"),
+        app_id,
+    )
+
 
 CENSUS_WORKERS = 5
 CENSUS_BATCH_SIZE = 100
 
 
-def iter_review_pages(
-    steam: SteamResource, app_id: int, total_reviews: int | None
-) -> Iterator[list["dict"]]:
+class ReviewPages:
     """Pagine les reviews d'un jeu en résistant aux faux signaux de fin de Steam.
 
-    Tant que l'écart au recensement dépasse `stop_tolerance`, un signal de
-    fin est considéré comme un incident transitoire : on rejoue le même curseur
-    après un backoff exponentiel.
+    Tant que l'écart au total de la page 1 (à défaut, au dernier connu) dépasse
+    `stop_tolerance`, un signal de fin est considéré comme un incident
+    transitoire : on rejoue le même curseur après un backoff exponentiel.
     """
-    logger = get_dagster_logger()
-    cursor = "*"
-    fetched = 0
-    stop_retries = 0
-    while True:
-        review_page = steam.get_all_reviews(app_id, cursor=cursor, language="all")
-        reviews = review_page.get("reviews") or []
-        next_cursor = review_page.get("cursor")
 
-        if not reviews or not next_cursor or next_cursor == cursor:
-            missing = (total_reviews or 0) - fetched
-            if total_reviews is None or missing <= stop_tolerance(total_reviews):
-                return
-            if stop_retries >= STOP_MAX_RETRIES:
-                logger.warning(
-                    f"app_id={app_id}: pagination abandonnée à {fetched}/{total_reviews} "
-                    f"reviews ({missing} manquantes) après {STOP_MAX_RETRIES} relances"
-                )
-                return
-            stop_retries += 1
-            delay = STOP_BACKOFF_BASE_SECONDS * 2 ** (stop_retries - 1)
-            logger.warning(
-                f"app_id={app_id}: fin prématurée à {fetched}/{total_reviews} reviews "
-                f"({missing} manquantes) ; relance du même curseur "
-                f"{stop_retries}/{STOP_MAX_RETRIES} dans {delay:.0f}s"
-            )
-            time.sleep(delay)
-            continue
+    def __init__(
+        self, steam: SteamResource, app_id: int, total_reviews: int | None
+    ) -> None:
+        self.steam = steam
+        self.app_id = app_id
+        self.total_reviews = total_reviews
+        self.summary: dict[str, Any] | None = None
 
+    def __iter__(self) -> Iterator[list[dict[str, Any]]]:
+        logger = get_dagster_logger()
+        app_id = self.app_id
+        cursor = "*"
+        fetched = 0
         stop_retries = 0
-        fetched += len(reviews)
-        cursor = next_cursor
-        yield reviews
+        while True:
+            if cursor == "*" and self.summary is None and stop_retries == 0:
+                review_page, self.summary = fetch_first_page(self.steam, app_id)
+                if self.summary is not None:
+                    self.total_reviews = self.summary["total_reviews"]
+            else:
+                review_page = self.steam.get_all_reviews(
+                    app_id, cursor=cursor, language="all"
+                )
+            total_reviews = self.total_reviews
+            reviews = review_page.get("reviews") or []
+            next_cursor = review_page.get("cursor")
+
+            if not reviews or not next_cursor or next_cursor == cursor:
+                missing = (total_reviews or 0) - fetched
+                if total_reviews is None or missing <= stop_tolerance(total_reviews):
+                    return
+                if stop_retries >= STOP_MAX_RETRIES:
+                    logger.warning(
+                        f"app_id={app_id}: pagination abandonnée à {fetched}/{total_reviews} "
+                        f"reviews ({missing} manquantes) après {STOP_MAX_RETRIES} relances"
+                    )
+                    return
+                stop_retries += 1
+                delay = STOP_BACKOFF_BASE_SECONDS * 2 ** (stop_retries - 1)
+                logger.warning(
+                    f"app_id={app_id}: fin prématurée à {fetched}/{total_reviews} reviews "
+                    f"({missing} manquantes) ; relance du même curseur "
+                    f"{stop_retries}/{STOP_MAX_RETRIES} dans {delay:.0f}s"
+                )
+                time.sleep(delay)
+                continue
+
+            stop_retries = 0
+            fetched += len(reviews)
+            cursor = next_cursor
+            yield reviews
 
 
 def fetch_steam_reviews(
     steam: SteamResource, app_id: int, total_reviews: int | None
-) -> list["dict"]:
-    return [
-        review
-        for page in iter_review_pages(steam, app_id, total_reviews)
-        for review in page
-    ]
+) -> tuple[list[dict[str, Any]], ReviewPages]:
+    pages = ReviewPages(steam, app_id, total_reviews)
+    return [review for page in pages for review in page], pages
 
 
 def reviews_to_rows(app_id: int, reviews: list["dict"]) -> list[tuple]:
@@ -146,8 +211,9 @@ def backfill_heavy_app_id(
     max_ts = 0
     pending_rows: list[tuple] = []
     pages_since_flush = 0
+    pages = ReviewPages(steam, app_id, total_reviews)
     with postgres.connect() as conn:
-        for reviews in iter_review_pages(steam, app_id, total_reviews):
+        for reviews in pages:
             for review in reviews:
                 max_ts = max(max_ts, review["timestamp_updated"])
             pending_rows.extend(reviews_to_rows(app_id, reviews))
@@ -165,10 +231,17 @@ def backfill_heavy_app_id(
             with conn.cursor() as cur:
                 cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
 
+        total_reviews = pages.total_reviews
         if total_reviews is not None and total_reviews - fetched > stop_tolerance(
             total_reviews
         ):
             conn.rollback()
+            if pages.summary is not None:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        UPDATE_SUMMARY_SQL, summary_params(app_id, pages.summary)
+                    )
+                conn.commit()
             context.log.warning(
                 f"[volumineux] app_id={app_id}: {fetched}/{total_reviews} reviews "
                 "seulement, insertion annulée et last_backfill_at laissé NULL "
@@ -177,6 +250,8 @@ def backfill_heavy_app_id(
             return 0, False
 
         with conn.cursor() as cur:
+            if pages.summary is not None:
+                cur.execute(UPDATE_SUMMARY_SQL, summary_params(app_id, pages.summary))
             cur.execute(MARK_BACKFILLED_SQL, (fetched, max_ts, app_id))
         conn.commit()
 
@@ -202,9 +277,10 @@ def steam_reviews_backfill(
     heavy_apps: list[tuple[int, int | None]] = []
     for row in rows:
         total_reviews = row["total_reviews"]
+        size = total_reviews if total_reviews is not None else row["steam_count"]
         if total_reviews == 0:
             zero_ids.append(row["app_id"])
-        elif (total_reviews or 0) > HEAVY_REVIEW_THRESHOLD:
+        elif (size or 0) > HEAVY_REVIEW_THRESHOLD:
             heavy_apps.append((row["app_id"], total_reviews))
         else:
             light_apps.append((row["app_id"], total_reviews))
@@ -252,7 +328,11 @@ def steam_reviews_backfill(
             )
             batch_rows = []
             mark_params = []
-            for (app_id, app_total), app_reviews in zip(batch, reviews_by_app):
+            summaries = []
+            for (app_id, _), (app_reviews, pages) in zip(batch, reviews_by_app):
+                if pages.summary is not None:
+                    summaries.append(summary_params(app_id, pages.summary))
+                app_total = pages.total_reviews
                 if app_total is not None and app_total - len(
                     app_reviews
                 ) > stop_tolerance(app_total):
@@ -269,6 +349,8 @@ def steam_reviews_backfill(
                 )
                 mark_params.append((len(app_reviews), app_max_ts, app_id))
             with conn.cursor() as cur:
+                if summaries:
+                    cur.executemany(UPDATE_SUMMARY_SQL, summaries)
                 if batch_rows:
                     cur.executemany(INSERT_REVIEWS_SQL, batch_rows)
                 if mark_params:
