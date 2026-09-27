@@ -128,6 +128,8 @@ class ReviewPages:
         self.app_id = app_id
         self.total_reviews = total_reviews
         self.summary: dict[str, Any] | None = None
+        # Vrai seulement si la fin est confirmée par un total connu.
+        self.complete = False
 
     def __iter__(self) -> Iterator[list[dict[str, Any]]]:
         logger = get_dagster_logger()
@@ -150,7 +152,10 @@ class ReviewPages:
 
             if not reviews or not next_cursor or next_cursor == cursor:
                 missing = (total_reviews or 0) - fetched
-                if total_reviews is None or missing <= stop_tolerance(total_reviews):
+                if total_reviews is None:
+                    return
+                if missing <= stop_tolerance(total_reviews):
+                    self.complete = True
                     return
                 if stop_retries >= STOP_MAX_RETRIES:
                     logger.warning(
@@ -232,9 +237,7 @@ def backfill_heavy_app_id(
                 cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
 
         total_reviews = pages.total_reviews
-        if total_reviews is not None and total_reviews - fetched > stop_tolerance(
-            total_reviews
-        ):
+        if not pages.complete:
             conn.rollback()
             if pages.summary is not None:
                 with conn.cursor() as cur:
@@ -333,9 +336,7 @@ def steam_reviews_backfill(
                 if pages.summary is not None:
                     summaries.append(summary_params(app_id, pages.summary))
                 app_total = pages.total_reviews
-                if app_total is not None and app_total - len(
-                    app_reviews
-                ) > stop_tolerance(app_total):
+                if not pages.complete:
                     incomplete += 1
                     context.log.warning(
                         f"[léger] app_id={app_id}: {len(app_reviews)}/{app_total} "
