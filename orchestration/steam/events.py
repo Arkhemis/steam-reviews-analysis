@@ -37,8 +37,9 @@ SELECT
         SELECT 1 FROM raw.steam_events AS e WHERE e.app_id = c.app_id
     ) AS has_events
 FROM raw.steam_review_counts AS c
-WHERE c.total_reviews >= %s
-ORDER BY c.total_reviews DESC;
+-- Un jeu tout juste recensé n'a pas encore de total : son compteur GetItems le remplace.
+WHERE COALESCE(c.total_reviews, c.steam_count) >= %s
+ORDER BY COALESCE(c.total_reviews, c.steam_count) DESC;
 """
 
 

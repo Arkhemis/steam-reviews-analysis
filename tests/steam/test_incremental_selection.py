@@ -1,7 +1,7 @@
 """Sélection des jeux de l'incrémental, jouée sur un vrai Postgres.
 
-La requête ne porte que sur des sémantiques NULL : elle ne peut être vérifiée
-qu'en base. Le test insère ses lignes dans une transaction annulée en sortie.
+La requête repose sur des sémantiques NULL et sur le modulo de Postgres : elle
+ne peut être vérifiée qu'en base. Le test insère ses lignes dans une transaction annulée en sortie.
 """
 
 import os
@@ -11,15 +11,9 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from orchestration.steam.incremental import RELEVANT_APP_IDS
+from orchestration.steam.incremental import RELEVANT_APP_IDS, ROTATION_STEAM_COUNT
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-
-# app_id hors de l'espace Steam réel : aucune collision avec les données locales.
-BACKFILLED_WITHOUT_CHECKPOINT = -1001
-BACKFILLED_WITH_CHECKPOINT = -1002
-ALREADY_COMPLETE = -1003
-NEVER_BACKFILLED = -1004
 
 
 def postgres_settings() -> dict[str, str]:
@@ -59,108 +53,126 @@ def conn():
         connection.close()
 
 
+# app_id hors de l'espace Steam réel (> 10^9) : aucune collision avec les données
+# locales. Multiple de 7 et positif, pour que BASE_APP_ID + d tombe le jour d.
+BASE_APP_ID = 7 * 150_000_000
+
+
 def insert_census_row(
     conn: psycopg.Connection,
     app_id: int,
     *,
-    total_reviews: int,
-    total_reviews_backfilled: int,
-    last_seen_timestamp_updated: int | None,
+    steam_count: int | None,
+    synced_steam_count: int | None,
+    total_reviews: int | None = 100,
+    last_seen_timestamp_updated: int | None = 1_700_000_000,
     backfilled: bool = True,
 ) -> None:
     conn.execute(
         """
         INSERT INTO raw.steam_review_counts (
-            app_id, total_reviews, total_reviews_backfilled,
+            app_id, total_reviews, steam_count, synced_steam_count,
             last_backfill_at, last_seen_timestamp_updated
         )
-        VALUES (%s, %s, %s, CASE WHEN %s THEN now() END, %s)
+        VALUES (%s, %s, %s, %s, CASE WHEN %s THEN now() END, %s)
         """,
         (
             app_id,
             total_reviews,
-            total_reviews_backfilled,
+            steam_count,
+            synced_steam_count,
             backfilled,
             last_seen_timestamp_updated,
         ),
     )
 
 
-def selected_app_ids(conn: psycopg.Connection) -> set[int]:
-    return {row["app_id"] for row in conn.execute(RELEVANT_APP_IDS).fetchall()}
+def selected_rows(conn: psycopg.Connection) -> dict[int, dict]:
+    rows = conn.execute(
+        RELEVANT_APP_IDS, {"rotation_steam_count": ROTATION_STEAM_COUNT}
+    ).fetchall()
+    return {row["app_id"]: row for row in rows}
 
 
-def selected_row(conn: psycopg.Connection, app_id: int) -> dict:
-    return next(
-        row
-        for row in conn.execute(RELEVANT_APP_IDS).fetchall()
-        if row["app_id"] == app_id
-    )
+def app_id_for_rotation(conn: psycopg.Connection, *, today: bool) -> int:
+    """Un app_id dont le jour de rotation est (ou n'est pas) aujourd'hui."""
+    dow = conn.execute("SELECT extract(dow FROM now())::int AS dow").fetchone()["dow"]
+    offset = dow if today else (dow + 1) % 7
+    return BASE_APP_ID + offset
 
 
-def test_selects_backfilled_game_without_checkpoint(conn: psycopg.Connection) -> None:
-    """Un jeu backfillé sans review n'a pas de checkpoint : il doit quand même
-    être repris quand des reviews sortent (cf. Soul Chained, app_id 3544130)."""
+def test_selects_game_whose_steam_count_moved(conn: psycopg.Connection) -> None:
+    app_id = app_id_for_rotation(conn, today=False)
+    insert_census_row(conn, app_id, steam_count=120, synced_steam_count=100)
+
+    assert app_id in selected_rows(conn)
+
+
+def test_ignores_game_that_did_not_move(conn: psycopg.Connection) -> None:
+    app_id = app_id_for_rotation(conn, today=False)
+    insert_census_row(conn, app_id, steam_count=100, synced_steam_count=100)
+
+    assert app_id not in selected_rows(conn)
+
+
+def test_selects_first_count_of_a_game_never_synced(conn: psycopg.Connection) -> None:
+    """Soul Chained (3544130) : backfillé sans review, puis ses premières reviews arrivent."""
+    app_id = app_id_for_rotation(conn, today=False)
     insert_census_row(
         conn,
-        BACKFILLED_WITHOUT_CHECKPOINT,
-        total_reviews=86,
-        total_reviews_backfilled=0,
+        app_id,
+        steam_count=86,
+        synced_steam_count=None,
+        total_reviews=0,
         last_seen_timestamp_updated=None,
     )
 
-    assert BACKFILLED_WITHOUT_CHECKPOINT in selected_app_ids(conn)
-
-
-def test_selects_backfilled_game_with_checkpoint(conn: psycopg.Connection) -> None:
-    insert_census_row(
-        conn,
-        BACKFILLED_WITH_CHECKPOINT,
-        total_reviews=120,
-        total_reviews_backfilled=100,
-        last_seen_timestamp_updated=1_700_000_000,
-    )
-
-    assert BACKFILLED_WITH_CHECKPOINT in selected_app_ids(conn)
-
-
-def test_ignores_game_already_complete(conn: psycopg.Connection) -> None:
-    insert_census_row(
-        conn,
-        ALREADY_COMPLETE,
-        total_reviews=42,
-        total_reviews_backfilled=42,
-        last_seen_timestamp_updated=None,
-    )
-
-    assert ALREADY_COMPLETE not in selected_app_ids(conn)
+    assert app_id in selected_rows(conn)
 
 
 def test_ignores_game_not_backfilled_yet(conn: psycopg.Connection) -> None:
     """Le backfill garde la main sur les jeux qu'il n'a pas encore traités."""
+    app_id = app_id_for_rotation(conn, today=False)
     insert_census_row(
-        conn,
-        NEVER_BACKFILLED,
-        total_reviews=500,
-        total_reviews_backfilled=0,
-        last_seen_timestamp_updated=None,
-        backfilled=False,
+        conn, app_id, steam_count=500, synced_steam_count=None, backfilled=False
     )
 
-    assert NEVER_BACKFILLED not in selected_app_ids(conn)
+    assert app_id not in selected_rows(conn)
 
 
-def test_exposes_census_total_to_the_paginator(conn: psycopg.Connection) -> None:
-    """Sans checkpoint, le total recensé est la seule preuve d'arrêt disponible."""
+def test_rotates_big_quiet_games_once_a_week(conn: psycopg.Connection) -> None:
+    """Sans mouvement, un gros jeu revient le jour de sa rotation, et seulement ce jour-là."""
+    today = app_id_for_rotation(conn, today=True)
+    other_day = app_id_for_rotation(conn, today=False)
+    for app_id in (today, other_day):
+        insert_census_row(
+            conn,
+            app_id,
+            steam_count=ROTATION_STEAM_COUNT,
+            synced_steam_count=ROTATION_STEAM_COUNT,
+        )
+
+    selected = selected_rows(conn)
+
+    assert today in selected
+    assert other_day not in selected
+
+
+def test_exposes_total_and_checkpoint_to_the_paginator(
+    conn: psycopg.Connection,
+) -> None:
+    """Sans checkpoint, le total connu est la preuve d'arrêt de repli."""
+    app_id = app_id_for_rotation(conn, today=False)
     insert_census_row(
         conn,
-        BACKFILLED_WITHOUT_CHECKPOINT,
+        app_id,
+        steam_count=86,
+        synced_steam_count=0,
         total_reviews=86,
-        total_reviews_backfilled=0,
         last_seen_timestamp_updated=None,
     )
 
-    row = selected_row(conn, BACKFILLED_WITHOUT_CHECKPOINT)
+    row = selected_rows(conn)[app_id]
 
     assert row["total_reviews"] == 86
     assert row["last_seen_timestamp_updated"] == 0

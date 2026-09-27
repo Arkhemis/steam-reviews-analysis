@@ -1,10 +1,8 @@
-import json
+import itertools
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 from dagster import (
     AssetExecutionContext,
-    Config,
     MaterializeResult,
     MetadataValue,
     asset,
@@ -13,160 +11,107 @@ from dagster import (
 from orchestration.postgres import PostgresResource
 from orchestration.steam.resources import SteamResource
 
-
-CENSUS_WORKERS = 8
+# GetItems plafonne à ~250 ids par requête (URL trop longue au-delà).
 CENSUS_BATCH_SIZE = 200
-# Depuis le 24/09, /appreviews bloque l'IP du VPS au bout de ~300 requêtes à 10/s
-# (les autres endpoints passent) : ~5 h 30 de recensement au lieu de ~1 h.
-CENSUS_MIN_INTERVAL_SECONDS = 0.5
-
-# Au-dessus de ce seuil, sondé chaque nuit même sans mouvement la veille :
-# sinon un solde ou un review bombing resterait invisible jusqu'au jour de la
-# semaine du jeu.
-CENSUS_HOT_TOTAL_REVIEWS = 1000
+# Enchaînés sans pause, les lots prennent un 429 toutes les ~30 requêtes.
+CENSUS_PAUSE_SECONDS = 0.5
 
 
-DUE_APP_IDS_SQL = """
-WITH steam_apps AS (
-    SELECT steam_app_id AS app_id, min(first_release_date) AS first_release_date
-    FROM raw.igdb_games
-    WHERE steam_app_id IS NOT NULL
-    GROUP BY steam_app_id
-)
-SELECT a.app_id
-FROM steam_apps AS a
-LEFT JOIN raw.steam_review_counts AS c USING (app_id)
-WHERE %(full_refresh)s
-   OR c.app_id IS NULL
-   -- Le backfill lit total_reviews pour sa tolérance d'arrêt : il le veut frais.
-   OR c.last_backfill_at IS NULL
-   OR c.total_reviews >= %(hot_total_reviews)s
-   -- A bougé à la sonde précédente : tant qu'un jeu vit, on le suit chaque nuit.
-   OR c.total_reviews IS DISTINCT FROM c.prev_total_reviews
-   -- Sinon une fois par semaine, à jour fixe par jeu : la longue traîne est
-   -- étalée sur sept nuits au lieu de retomber d'un bloc.
-   OR a.app_id %% 7 = extract(dow FROM now())::int
-   -- Filet si une nuit a sauté : le jour fixe du jeu ne revient qu'en fin de semaine.
-   OR c.checked_at < now() - interval '8 days'
-   -- ... A moins que le jeu ne sorte dans les 7 jours du stale !
-   OR a.first_release_date BETWEEN current_date - 7 AND current_date;
+STEAM_APP_IDS_SQL = """
+SELECT DISTINCT steam_app_id AS app_id
+FROM raw.igdb_games
+WHERE steam_app_id IS NOT NULL
+ORDER BY steam_app_id;
 """
 
-# Upsert : l'ancien total_reviews est copié dans prev_total_reviews, ce qui en
-# fait le signal « a bougé » de la sonde suivante.
-UPSERT_COUNTS_SQL = """
-INSERT INTO raw.steam_review_counts (
-    app_id, total_reviews, total_positive, total_negative,
-    review_score, review_score_desc, checked_at, prev_total_reviews
-)
-VALUES (%s, %s, %s, %s, %s, %s, now(), NULL)
+# Les totaux (dont les clés activées ailleurs) restent écrits par le backfill et
+# l'incrémental depuis la page 1 de /appreviews. Un jeu backfillé avant ce
+# recensement prend le compteur du jour comme point de départ, faute de mieux :
+# ses reviews ne sont pas perdues, le checkpoint les rattrapera à son prochain mouvement.
+UPSERT_STEAM_COUNT_SQL = """
+INSERT INTO raw.steam_review_counts (app_id, steam_count, steam_count_checked_at)
+VALUES (%s, %s, now())
 ON CONFLICT (app_id) DO UPDATE
-SET prev_total_reviews = raw.steam_review_counts.total_reviews,
-    total_reviews      = EXCLUDED.total_reviews,
-    total_positive     = EXCLUDED.total_positive,
-    total_negative     = EXCLUDED.total_negative,
-    review_score       = EXCLUDED.review_score,
-    review_score_desc  = EXCLUDED.review_score_desc,
-    checked_at         = now();
+SET steam_count            = EXCLUDED.steam_count,
+    steam_count_checked_at = now(),
+    synced_steam_count     = COALESCE(
+        raw.steam_review_counts.synced_steam_count,
+        CASE
+            WHEN raw.steam_review_counts.last_backfill_at IS NOT NULL
+                THEN EXCLUDED.steam_count
+        END
+    );
 """
 
 
-class SteamCensusConfig(Config):
-    """Exposé dans le Launchpad : sonde tous les jeux, dus ou pas."""
-
-    full_refresh: bool = False
+def steam_review_count(item: dict) -> int | None:
+    """Compteur de reviews d'une fiche GetItems, None si Steam n'en donne pas."""
+    if item.get("success") != 1:
+        return None
+    return ((item.get("reviews") or {}).get("summary_filtered") or {}).get(
+        "review_count"
+    )
 
 
 @asset(
     group_name="ingest",
     deps=["igdb_games"],
     description=(
-        "Sonde de recensement Steam (query_summary) par jeu -> raw.steam_review_counts. "
-        "Chaque nuit les jeux qui bougent, une nuit par semaine les autres, "
-        "sauf full_refresh."
+        "Compteur de reviews Steam de chaque jeu via GetItems (lots de 200) -> "
+        "raw.steam_review_counts.steam_count : le signal « a bougé » de "
+        "l'incrémental. Les totaux viennent de la page 1 de /appreviews."
     ),
 )
 def steam_review_counts(
     context: AssetExecutionContext,
-    config: SteamCensusConfig,
     steam: SteamResource,
     postgres: PostgresResource,
 ) -> MaterializeResult:
-    app_ids = [
-        row["app_id"]
-        for row in postgres.fetch_all(
-            DUE_APP_IDS_SQL,
-            {
-                "full_refresh": config.full_refresh,
-                "hot_total_reviews": CENSUS_HOT_TOTAL_REVIEWS,
-            },
-        )
-    ]
+    app_ids = [row["app_id"] for row in postgres.fetch_all(STEAM_APP_IDS_SQL)]
     total = len(app_ids)
     context.log.info(
-        f"Recensement de {total} jeux Steam dus ({CENSUS_WORKERS} workers, "
-        f"une requête toutes les {CENSUS_MIN_INTERVAL_SECONDS}s, "
-        f"lots de {CENSUS_BATCH_SIZE})"
+        f"Recensement GetItems de {total} jeux Steam (lots de {CENSUS_BATCH_SIZE})"
     )
 
-    probed = 0
-    skipped = 0
-    first_empty: tuple[int, dict] | None = None
+    scanned = 0
+    counted = 0
+    batches_failed = 0
     start = time.monotonic()
-    with (
-        postgres.connect() as conn,
-        ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool,
-    ):
-        for batch_start in range(0, total, CENSUS_BATCH_SIZE):
-            batch = app_ids[batch_start : batch_start + CENSUS_BATCH_SIZE]
-            responses = pool.map(
-                lambda app_id: steam.get_summary(
-                    app_id,
-                    language="all",
-                    min_interval_seconds=CENSUS_MIN_INTERVAL_SECONDS,
-                ),
-                batch,
-            )
-            with conn.cursor() as cur:
-                for app_id, data in zip(batch, responses):
-                    summary = data.get("query_summary") or {}
-                    # Steam renvoie parfois un 200 sans query_summary : on garde l'ancien recensement.
-                    if summary.get("total_reviews") is None:
-                        if first_empty is None:
-                            first_empty = (app_id, data)
-                        skipped += 1
-                        continue
-                    cur.execute(
-                        UPSERT_COUNTS_SQL,
-                        (
-                            app_id,
-                            summary.get("total_reviews"),
-                            summary.get("total_positive"),
-                            summary.get("total_negative"),
-                            summary.get("review_score"),
-                            summary.get("review_score_desc"),
-                        ),
-                    )
-            probed += len(batch)
-            conn.commit()
-            elapsed = time.monotonic() - start
-            rate = probed / elapsed if elapsed > 0 else 0
-            eta_min = (total - probed) / rate / 60 if rate > 0 else float("inf")
-            context.log.info(
-                f"Recensé {probed}/{total} ({probed / total:.0%}, {skipped} réponses vides) "
-                f"— {rate:.2f} jeux/s — ETA {eta_min:.0f} min"
-            )
+    with postgres.connect() as conn:
+        for batch in itertools.batched(app_ids, CENSUS_BATCH_SIZE):
+            scanned += len(batch)
+            try:
+                items = steam.get_store_items(
+                    list(batch), include_release=False, include_reviews=True
+                )
+            except Exception:
+                context.log.exception(f"Lot à partir de app_id={batch[0]} en échec")
+                batches_failed += 1
+                continue
 
-    if first_empty is not None:
-        app_id, data = first_empty
-        context.log.warning(
-            f"{skipped} jeux sans query_summary, recensement conservé. "
-            f"Premier : app_id={app_id}, success={data.get('success')}, "
-            f"clés={sorted(data)}, corps={json.dumps(data)[:500]}"
-        )
+            rows = [
+                (item["id"], count)
+                for item in items
+                if (count := steam_review_count(item)) is not None
+            ]
+            with conn.cursor() as cur:
+                cur.executemany(UPSERT_STEAM_COUNT_SQL, rows)
+            conn.commit()
+            counted += len(rows)
+
+            elapsed = time.monotonic() - start
+            context.log.info(
+                f"Recensé {scanned}/{total} ({scanned / total:.0%}) "
+                f"— {scanned / elapsed:.0f} jeux/s — {counted} compteurs"
+            )
+            time.sleep(CENSUS_PAUSE_SECONDS)
+
+    if batches_failed:
+        context.log.warning(f"{batches_failed} lots en échec, repris au prochain run")
     return MaterializeResult(
         metadata={
-            "apps_probed": MetadataValue.int(probed),
-            "apps_skipped": MetadataValue.int(skipped),
+            "apps_scanned": MetadataValue.int(scanned),
+            "apps_counted": MetadataValue.int(counted),
+            "batches_failed": MetadataValue.int(batches_failed),
         }
     )

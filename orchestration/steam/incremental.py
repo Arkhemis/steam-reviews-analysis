@@ -17,18 +17,28 @@ from orchestration.postgres import PostgresResource
 from orchestration.steam.backfill import (
     STOP_BACKOFF_BASE_SECONDS,
     STOP_MAX_RETRIES,
+    UPDATE_SUMMARY_SQL,
+    fetch_first_page,
     stop_tolerance,
+    summary_params,
 )
 from orchestration.steam.resources import SteamResource
 
-# Un thread et une connexion Postgres par jeu en cours de traitement.
-INCREMENTAL_WORKERS = 10
+# Un thread et une connexion Postgres par jeu en cours de traitement. Au-delà
+# de 3, les threads attendent le throttle /appreviews connexion ouverte.
+INCREMENTAL_WORKERS = 3
 
 # Reviews gardées en mémoire par jeu avant envoi au serveur (afin d'éviter un OOM)
 FLUSH_REVIEWS = 5000
 PROGRESS_EVERY = 500
 
+# Au-dessus, un jeu est resynchronisé une nuit par semaine même sans mouvement :
+# GetItems ne voit ni les éditions de reviews ni les clés activées ailleurs.
+ROTATION_STEAM_COUNT = 1000
 
+
+# Un jeu a bougé quand son compteur GetItems diffère de celui de sa dernière
+# synchronisation, réussie ou non (un échec laisse l'écart, donc le jeu revient).
 # Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
 # pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
 RELEVANT_APP_IDS = """
@@ -36,8 +46,12 @@ SELECT app_id,
        total_reviews,
        COALESCE(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
 FROM raw.steam_review_counts
-WHERE COALESCE(total_reviews_backfilled, 0) < total_reviews
-  AND last_backfill_at IS NOT NULL
+WHERE last_backfill_at IS NOT NULL
+  AND (
+      steam_count IS DISTINCT FROM synced_steam_count
+      OR (steam_count >= %(rotation_steam_count)s
+          AND app_id %% 7 = extract(dow FROM now())::int)
+  )
 """
 
 INSERT_REVIEW_SQL = """
@@ -52,7 +66,8 @@ UPDATE raw.steam_review_counts
 SET last_seen_timestamp_updated = GREATEST(
         COALESCE(last_seen_timestamp_updated, 0),
         %s
-    )
+    ),
+    synced_steam_count = steam_count
 WHERE app_id = %s
 """
 
@@ -95,7 +110,9 @@ def steam_reviews_incremental(
     steam: SteamResource,
     postgres: PostgresResource,
 ) -> MaterializeResult:
-    relevant_apps = postgres.fetch_all(RELEVANT_APP_IDS)
+    relevant_apps = postgres.fetch_all(
+        RELEVANT_APP_IDS, {"rotation_steam_count": ROTATION_STEAM_COUNT}
+    )
     total = len(relevant_apps)
     context.log.info(
         f"Synchronisation incrémentale de {total} jeux Steam "
@@ -154,6 +171,10 @@ def steam_reviews_incremental(
                     f"— {review_versions_inserted} versions insérées"
                 )
 
+    context.log.info(
+        f"Intervalle /appreviews en fin de run : {steam.reviews_interval_seconds():.2f}s"
+    )
+
     apps_recounted = recount_backfilled(postgres)
     context.log.info(
         f"total_reviews_backfilled recalculé depuis raw.steam_reviews "
@@ -174,6 +195,9 @@ def steam_reviews_incremental(
             "apps_incomplete": MetadataValue.int(apps_incomplete),
             "apps_failed": MetadataValue.int(apps_failed),
             "apps_recounted": MetadataValue.int(apps_recounted),
+            "reviews_interval_seconds": MetadataValue.float(
+                steam.reviews_interval_seconds()
+            ),
         }
     )
 
@@ -205,6 +229,7 @@ class NewReviewPages:
         self.reached_checkpoint = False
         self.fetched = 0
         self.counted_cursor: str | None = None
+        self.summary: dict[str, Any] | None = None
 
     def census_total_reached(self) -> bool:
         """Vrai si les reviews ramenées couvrent le total recensé, à la tolérance près."""
@@ -218,9 +243,15 @@ class NewReviewPages:
         stop_retries = 0
 
         while True:
-            review_page = self.steam.get_all_reviews(
-                self.app_id, cursor=cursor, language="all"
-            )
+            # Le total du jour, plus frais que celui en base, sert de preuve d'arrêt.
+            if cursor == "*" and self.summary is None and stop_retries == 0:
+                review_page, self.summary = fetch_first_page(self.steam, self.app_id)
+                if self.summary is not None:
+                    self.total_reviews = self.summary["total_reviews"]
+            else:
+                review_page = self.steam.get_all_reviews(
+                    self.app_id, cursor=cursor, language="all"
+                )
             reviews = review_page.get("reviews") or []
             next_cursor = review_page.get("cursor")
 
@@ -332,16 +363,28 @@ def sync_app_reviews(
 
         if not pages.reached_checkpoint:
             conn.rollback()
+            # Transaction à part : les totaux du jour restent vrais sans les reviews.
+            write_summary(conn, app_id, pages.summary)
             logger.warning(
-                f"app_id={app_id}: checkpoint non atteint ; aucune donnée enregistrée"
+                f"app_id={app_id}: checkpoint non atteint ; seuls les totaux sont enregistrés"
             )
             return AppSync(fetched, 0, False)
 
         with conn.cursor() as cur:
             cur.execute(UPDATE_CHECKPOINT_SQL, (max_timestamp_updated, app_id))
-        conn.commit()
+        write_summary(conn, app_id, pages.summary)
 
     return AppSync(fetched, versions_inserted, True)
+
+
+def write_summary(
+    conn: psycopg.Connection, app_id: int, summary: dict[str, Any] | None
+) -> None:
+    """Écrit les totaux de la page 1 et commite la transaction en cours."""
+    if summary is not None:
+        with conn.cursor() as cur:
+            cur.execute(UPDATE_SUMMARY_SQL, summary_params(app_id, summary))
+    conn.commit()
 
 
 def insert_versions(
