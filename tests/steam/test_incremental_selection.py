@@ -158,6 +158,21 @@ def test_rotates_big_quiet_games_once_a_week(conn: psycopg.Connection) -> None:
     assert other_day not in selected
 
 
+def test_rotates_games_without_steam_count_once_a_week(
+    conn: psycopg.Connection,
+) -> None:
+    """Sans compteur GetItems, le mouvement est invisible : seule la rotation les reprend."""
+    today = app_id_for_rotation(conn, today=True)
+    other_day = app_id_for_rotation(conn, today=False)
+    for app_id in (today, other_day):
+        insert_census_row(conn, app_id, steam_count=None, synced_steam_count=None)
+
+    selected = selected_rows(conn)
+
+    assert today in selected
+    assert other_day not in selected
+
+
 def test_exposes_total_and_checkpoint_to_the_paginator(
     conn: psycopg.Connection,
 ) -> None:
