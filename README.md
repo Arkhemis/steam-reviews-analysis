@@ -24,6 +24,7 @@ orchestration/      # Dagster code location
 dbt/                # dbt project: sources, staging, intermediate, marts, macros, analyses
 db/init.sql         # DDL for the raw schema, run on Postgres' first startup
 deploy/             # Dagster config (dagster.yaml, workspace.yaml), Caddyfile, VPS cloud-init
+tools/infra_map/    # local interactive map of the infra, lineage, orchestration and CI/CD
 .github/workflows/  # CI (ruff, sqlfluff, dg check defs) and CD (SSH deploy to the VPS)
 ```
 
@@ -100,6 +101,14 @@ uv sync --group dev
 uv run dbt deps --project-dir dbt --profiles-dir dbt
 uv run dg dev
 uv run dbt build --project-dir dbt --profiles-dir dbt
+```
+
+## Infra map
+
+`tools/infra_map` renders the whole project as interactive diagrams: production infra, data lineage (APIs → raw → dbt → website), Dagster orchestration and CI/CD. Clicking a node shows its logic: description, Python or SQL code, module constants, columns, tests and jobs. Everything is read from the code (Dagster definitions, dbt manifest, `db/init.sql`, compose, Caddyfile, workflows), so the map follows the repo:
+
+```bash
+uv run python tools/infra_map/serve.py --open   # http://127.0.0.1:8765
 ```
 
 ## Progress
