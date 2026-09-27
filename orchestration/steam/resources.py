@@ -7,7 +7,9 @@ Endpoints :
 
 Depuis le 24/09, /appreviews a sa propre limite par IP (réserve de ~270
 requêtes rechargée à ~0,96/s, blocage de ~4 min 30) : il a son propre throttle,
-plus lent et adaptatif ; les autres endpoints gardent le throttle rapide.
+plus lent et adaptatif. GetItems a une limite distincte (réserve de ~125 lots,
+~0,78 lot/s soutenu) dont le 429 ne bloque pas l'IP : quelques secondes suffisent.
+Les annonces gardent le throttle rapide.
 """
 
 import json
@@ -29,7 +31,7 @@ REVIEWS_SPEEDUP_AFTER = 500
 REVIEWS_SPEEDUP_FACTOR = 0.95
 REVIEWS_SLOWDOWN_FACTOR = 1.5
 
-Lane = Literal["default", "reviews"]
+Lane = Literal["default", "items", "reviews"]
 
 
 @dataclass
@@ -79,6 +81,10 @@ class SteamResource(ConfigurableResource):
     reviews_max_interval_seconds: float = 5.0
     # Couvre le blocage mesuré (~4 min 30) d'une seule attente.
     rate_limit_pause_seconds: float = 300.0
+    # GetItems : 1,3 s entre deux lots tient le débit soutenu mesuré (~0,78/s).
+    items_min_interval_seconds: float = 1.3
+    # Son 429 n'est qu'une réserve vide : un lot rejoué 1 s après passe.
+    items_rate_limit_pause_seconds: float = 5.0
     # Sur 429, chaque retry coûte une pause entière, pas le backoff.
     max_retries: int = 7
     # Backoff exponentiel sur 429 / timeout / 5xx.
@@ -94,6 +100,7 @@ class SteamResource(ConfigurableResource):
         self._lock = threading.Lock()
         self._lanes = {
             "default": _LaneState(self.min_interval_seconds),
+            "items": _LaneState(self.items_min_interval_seconds),
             "reviews": _LaneState(self.reviews_min_interval_seconds),
         }
 
@@ -125,7 +132,12 @@ class SteamResource(ConfigurableResource):
                 state.ok_streak = 0
 
     def _on_rate_limited(self, lane: Lane, app_id: int) -> None:
-        """Le 429 vise l'IP : on gèle l'endpoint pour tous les threads."""
+        """Le 429 vaut pour toute l'IP : on gèle l'endpoint pour tous les threads."""
+        pause = (
+            self.items_rate_limit_pause_seconds
+            if lane == "items"
+            else self.rate_limit_pause_seconds
+        )
         with self._lock:
             state = self._lanes[lane]
             now = time.monotonic()
@@ -133,7 +145,7 @@ class SteamResource(ConfigurableResource):
             # Les requêtes déjà en vol pendant la pause ne ralentissent pas une 2e fois.
             if now < state.paused_until:
                 return
-            state.paused_until = now + self.rate_limit_pause_seconds
+            state.paused_until = now + pause
             state.next_slot_ts = max(state.next_slot_ts, state.paused_until)
             if lane == "reviews":
                 state.interval = min(
@@ -143,7 +155,7 @@ class SteamResource(ConfigurableResource):
             interval = state.interval
         get_dagster_logger().warning(
             f"app_id={app_id}: 429 sur {lane}, pause de "
-            f"{self.rate_limit_pause_seconds:.0f}s puis une requête toutes les {interval:.2f}s"
+            f"{pause:.0f}s puis une requête toutes les {interval:.2f}s"
         )
 
     def reviews_interval_seconds(self) -> float:
@@ -284,6 +296,7 @@ class SteamResource(ConfigurableResource):
                 )
             },
             app_id=app_ids[0],
+            lane="items",
         )
         items = data.get("response", {}).get("store_items")
         if items is None:
