@@ -22,7 +22,15 @@ args = parser.parse_args()
 if not args.no_build:
     build()
 
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(HERE))
+
+class NoCache(http.server.SimpleHTTPRequestHandler):
+    # Sans ça, le navigateur garde un vieil index.html après un pull.
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+
+handler = functools.partial(NoCache, directory=str(HERE))
 # 127.0.0.1 seulement : la page embarque le code et la config du déploiement.
 with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
     url = f"http://127.0.0.1:{args.port}/"
