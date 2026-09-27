@@ -106,14 +106,19 @@ class SteamResource(ConfigurableResource):
 
     def _throttle(self, lane: Lane) -> None:
         """Réserve le prochain créneau disponible de l'endpoint (thread-safe)."""
-        with self._lock:
-            state = self._lanes[lane]
-            now = time.monotonic()
-            start_at = max(now, state.next_slot_ts)
-            state.next_slot_ts = start_at + state.interval
-        wait = start_at - now
-        if wait > 0:
-            time.sleep(wait)
+        while True:
+            with self._lock:
+                state = self._lanes[lane]
+                now = time.monotonic()
+                start_at = max(now, state.next_slot_ts)
+                state.next_slot_ts = start_at + state.interval
+            wait = start_at - now
+            if wait > 0:
+                time.sleep(wait)
+            # Un 429 arrivé pendant l'attente : on repasse après la pause.
+            with self._lock:
+                if time.monotonic() >= self._lanes[lane].paused_until:
+                    return
 
     def _on_success(self, lane: Lane) -> None:
         if lane != "reviews":

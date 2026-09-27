@@ -121,3 +121,19 @@ def test_429_on_store_items_leaves_reviews_running(clock):
     start = clock.now
     steam.get_summary(730)
     assert clock.now - start < 1
+
+
+def test_a_slot_reserved_before_a_429_waits_for_the_pause(clock, monkeypatch):
+    steam = steam_with_transport(ok)
+    steam._throttle("reviews")
+    start = clock.now
+
+    # Un autre thread prend un 429 pendant que celui-ci attend son créneau.
+    def sleep_then_429(seconds: float) -> None:
+        clock.sleep(seconds)
+        if steam._lanes["reviews"].paused_until == 0.0:
+            steam._on_rate_limited("reviews", 570)
+
+    monkeypatch.setattr(resources.time, "sleep", sleep_then_429)
+    steam._throttle("reviews")
+    assert clock.now - start == pytest.approx(1.25 + 300)
