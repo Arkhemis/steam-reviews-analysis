@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte steam.reviews</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" disabled>
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --border: #dde1e7;
+  --text: #1b1f24; --muted: #5e6875; --accent: #4f43dd; --accent-soft: #e9e7fc;
+  --api: #d9480f; --ingest: #4f43dd; --raw: #2b8a3e; --staging: #1c7ed6;
+  --intermediate: #7048e8; --marts: #c2255c; --web: #0b7285; --infra: #495057;
+  --ci: #5c940d; --missing: #e03131; --edge: #9aa3ae; --hl: #f59f00;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1f232c; --border: #2b303b;
+    --text: #e6e9ee; --muted: #9aa3ae; --accent: #8f86ff; --accent-soft: #272446;
+    --api: #ff8a4c; --ingest: #8f86ff; --raw: #51cf66; --staging: #4dabf7;
+    --intermediate: #9775fa; --marts: #f06595; --web: #3bc9db; --infra: #adb5bd;
+    --ci: #94d82d; --missing: #ff6b6b; --edge: #5c6470; --hl: #ffd43b;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115; --panel: #171a21; --panel-2: #1f232c; --border: #2b303b;
+  --text: #e6e9ee; --muted: #9aa3ae; --accent: #8f86ff; --accent-soft: #272446;
+  --api: #ff8a4c; --ingest: #8f86ff; --raw: #51cf66; --staging: #4dabf7;
+  --intermediate: #9775fa; --marts: #f06595; --web: #3bc9db; --infra: #adb5bd;
+  --ci: #94d82d; --missing: #ff6b6b; --edge: #5c6470; --hl: #ffd43b;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 Inter, system-ui, sans-serif; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+header h1 span { color: var(--muted); font-weight: 500; }
+nav { display: flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 8px; }
+nav button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; font: inherit; font-weight: 500; cursor: pointer; }
+nav button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+.spacer { flex: 1; }
+input[type=search] { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font: inherit; width: 220px; }
+.btn { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+main { flex: 1; display: flex; min-height: 0; }
+#stage { flex: 1; position: relative; min-width: 0; }
+#cy { position: absolute; inset: 0; }
+#toolbar { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 2; max-width: calc(100% - 24px); }
+#toolbar .chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow); user-select: none; }
+#toolbar .chip.off { opacity: .45; }
+#toolbar .chip i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+#jobs { position: absolute; bottom: 12px; left: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px; box-shadow: var(--shadow); z-index: 2; max-width: 280px; font-size: 12px; }
+#jobs summary { cursor: pointer; }
+#jobs h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#jobs button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); padding: 3px 6px; border-radius: 4px; font: inherit; cursor: pointer; }
+#jobs button:hover, #jobs button.active { background: var(--accent-soft); }
+#jobs button small { color: var(--muted); }
+aside { width: 400px; max-width: 42vw; border-left: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 18px 20px 40px; }
+aside h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; word-break: break-word; }
+aside h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin: 0 4px 4px 0; }
+.desc { white-space: pre-wrap; }
+.muted { color: var(--muted); }
+table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+table.kv td:first-child { width: 34%; overflow-wrap: anywhere; }
+table.kv td { overflow-wrap: anywhere; }
+table.kv pre { white-space: pre-wrap; max-height: 260px; }
+table.kv td { border-top: 1px solid var(--border); padding: 5px 6px; vertical-align: top; }
+table.kv td:first-child { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 12px; }
+table.kv tr.const td:last-child code { word-break: break-all; }
+.links a { display: inline-block; margin: 0 6px 6px 0; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; font-size: 12.5px; cursor: pointer; }
+.links a:hover { border-color: var(--accent); color: var(--accent); }
+.links a i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+code, pre { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+pre { margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; max-height: 520px; }
+pre code.hljs { background: transparent; padding: 0; }
+.tabs { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.tabs button { border: 1px solid var(--border); background: var(--panel); color: var(--muted); padding: 3px 9px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
+.tabs button.active { color: var(--accent); border-color: var(--accent); }
+.file { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); }
+.intro p { margin: 0 0 10px; }
+.legend div { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 12.5px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend .line { width: 22px; height: 0; border-top: 2px solid var(--edge); border-radius: 0; }
+.legend .dash { border-top-style: dashed; }
+.legend .dot { border-top-style: dotted; }
+.warn { color: var(--missing); }
+
+/* ---- lignage SVG ---- */
+svg.graph { display: block; cursor: grab; user-select: none; font-family: Inter, system-ui, sans-serif; }
+svg.graph.panning { cursor: grabbing; }
+.band rect:first-child { fill: var(--c); fill-opacity: .045; stroke: var(--c); stroke-opacity: .16; }
+.band-tab { fill: var(--c); fill-opacity: .8; }
+.band-title { fill: var(--c); font-size: 13px; font-weight: 700; }
+.band-sub { fill: var(--muted); font-size: 11px; }
+.node { cursor: pointer; transition: opacity .18s; }
+.node .card { fill: var(--panel); stroke: var(--border); stroke-width: 1; transition: stroke .15s, stroke-width .15s; }
+.node:hover .card { stroke: var(--c); stroke-width: 1.6; }
+.node .glyph-bg { fill: var(--c); fill-opacity: .13; }
+.node .glyph { fill: var(--c); font: 700 10.5px "JetBrains Mono", monospace; text-anchor: middle; letter-spacing: -.02em; }
+.node .title { fill: var(--text); font-size: 13px; font-weight: 600; }
+.node .sub { fill: var(--muted); font-size: 11px; }
+.node.missing .card { stroke: var(--missing); stroke-dasharray: 4 3; }
+.node.selected .card { stroke: var(--c); stroke-width: 2.4; }
+.node.tint .card { fill: color-mix(in srgb, var(--c) 8%, var(--panel)); }
+.edge { fill: none; stroke-width: 1.5; stroke-opacity: .5; transition: stroke-opacity .18s, stroke-width .18s, opacity .18s; }
+.e-net { stroke: var(--accent); stroke-width: 1.8; } .e-dep { stroke: var(--edge); stroke-dasharray: 2 4; stroke-linecap: round; } .e-ci { stroke: var(--ci); stroke-width: 1.8; }
+.e-call { stroke: var(--api); } .e-write { stroke: var(--raw); stroke-width: 1.8; } .e-ref { stroke: var(--edge); } .e-read { stroke: var(--edge); stroke-dasharray: 5 4; }
+.arrowhead { stroke: none; } .arrowhead.e-call { fill: var(--api); } .arrowhead.e-write { fill: var(--raw); } .arrowhead.e-ref, .arrowhead.e-read, .arrowhead.e-dep { fill: var(--edge); } .arrowhead.e-net { fill: var(--accent); } .arrowhead.e-ci { fill: var(--ci); }
+.elabel { opacity: 0; pointer-events: none; transition: opacity .15s; } .elabel rect { fill: var(--panel); stroke: var(--border); } .elabel text { fill: var(--muted); font: 500 10.5px Inter, sans-serif; text-anchor: middle; }
+svg.graph:not(.hover):not(.focus) .elabel.always, svg.hover .elabel.hover-on, svg.focus .elabel.focus-on { opacity: 1; }
+.band.clickable { cursor: pointer; } .band.clickable:hover rect:first-child { fill-opacity: .08; }
+.back-edge { opacity: 0; }
+svg.hover .node:not(.hover-on), svg.focus .node:not(.focus-on) { opacity: .2; }
+svg.hover .edge:not(.hover-on), svg.focus .edge:not(.focus-on) { opacity: .08; }
+svg.hover .edge.hover-on, svg.focus .edge.focus-on { opacity: 1; stroke-opacity: .95; stroke-width: 2.2; }
+svg.focus.hover .node.focus-on:not(.hover-on) { opacity: .45; }
+#tip { position: absolute; z-index: 3; pointer-events: none; max-width: 300px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; box-shadow: var(--shadow); font-size: 12px; }
+#tip b { display: block; margin-bottom: 2px; }
+#tip span { color: var(--muted); }
+#zoom { position: absolute; right: 14px; bottom: 14px; z-index: 2; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+#zoom button { width: 34px; height: 32px; border: 0; background: transparent; color: var(--text); font: 600 16px Inter, sans-serif; cursor: pointer; }
+#zoom button + button { border-top: 1px solid var(--border); }
+#zoom button:hover { background: var(--accent-soft); }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); z-index: 1; }
+@media (max-width: 800px) {
+  main { flex-direction: column; }
+  #stage { min-height: 60vh; }
+  aside { width: 100%; max-width: none; border-left: 0; border-top: 1px solid var(--border); padding: 16px; }
+  input[type=search] { width: 100%; }
+  #jobs { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>steam.reviews <span>· carte de l'infra</span></h1>
+  <nav id="views">
+    <button data-view="infra">Infra</button>
+    <button data-view="lineage">Lignage des données</button>
+    <button data-view="orchestration">Orchestration</button>
+    <button data-view="cicd">CI/CD</button>
+  </nav>
+  <div class="spacer"></div>
+  <input type="search" id="search" placeholder="Chercher un nœud…">
+  <button class="btn" id="fit" title="Recentrer">Recentrer</button>
+  <button class="btn" id="theme" title="Thème">◐</button>
+</header>
+<main>
+  <div id="stage">
+    <div id="loading">Chargement de data.json…</div>
+    <div id="toolbar"></div>
+    <div id="jobs" hidden></div>
+    <div id="cy"></div>
+    <div id="tip" hidden></div>
+    <div id="zoom" hidden><button data-z="1.25" title="Zoomer">+</button><button data-z="0.8" title="Dézoomer">−</button><button data-z="fit" title="Recentrer">⤢</button></div>
+  </div>
+  <aside id="panel"></aside>
+</main>
+<script>
+"use strict";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let D, view = "lineage";
+const hidden = new Set();
+
+const KIND = {
+  api:          { label: "API externe",         color: "--api",          shape: "hexagon" },
+  ingest:       { label: "Asset Python",        color: "--ingest",       shape: "round-rectangle" },
+  raw:          { label: "Table raw",           color: "--raw",          shape: "barrel" },
+  staging:      { label: "dbt staging",         color: "--staging",      shape: "round-rectangle" },
+  intermediate: { label: "dbt intermediate",    color: "--intermediate", shape: "round-rectangle" },
+  marts:        { label: "dbt marts",           color: "--marts",        shape: "round-rectangle" },
+  web:          { label: "Site (Next.js)",      color: "--web",          shape: "tag" },
+  missing:      { label: "Hors de ce repo",   color: "--missing",      shape: "barrel" },
+  service:      { label: "Conteneur",           color: "--infra",        shape: "round-rectangle" },
+  volume:       { label: "Volume",              color: "--raw",          shape: "barrel" },
+  external:     { label: "Externe",             color: "--api",          shape: "hexagon" },
+  job:          { label: "Job",                 color: "--accent",       shape: "round-rectangle" },
+  schedule:     { label: "Schedule",            color: "--ci",           shape: "ellipse" },
+  sensor:       { label: "Sensor",              color: "--missing",      shape: "ellipse" },
+  resource:     { label: "Resource",            color: "--infra",        shape: "cut-rectangle" },
+  group:        { label: "Groupe d'assets",     color: "--staging",      shape: "round-rectangle" },
+  trigger:      { label: "Déclencheur",         color: "--ci",           shape: "ellipse" },
+  cijob:        { label: "Job GitHub Actions",  color: "--ci",           shape: "round-rectangle" },
+};
+
+// ---------------------------------------------------------------- vues
+// Chaque vue décrit des bandeaux (lanes), des cartes et des arêtes ; svgGraph fait le reste.
+// Arête : kind ∈ call | write | ref | read | net | dep | ci ; float = hors placement, visible au survol.
+function kindOfAsset(a) { return a.type === "python" ? "ingest" : (a.group || "staging"); }
+function short(t) { return t.replace(/^table:/, ""); }
+const hostOf = url => (url.match(/\/\/([^/]+)/) || [])[1] || url;
+
+function lineageSpec() {
+  const lanes = [
+    { id: "api", title: "APIs", sub: "HTTP", color: "--api" },
+    { id: "ingest", title: "Ingestion", sub: "assets Dagster", color: "--ingest" },
+    { id: "raw", title: "Postgres raw", sub: "tables sources", color: "--raw" },
+    { id: "staging", title: "Staging", sub: "dbt", color: "--staging" },
+    { id: "intermediate", title: "Intermediate", sub: "dbt", color: "--intermediate" },
+    { id: "marts", title: "Marts", sub: "dbt", color: "--marts" },
+    { id: "web", title: "Site", sub: "Next.js", color: "--web" },
+  ];
+  const nodes = [], edges = [], seen = new Set();
+  const add = n => { if (!seen.has(n.id)) { seen.add(n.id); nodes.push(n); } };
+  const edge = (source, target, kind) => edges.push({ id: `${source}>${target}>${kind}`, source, target, kind });
+  const GL = { ingest: "Py", staging: "stg", intermediate: "int", marts: "mrt" };
+
+  Object.values(D.apis).filter(a => a.methods.length).forEach(a => add({ id: a.id, lane: "api", title: a.label, sub: hostOf(a.url), glyph: "API", color: "--api", tint: true }));
+  Object.values(D.tables).forEach(t => add({ id: t.id, lane: "raw", title: t.name.replace(/^raw\./, ""), sub: `${t.storage} · ${t.columns.length} colonnes`, glyph: "raw", color: "--raw" }));
+  Object.values(D.assets).forEach(a => {
+    const k = kindOfAsset(a);
+    const sub = a.type === "python" ? `${a.file.split("/").pop()} · ${a.resources.join(", ")}`
+      : [a.materialized, a.tests.length && `${a.tests.length} tests`, a.tags.includes("nlp") && "nlp"].filter(Boolean).join(" · ");
+    add({ id: a.id, lane: k, title: a.name, sub, glyph: GL[k], color: KIND[k].color });
+  });
+  Object.values(D.assets).forEach(a => {
+    if (a.type === "python") {
+      a.apis.forEach(api => edge(api, a.id, "call"));
+      a.writes.forEach(t => edge(a.id, t, "write"));
+      a.reads.filter(t => !a.writes.includes(t)).forEach(t => edge(t, a.id, "read"));
+    } else {
+      a.sources.forEach(t => edge(t, a.id, "ref"));
+      a.refs.forEach(r => edge(r, a.id, "ref"));
+    }
+  });
+  D.website.forEach(w => {
+    const parts = w.name.split("/"), file = parts.pop();
+    add({ id: w.id, lane: "web", title: file, sub: `${parts.join("/") || "src"} · ${w.reads.length} tables`, glyph: "web", color: "--web" });
+    w.reads.forEach(r => {
+      add({ id: r, lane: "raw", title: short(r), sub: "hors de ce repo", glyph: "?", color: "--missing", missing: true });
+      edge(r, w.id, "read");
+    });
+  });
+  return { lanes, nodes, edges };
+}
+
+function infraSpec() {
+  const cfg = D.dagster_instance.config || {};
+  const maxRuns = cfg.run_coordinator?.config?.max_concurrent_runs;
+  const lanes = [
+    { id: "ext", title: "Externe", sub: "entrées", color: "--api" },
+    { id: "edge", title: "Entrée", sub: "TLS · routage", color: "--accent", select: "vps" },
+    { id: "front", title: "Services web", sub: "exposés par Caddy", color: "--web", select: "vps" },
+    { id: "dagster", title: "Dagster", sub: "orchestration", color: "--ingest", select: "vps" },
+    { id: "data", title: "Données", sub: "Postgres · volumes", color: "--raw", select: "vps" },
+    { id: "apis", title: "APIs externes", sub: "appelées par les runs", color: "--api" },
+  ];
+  const laneOf = { caddy: "edge", website: "front", "dagster-webserver": "front", dbgate: "front", "dagster-daemon": "dagster", "user-code": "dagster", postgres: "data" };
+  const glyphOf = { caddy: "TLS", website: "web", "dagster-webserver": "UI", dbgate: "db", "dagster-daemon": "dmn", "user-code": "gRPC", postgres: "pg" };
+  const hostFor = name => D.caddy.find(h => h.upstream === name);
+  const nodes = [
+    { id: "ext:internet", lane: "ext", title: "Internet", sub: D.caddy.map(h => h.host.split(".")[0]).join(" · "), glyph: "www", color: "--api", tint: true },
+    { id: "ext:github", lane: "ext", title: "GitHub Actions", sub: "deploy via SSH", glyph: "CI", color: "--ci", tint: true },
+    ...Object.values(D.services).map(s => {
+      const h = hostFor(s.name);
+      const image = s.image.startsWith("build") ? "image user-code" : s.image.split("/").pop();
+      return { id: s.id, lane: laneOf[s.name] || "front", title: s.name, sub: [h ? h.host + (h.basicauth ? " 🔒" : "") : image, s.ports[0]].filter(Boolean).join(" · "), glyph: glyphOf[s.name] || "svc", color: "--infra" };
+    }),
+    { id: "svc:runs", lane: "dagster", title: "conteneurs de run", sub: `${cfg.run_launcher?.class || "RunLauncher"} · ≤ ${maxRuns}`, glyph: "run", color: "--ingest" },
+    { id: "vol:pgdata", lane: "data", title: "/mnt/pgdata", sub: "volume Hetzner · bind", glyph: "vol", color: "--raw" },
+    { id: "vol:logs", lane: "data", title: "dagster_compute_logs", sub: "volume Docker", glyph: "vol", color: "--raw" },
+    ...["api:appreviews", "api:getitems", "api:events", "api:igdb", "api:discord"].map(a => ({ id: a, lane: "apis", title: D.apis[a].label, sub: hostOf(D.apis[a].url), glyph: "API", color: "--api", tint: true })),
+  ];
+  const edges = [];
+  const edge = (source, target, kind, label, float) => edges.push({ id: `${source}>${target}>${label}`, source, target, kind, label, float });
+  edge("ext:internet", "svc:caddy", "net", "443 / 80");
+  D.caddy.forEach(h => h.upstream && edge("svc:caddy", `svc:${h.upstream}`, "net", h.host));
+  edge("svc:dagster-webserver", "svc:user-code", "net", "gRPC :4000");
+  edge("svc:dagster-daemon", "svc:user-code", "net", "gRPC :4000");
+  edge("svc:dagster-daemon", "svc:runs", "net", "docker run");
+  Object.values(D.services).forEach(s => s.name !== "caddy" && s.depends_on.forEach(d => edge(s.id, `svc:${d}`, "dep", d === "postgres" ? "SQL" : "dépend de")));
+  edge("svc:runs", "svc:postgres", "dep", "SQL");
+  edge("svc:runs", "vol:logs", "dep", "stdout / stderr");
+  edge("svc:dagster-webserver", "vol:logs", "dep", "lit les logs", true);
+  edge("svc:postgres", "vol:pgdata", "dep", "bind mount");
+  ["api:appreviews", "api:getitems", "api:events", "api:igdb"].forEach(a => edge("svc:runs", a, "call", "HTTP"));
+  edge("svc:dagster-daemon", "api:discord", "call", "run en échec");
+  edge("ext:github", "svc:user-code", "ci", "compose up --build");
+  return { lanes, nodes, edges };
+}
+
+function orchestrationSpec() {
+  const lanes = [
+    { id: "trig", title: "Déclencheurs", sub: "schedules", color: "--ci" },
+    { id: "jobs", title: "Jobs", sub: "sélections d'assets", color: "--accent" },
+    { id: "res", title: "Resources", sub: "injectées", color: "--infra" },
+    { id: "groups", title: "Groupes d'assets", sub: "Dagster", color: "--staging" },
+    { id: "alert", title: "Alerting", sub: "sensor", color: "--missing" },
+  ];
+  const groups = {};
+  Object.values(D.assets).forEach(a => (groups[a.group] ||= []).push(a.id));
+  const groupColor = { ingest: "--ingest", load: "--ingest", staging: "--staging", intermediate: "--intermediate", marts: "--marts" };
+  const nodes = [
+    ...D.schedules.map(s => ({ id: s.id, lane: "trig", title: s.name, sub: `${s.cron} · ${s.timezone} · ${s.default_status.toLowerCase()}`, glyph: "⏱", color: "--ci" })),
+    ...D.jobs.map(j => ({ id: j.id, lane: "jobs", title: j.name, sub: `${j.assets.length} assets${D.schedules.some(s => s.job === j.id) ? "" : " · manuel"}`, glyph: "job", color: "--accent" })),
+    ...D.resources.map(r => ({ id: r.id, lane: "res", title: r.name, sub: r.class.split(".").pop(), glyph: "res", color: "--infra" })),
+    ...Object.entries(groups).map(([g, ids]) => ({ id: `group:${g}`, lane: "groups", title: g, sub: `${ids.length} assets`, glyph: "grp", color: groupColor[g] || "--staging" })),
+    ...D.sensors.map(s => ({ id: s.id, lane: "alert", title: s.name, sub: s.default_status.toLowerCase(), glyph: "!", color: "--missing" })),
+    { id: "api:discord", lane: "alert", title: "Discord", sub: "webhook", glyph: "API", color: "--api", tint: true },
+  ];
+  const edges = [];
+  const edge = (source, target, kind, label, float) => edges.push({ id: `${source}>${target}>${kind}`, source, target, kind, label, float });
+  D.schedules.forEach(s => edge(s.id, s.job, "ci", "déclenche"));
+  D.jobs.forEach(j => {
+    const byGroup = {};
+    j.assets.forEach(a => { const g = D.assets[a]?.group; byGroup[g] = (byGroup[g] || 0) + 1; });
+    Object.entries(byGroup).forEach(([g, n]) => edge(j.id, `group:${g}`, "ref", `${n}/${groups[g].length}`));
+    D.sensors.forEach(s => edge(j.id, s.id, "read", "si échec", true));
+  });
+  D.resources.forEach(r => {
+    const gs = new Set(Object.values(D.assets).filter(a => a.type === "python" ? a.resources.includes(r.name) : ["dbt", "postgres"].includes(r.name)).map(a => a.group));
+    gs.forEach(g => edge(r.id, `group:${g}`, "dep", "injectée"));
+  });
+  D.sensors.forEach(s => edge(s.id, "api:discord", "call", "webhook"));
+  return { lanes, nodes, edges };
+}
+
+function cicdSpec() {
+  const lanes = [{ id: "trig", title: "Déclencheurs", sub: "GitHub", color: "--ci" }];
+  const nodes = [], edges = [];
+  const edge = (source, target, kind, label) => edges.push({ id: `${source}>${target}>${kind}`, source, target, kind, label });
+  const trigLabel = { pull_request: "PR vers main", push: "push sur main", workflow_dispatch: "lancement manuel" };
+  D.workflows.forEach(w => {
+    lanes.push({ id: w.id, title: w.name, sub: w.file.split("/").pop(), color: w.id === "ci:deploy" ? "--accent" : "--ci", select: w.id });
+    w.triggers.forEach(t => { if (!nodes.find(n => n.id === `trigger:${t}`)) nodes.push({ id: `trigger:${t}`, lane: "trig", title: trigLabel[t] || t, sub: t, glyph: "on", color: "--ci", tint: true }); });
+    w.jobs.forEach(j => {
+      const id = `${w.id}:${j.name}`;
+      nodes.push({ id, lane: w.id, title: j.name, sub: `${j.steps.length} étape${j.steps.length > 1 ? "s" : ""}`, glyph: w.id === "ci:deploy" ? "CD" : "CI", color: w.id === "ci:deploy" ? "--accent" : "--ci" });
+      const needs = j.needs ? [].concat(j.needs) : [];
+      if (needs.length) needs.forEach(n => { const src = w.jobs.find(x => x.name === n || x.name.toLowerCase() === n); edge(`${w.id}:${src ? src.name : n}`, id, "ref", "needs"); });
+      else w.triggers.forEach(t => edge(`trigger:${t}`, id, "ci", trigLabel[t] || t));
+    });
+  });
+  lanes.push({ id: "prod", title: "Production", sub: D.host.ip, color: "--infra", select: "vps" });
+  nodes.push({ id: "vps", lane: "prod", title: "VPS · deploy", sub: `${D.host.user}@${D.host.ip}`, glyph: "VPS", color: "--infra" });
+  nodes.push({ id: "dagster", lane: "prod", title: "Dagster launchRun", sub: "GraphQL via tunnel SSH :3001", glyph: "gql", color: "--ingest" });
+  const dep = D.workflows.find(w => w.id === "ci:deploy");
+  if (dep) {
+    edge(`${dep.id}:${dep.jobs[0].name}`, "vps", "net", "ssh deploy@");
+    const m = dep.jobs.find(j => /dbt/.test(j.name));
+    if (m) edge(`${dep.id}:${m.name}`, "dagster", "net", "state:modified+");
+  }
+  return { lanes, nodes, edges };
+}
+
+const VIEWS = {
+  infra: { spec: infraSpec, intro: introInfra },
+  lineage: { spec: lineageSpec, intro: introLineage, filters: true },
+  orchestration: { spec: orchestrationSpec, intro: introOrchestration },
+  cicd: { spec: cicdSpec, intro: introCicd },
+};
+
+// ---------------------------------------------------------------- rendu SVG
+let G = null;
+const NODE_H = 54, GUTTER = 176, SVGNS = "http://www.w3.org/2000/svg";
+const EDGE_KINDS = ["call", "write", "ref", "read", "net", "dep", "ci"];
+
+async function render(name) {
+  view = name;
+  document.querySelectorAll("#views button").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  const v = VIEWS[name];
+  const spec = v.spec();
+  if (v.filters) {
+    spec.nodes = spec.nodes.filter(n => !hidden.has(n.lane));
+    const ids = new Set(spec.nodes.map(n => n.id));
+    spec.edges = spec.edges.filter(e => ids.has(e.source) && ids.has(e.target));
+  }
+  if (G) G.destroy();
+  const host = document.getElementById("cy");
+  host.innerHTML = "";
+  G = await svgGraph(host, spec);
+  document.getElementById("loading")?.remove();
+  document.getElementById("zoom").hidden = false;
+  toolbar(v);
+  jobsBox();
+  v.intro();
+}
+
+const measure = (() => { const c = document.createElement("canvas").getContext("2d"); return (t, font) => { c.font = font; return c.measureText(t).width; }; })();
+
+function roundedPath(pts, r = 10) {
+  let d = `M${pts[0].x},${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [p0, p1, p2] = [pts[i - 1], pts[i], pts[i + 1]];
+    const d1 = Math.hypot(p1.x - p0.x, p1.y - p0.y), d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const rr = Math.min(r, d1 / 2, d2 / 2);
+    if (!rr) continue;
+    const a = { x: p1.x + (p0.x - p1.x) / d1 * rr, y: p1.y + (p0.y - p1.y) / d1 * rr };
+    const b = { x: p1.x + (p2.x - p1.x) / d2 * rr, y: p1.y + (p2.y - p1.y) / d2 * rr };
+    d += ` L${a.x},${a.y} Q${p1.x},${p1.y} ${b.x},${b.y}`;
+  }
+  const last = pts[pts.length - 1];
+  return d + ` L${last.x},${last.y}`;
+}
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, v));
+  if (parent) parent.append(e);
+  return e;
+}
+
+async function svgGraph(host, { lanes, nodes, edges }) {
+  const laneIds = lanes.map(l => l.id);
+  nodes = nodes.map(n => ({ ...n }));
+  const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const laneIdx = id => laneIds.indexOf(byId[id].lane);
+  // Une arête qui remonte (ou déclarée float) ne pèse pas sur le placement : courbe visible au survol.
+  const forward = e => !e.float && (laneIdx(e.source) < laneIdx(e.target) || (laneIdx(e.source) === laneIdx(e.target) && e.kind !== "read"));
+  const flow = edges.filter(forward), back = edges.filter(e => !forward(e));
+
+  nodes.forEach(n => { n.w = Math.round(Math.min(280, Math.max(150, 60 + Math.max(measure(n.title, "600 13px Inter"), measure(n.sub || "", "11px Inter"))))); });
+  const laid = await new ELK().layout({
+    id: "root",
+    layoutOptions: {
+      "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.edgeRouting": "ORTHOGONAL",
+      "elk.partitioning.activate": "true",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "58", "elk.spacing.nodeNode": "16",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "22", "elk.layered.spacing.edgeEdgeBetweenLayers": "10", "elk.spacing.edgeEdge": "8",
+      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP", "elk.layered.thoroughness": "30",
+      "elk.separateConnectedComponents": "false",
+    },
+    children: nodes.map(n => ({ id: n.id, width: n.w, height: NODE_H, layoutOptions: { "elk.partitioning.partition": String(laneIdx(n.id)) } })),
+    edges: flow.map(e => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+  });
+  laid.children.forEach(c => Object.assign(byId[c.id], { x: c.x + GUTTER, y: c.y }));
+  const width = Math.max(...nodes.map(n => n.x + n.w)) + 40;
+
+  const svg = el("svg", { class: "graph", width: "100%", height: "100%" }, host);
+  const defs = el("defs", {}, svg);
+  EDGE_KINDS.forEach(k => {
+    const m = el("marker", { id: `arrow-${k}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0,1 L9,5 L0,9 z", class: `arrowhead e-${k}` }, m);
+  });
+  const shadow = el("filter", { id: "card-shadow", x: "-10%", y: "-20%", width: "120%", height: "160%" }, defs);
+  el("feDropShadow", { dx: 0, dy: 1.5, stdDeviation: 2.2, "flood-opacity": .12 }, shadow);
+  const vp = el("g", { class: "viewport" }, svg);
+  const gBands = el("g", {}, vp), gEdges = el("g", {}, vp), gBack = el("g", {}, vp), gNodes = el("g", {}, vp), gLabels = el("g", {}, vp);
+
+  lanes.forEach(lane => {
+    const ns = nodes.filter(n => n.lane === lane.id);
+    if (!ns.length) return;
+    const y0 = Math.min(...ns.map(n => n.y)) - 20, y1 = Math.max(...ns.map(n => n.y + NODE_H)) + 20;
+    const g = el("g", { class: "band" + (lane.select ? " clickable" : ""), style: `--c: var(${lane.color})`, ...(lane.select ? { "data-select": lane.select } : {}) }, gBands);
+    el("rect", { x: 0, y: y0, width, height: y1 - y0, rx: 16 }, g);
+    el("rect", { class: "band-tab", x: 0, y: y0, width: 5, height: y1 - y0, rx: 2.5 }, g);
+    const cy = (y0 + y1) / 2;
+    el("text", { class: "band-title", x: 24, y: cy - 4 }, g).textContent = lane.title;
+    el("text", { class: "band-sub", x: 24, y: cy + 13 }, g).textContent = `${ns.length} · ${lane.sub}`;
+  });
+
+  const edgeEls = {}, labelEls = {};
+  const addLabel = (e, pathEl) => {
+    if (!e.label) return;
+    const len = pathEl.getTotalLength(), p = pathEl.getPointAtLength(len / 2);
+    const g = el("g", { class: "elabel" }, gLabels);
+    const t = el("text", { x: p.x, y: p.y + 3.5 }, g);
+    t.textContent = e.label;
+    const w = measure(e.label, "500 10.5px Inter") + 10;
+    g.insertBefore(el("rect", { x: p.x - w / 2, y: p.y - 8, width: w, height: 16, rx: 8 }), t);
+    labelEls[e.id] = g;
+  };
+  (laid.edges || []).forEach(le => {
+    const e = edges.find(x => x.id === le.id), s = le.sections?.[0];
+    if (!s) return;
+    const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint].map(p => ({ x: p.x + GUTTER, y: p.y }));
+    edgeEls[e.id] = el("path", { d: roundedPath(pts), class: `edge e-${e.kind}`, "marker-end": `url(#arrow-${e.kind})` }, gEdges);
+    addLabel(e, edgeEls[e.id]);
+  });
+  back.forEach(e => {
+    const s = byId[e.source], t = byId[e.target];
+    const down = t.y > s.y;
+    const a = { x: s.x + s.w / 2 + 14, y: down ? s.y + NODE_H : s.y }, b = { x: t.x + t.w / 2 + 14, y: down ? t.y : t.y + NODE_H };
+    const dy = Math.max(30, Math.abs(a.y - b.y) / 2) * (down ? 1 : -1);
+    edgeEls[e.id] = el("path", { d: `M${a.x},${a.y} C${a.x},${a.y + dy} ${b.x},${b.y - dy} ${b.x},${b.y + (down ? -2 : 2)}`, class: `edge e-${e.kind} back-edge`, "marker-end": `url(#arrow-${e.kind})` }, gBack);
+    addLabel(e, edgeEls[e.id]);
+  });
+
+  const nodeEls = {};
+  nodes.forEach(n => {
+    const g = el("g", { class: `node${n.missing ? " missing" : ""}${n.tint ? " tint" : ""}`, transform: `translate(${n.x},${n.y})`, style: `--c: var(${n.color})`, "data-id": n.id }, gNodes);
+    el("rect", { class: "card", width: n.w, height: NODE_H, rx: 11, filter: "url(#card-shadow)" }, g);
+    el("rect", { class: "glyph-bg", x: 11, y: (NODE_H - 32) / 2, width: 32, height: 32, rx: 8 }, g);
+    el("text", { class: "glyph", x: 27, y: NODE_H / 2 + 4 }, g).textContent = n.glyph || "•";
+    el("text", { class: "title", x: 54, y: n.sub ? 24 : 31 }, g).textContent = n.title;
+    if (n.sub) el("text", { class: "sub", x: 54, y: 40 }, g).textContent = n.sub;
+    nodeEls[n.id] = g;
+  });
+
+  const inc = {}, out = {};
+  edges.forEach(e => { (inc[e.target] ||= []).push(e); (out[e.source] ||= []).push(e); });
+  const walk = (start, dir) => {
+    const seenN = new Set(), seenE = new Set(), stack = [start];
+    while (stack.length) {
+      const id = stack.pop();
+      ((dir === "up" ? inc[id] : out[id]) || []).forEach(e => {
+        if (!forward(e)) return;
+        seenE.add(e.id);
+        const nxt = dir === "up" ? e.source : e.target;
+        if (!seenN.has(nxt)) { seenN.add(nxt); stack.push(nxt); }
+      });
+    }
+    return [seenN, seenE];
+  };
+  const setState = (cls, nodeIds, edgeIds) => {
+    svg.classList.add(cls);
+    Object.entries(nodeEls).forEach(([id, e]) => e.classList.toggle(`${cls}-on`, nodeIds.has(id)));
+    Object.entries(edgeEls).forEach(([id, e]) => e.classList.toggle(`${cls}-on`, edgeIds.has(id)));
+    Object.entries(labelEls).forEach(([id, e]) => e.classList.toggle(`${cls}-on`, edgeIds.has(id)));
+  };
+  const clearState = cls => { svg.classList.remove(cls); svg.querySelectorAll(`.${cls}-on`).forEach(e => e.classList.remove(`${cls}-on`)); };
+  const direct = id => [...(inc[id] || []), ...(out[id] || [])];
+
+  let k = 1, tx = 0, ty = 0;
+  const apply = () => vp.setAttribute("transform", `translate(${tx},${ty}) scale(${k})`);
+  const y0 = Math.min(...nodes.map(n => n.y)) - 30, y1 = Math.max(...nodes.map(n => n.y + NODE_H)) + 40;
+  const fit = () => {
+    const W = host.clientWidth, H = host.clientHeight, top = document.getElementById("toolbar").childElementCount ? 58 : 20;
+    // Tout tient si possible ; sinon on garde une échelle lisible (≥ 0,62) et la largeur se parcourt.
+    const kh = Math.min((H - top - 20) / (y1 - y0), 1.1), kw = (W - 40) / width;
+    k = kw >= kh ? kh : Math.max(kw, Math.min(kh, .62));
+    tx = width * k < W ? (W - width * k) / 2 : 20;
+    ty = top + (H - top - (y1 - y0) * k) / 2 - y0 * k;
+    apply();
+  };
+  const animateTo = (nk, ntx, nty) => {
+    const [k0, x0, yy0] = [k, tx, ty], t0 = performance.now();
+    const step = t => { const p = Math.min(1, (t - t0) / 320), e = 1 - Math.pow(1 - p, 3);
+      k = k0 + (nk - k0) * e; tx = x0 + (ntx - x0) * e; ty = yy0 + (nty - yy0) * e; apply(); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  };
+  const zoomAt = (f, cx, cy) => { const nk = Math.min(3, Math.max(.15, k * f)); tx = cx - (cx - tx) * nk / k; ty = cy - (cy - ty) * nk / k; k = nk; apply(); };
+  svg.addEventListener("wheel", ev => { ev.preventDefault(); const r = svg.getBoundingClientRect(); zoomAt(Math.exp(-ev.deltaY * .0015), ev.clientX - r.left, ev.clientY - r.top); }, { passive: false });
+  let drag = null;
+  svg.addEventListener("pointerdown", ev => { drag = { x: ev.clientX, y: ev.clientY, tx, ty, moved: false }; svg.setPointerCapture(ev.pointerId); });
+  svg.addEventListener("pointermove", ev => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; svg.classList.add("panning"); }
+    if (drag.moved) { tx = drag.tx + dx; ty = drag.ty + dy; apply(); }
+  });
+  svg.addEventListener("pointerup", ev => {
+    const d = drag; drag = null; svg.classList.remove("panning");
+    if (!d || d.moved) return;
+    const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+    const node = hit?.closest(".node"), band = hit?.closest(".band.clickable");
+    if (node) select(node.dataset.id);
+    else if (band) { G.clear(); select(band.dataset.select); }
+    else { G.clear(); VIEWS[view].intro(); }
+  });
+
+  const tip = document.getElementById("tip");
+  gNodes.addEventListener("pointerover", ev => {
+    const n = ev.target.closest(".node"); if (!n || drag?.moved) return;
+    const id = n.dataset.id, es = direct(id);
+    setState("hover", new Set([id, ...es.flatMap(e => [e.source, e.target])]), new Set(es.map(e => e.id)));
+    const desc = describe(id);
+    tip.innerHTML = `<b>${esc(byId[id].title)}</b>${desc ? `<span>${esc(desc.split("\n")[0].slice(0, 220))}</span>` : ""}`;
+    tip.hidden = false;
+  });
+  gNodes.addEventListener("pointermove", ev => {
+    const r = host.getBoundingClientRect();
+    tip.style.left = Math.min(ev.clientX - r.left + 16, r.width - 300) + "px";
+    tip.style.top = ev.clientY - r.top + 18 + "px";
+  });
+  gNodes.addEventListener("pointerout", ev => { if (!ev.relatedTarget?.closest?.(".node")) { clearState("hover"); tip.hidden = true; } });
+
+  requestAnimationFrame(fit);
+  const onResize = () => fit();
+  window.addEventListener("resize", onResize);
+
+  return {
+    has: id => !!byId[id],
+    inc: id => (inc[id] || []).map(e => e.source),
+    out: id => (out[id] || []).map(e => e.target),
+    clear() { clearState("focus"); svg.querySelectorAll(".selected").forEach(e => e.classList.remove("selected")); },
+    mark(ids) { this.clear(); setState("focus", ids, new Set(edges.filter(e => ids.has(e.source) && ids.has(e.target)).map(e => e.id))); },
+    focus(id, recentre) {
+      this.clear();
+      const [un, ue] = walk(id, "up"), [dn, de] = walk(id, "down");
+      const ns = new Set([id, ...un, ...dn]);
+      direct(id).forEach(e => { ns.add(e.source); ns.add(e.target); });
+      setState("focus", ns, new Set([...ue, ...de, ...direct(id).map(e => e.id)]));
+      nodeEls[id].classList.add("selected");
+      if (recentre) { const n = byId[id], W = host.clientWidth, H = host.clientHeight, nk = Math.max(k, .8);
+        animateTo(nk, W / 2 - (n.x + n.w / 2) * nk, H / 2 - (n.y + NODE_H / 2) * nk); }
+    },
+    search: q => nodes.filter(n => (n.title + " " + n.id).toLowerCase().includes(q)).map(n => n.id),
+    fit, zoom: f => zoomAt(f, host.clientWidth / 2, host.clientHeight / 2),
+    destroy: () => { window.removeEventListener("resize", onResize); tip.hidden = true; },
+  };
+}
+
+function describe(id) {
+  if (D.assets[id]) return D.assets[id].description;
+  if (D.tables[id]) return `Table ${D.tables[id].storage}, ${D.tables[id].columns.length} colonnes`;
+  if (D.apis[id]) return D.apis[id].notes;
+  if (id.startsWith("job:")) return D.jobs.find(j => j.id === id)?.description;
+  if (id.startsWith("schedule:")) return D.schedules.find(s => s.id === id)?.description;
+  if (id.startsWith("sensor:")) return D.sensors.find(s => s.id === id)?.description;
+  if (id.startsWith("resource:")) return D.resources.find(r => r.id === id)?.class;
+  if (id.startsWith("svc:") && D.services[id.slice(4)]) return D.services[id.slice(4)].image;
+  return "";
+}
+
+function toolbar(v) {
+  const tb = document.getElementById("toolbar");
+  tb.innerHTML = "";
+  if (!v.filters) return;
+  v.spec().lanes.forEach(l => {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (hidden.has(l.id) ? " off" : "");
+    chip.innerHTML = `<i style="background:var(${l.color})"></i>${esc(l.title)}`;
+    chip.onclick = () => { hidden.has(l.id) ? hidden.delete(l.id) : hidden.add(l.id); render(view); };
+    tb.append(chip);
+  });
+}
+
+function jobsBox() {
+  const box = document.getElementById("jobs");
+  box.hidden = view !== "lineage";
+  if (box.hidden) return;
+  box.innerHTML = `<details><summary><h4 style="display:inline">Périmètre d'un job</h4></summary>` + D.jobs.map(j => `<button data-job="${esc(j.id)}">${esc(j.name)} <small>${j.assets.length}</small></button>`).join("") + `</details>`;
+  box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    const on = !b.classList.contains("active");
+    box.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+    G.clear();
+    if (on) { b.classList.add("active"); highlightJob(b.dataset.job); showJob(D.jobs.find(j => j.id === b.dataset.job)); }
+  });
+}
+
+function highlightJob(jobId) { G.mark(new Set(D.jobs.find(j => j.id === jobId).assets)); }
+
+// ---------------------------------------------------------------- panneau
+const P = () => document.getElementById("panel");
+function kindColor(id) {
+  if (D.assets[id]) return css(KIND[kindOfAsset(D.assets[id])].color);
+  if (id.startsWith("table:")) return css(D.tables[id] ? "--raw" : "--missing");
+  if (id.startsWith("api:")) return css("--api");
+  if (id.startsWith("web:")) return css("--web");
+  if (id.startsWith("job:")) return css("--accent");
+  return css("--infra");
+}
+function labelOf(id) {
+  return D.assets[id]?.name || D.tables[id]?.name || D.apis[id]?.label || D.jobs.find(j => j.id === id)?.name
+    || D.website.find(w => w.id === id)?.name || id.replace(/^\w+:/, "");
+}
+const linkList = ids => ids.length ? `<div class="links">${ids.map(id => `<a data-go="${esc(id)}"><i style="background:${kindColor(id)}"></i>${esc(labelOf(id))}</a>`).join("")}</div>` : `<p class="muted">—</p>`;
+const kv = obj => `<table class="kv">${Object.entries(obj).filter(([, v]) => v !== undefined && v !== "" && v !== null).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${typeof v === "string" && v.startsWith("<") ? v : esc(typeof v === "object" ? JSON.stringify(v) : v)}</td></tr>`).join("")}</table>`;
+const badges = list => list.filter(Boolean).map(b => `<span class="badge">${esc(b)}</span>`).join("");
+
+function codeBlocks(blocks) {
+  blocks = blocks.filter(b => b.code);
+  if (!blocks.length) return "";
+  const id = "c" + Math.random().toString(36).slice(2);
+  return `<h3>Code</h3><div class="tabs" data-tabs="${id}">${blocks.map((b, i) => `<button class="${i ? "" : "active"}" data-i="${i}">${esc(b.label)}</button>`).join("")}</div>`
+    + blocks.map((b, i) => `<div data-pane="${id}" data-i="${i}" ${i ? "hidden" : ""}>${b.file ? `<div class="file">${esc(b.file)}</div>` : ""}<pre><code class="language-${b.lang}">${esc(b.code)}</code></pre></div>`).join("");
+}
+function constantsTable(consts) {
+  if (!consts?.length) return "";
+  return `<h3>Constantes (seuils, SQL, réglages)</h3><table class="kv">${consts.map(c => `<tr class="const"><td>${esc(c.name)}<br><span class="muted">l.${c.line}</span></td><td>${c.comment ? `<div class="muted">${esc(c.comment)}</div>` : ""}<pre><code class="language-${/SQL/.test(c.name) ? "sql" : "python"}">${esc(c.value)}</code></pre></td></tr>`).join("")}</table>`;
+}
+function columnsTable(cols) {
+  if (!cols?.length) return "";
+  return `<h3>Colonnes (${cols.length})</h3><table class="kv">${cols.map(c => `<tr><td>${esc(c.name)}</td><td>${c.type ? `<code>${esc(c.type)}</code> ` : ""}<span class="muted">${esc(c.description)}</span></td></tr>`).join("")}</table>`;
+}
+function graphLinks(id) {
+  if (!G.has(id)) return "";
+  const up = [...new Set(G.inc(id))], down = [...new Set(G.out(id))];
+  return `<h3>En amont</h3>${linkList(up)}<h3>En aval</h3>${linkList(down)}`;
+}
+function finish() {
+  const p = P();
+  p.scrollTop = 0;
+  p.querySelectorAll("pre code").forEach(el => window.hljs && hljs.highlightElement(el));
+  p.querySelectorAll("[data-go]").forEach(a => a.onclick = () => select(a.dataset.go, true));
+  p.querySelectorAll("[data-tabs]").forEach(t => t.querySelectorAll("button").forEach(b => b.onclick = () => {
+    t.querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+    p.querySelectorAll(`[data-pane="${t.dataset.tabs}"]`).forEach(x => x.hidden = x.dataset.i !== b.dataset.i);
+  }));
+  p.querySelectorAll("[data-view-go]").forEach(a => a.onclick = () => { render(a.dataset.viewGo); if (a.dataset.id) select(a.dataset.id); });
+}
+
+async function select(id, recentre) {
+  // Nœud d'une autre vue : bascule vers le lignage s'il y figure.
+  if (!G.has(id) && (D.assets[id] || D.tables[id] || id.startsWith("web:")) && view !== "lineage") { await render("lineage"); recentre = true; }
+  if (G.has(id)) G.focus(id, recentre);
+  const p = P();
+  if (D.assets[id]) p.innerHTML = assetPanel(D.assets[id]);
+  else if (D.tables[id]) p.innerHTML = tablePanel(D.tables[id]);
+  else if (id.startsWith("table:")) p.innerHTML = `<h2 class="warn">${esc(short(id))}</h2><p>Citée par le site, mais produite par aucun modèle ni aucune table raw de ce repo : table écrite ailleurs, requête morte ou simple mention en commentaire (le scan est textuel).</p>${graphLinks(id)}`;
+  else if (D.apis[id]) p.innerHTML = apiPanel(D.apis[id]);
+  else if (id.startsWith("web:")) p.innerHTML = webPanel(D.website.find(w => w.id === id));
+  else if (id.startsWith("job:")) return showJob(D.jobs.find(j => j.id === id));
+  else if (id.startsWith("schedule:")) p.innerHTML = schedulePanel(D.schedules.find(s => s.id === id));
+  else if (id.startsWith("sensor:")) p.innerHTML = sensorPanel(D.sensors.find(s => s.id === id));
+  else if (id.startsWith("resource:")) p.innerHTML = resourcePanel(D.resources.find(r => r.id === id));
+  else if (id.startsWith("group:")) p.innerHTML = groupPanel(id.slice(6));
+  else if (id.startsWith("svc:") || id.startsWith("vol:") || id.startsWith("ext:") || id === "vps" || id === "compose") p.innerHTML = infraPanel(id);
+  else if (id.startsWith("ci:") || id.startsWith("trigger:") || id === "dagster") p.innerHTML = ciPanel(id);
+  else p.innerHTML = `<h2>${esc(id)}</h2>${graphLinks(id)}`;
+  finish();
+}
+
+function assetPanel(a) {
+  const jobs = D.jobs.filter(j => j.assets.includes(a.id)).map(j => j.id);
+  const head = `<h2>${esc(a.name)}</h2>${badges([KIND[kindOfAsset(a)].label, a.materialized, ...a.kinds, ...a.tags.map(t => "#" + t)])}
+    <p class="desc">${esc(a.description) || '<span class="muted">Pas de description.</span>'}</p>`;
+  if (a.type === "python") {
+    return head + kv({ fichier: `${a.file}:${a.line}`, resources: a.resources.join(", ") })
+      + (a.module_doc ? `<h3>Docstring du module</h3><p class="desc">${esc(a.module_doc.trim())}</p>` : "")
+      + `<h3>Appelle</h3>${linkList(a.apis)}<h3>Lit</h3>${linkList(a.reads)}<h3>Écrit</h3>${linkList(a.writes)}`
+      + `<h3>Démarre après (deps Dagster)</h3>${linkList(a.deps)}<h3>Dans les jobs</h3>${linkList(jobs)}`
+      + graphLinks(a.id) + constantsTable(a.constants)
+      + codeBlocks([{ label: "Fonction de l'asset", code: a.code, lang: "python", file: a.file }, { label: "Module entier", code: a.module_code, lang: "python", file: a.file }]);
+  }
+  const macros = a.macros.map(m => D.macros[m] && { label: `macro ${m}`, code: D.macros[m].code, lang: "sql", file: D.macros[m].file }).filter(Boolean);
+  return head + kv({ relation: a.relation, fichier: a.file, ...Object.fromEntries(Object.entries(a.config).map(([k, v]) => [k, Array.isArray(v) ? v.map(h => h.sql || h).join(" ; ") : v])) })
+    + `<h3>Tests dbt (${a.tests.length})</h3>${a.tests.length ? badges(a.tests) : '<p class="muted">Aucun.</p>'}`
+    + `<h3>Dans les jobs</h3>${linkList(jobs)}` + graphLinks(a.id) + columnsTable(a.columns)
+    + codeBlocks([{ label: "SQL du modèle", code: a.code, lang: "sql", file: a.file }, ...macros]);
+}
+function tablePanel(t) {
+  const writers = Object.values(D.assets).filter(a => a.writes?.includes(t.id)).map(a => a.id);
+  const readers = Object.values(D.assets).filter(a => a.reads?.includes(t.id) || a.sources?.includes(t.id)).map(a => a.id);
+  return `<h2>${esc(t.name)}</h2>${badges(["Table raw", t.storage])}
+    <h3>Écrite par</h3>${linkList(writers)}<h3>Lue par</h3>${linkList(readers)}${columnsTable(t.columns)}
+    ${codeBlocks([{ label: "DDL (db/init.sql)", code: t.ddl, lang: "sql", file: "db/init.sql" }])}
+    <p class="muted" style="margin-top:14px">db/init.sql ne s'exécute qu'au premier démarrage de Postgres : toute nouvelle colonne se migre à la main en prod.</p>`;
+}
+function apiPanel(a) {
+  const users = Object.values(D.assets).filter(x => x.apis?.includes(a.id)).map(x => x.id);
+  return `<h2>${esc(a.label)}</h2>${badges(["API externe"])}${kv({ url: a.url, "méthodes": a.methods.join(", ") })}
+    <h3>Contraintes</h3><p class="desc">${esc(a.notes)}</p><h3>Appelée par</h3>${linkList(users)}`
+    + (a.methods.length && a.id !== "api:igdb" ? steamResourceBlock() : "");
+}
+function steamResourceBlock() {
+  const r = D.resources.find(x => x.name === "steam");
+  return r ? `<h3>Réglages de SteamResource</h3>${kv(r.fields)}` : "";
+}
+function webPanel(w) {
+  return `<h2>${esc(w.name)}</h2>${badges(["steam-reviews-website"])}<p class="muted">Fichier du site qui interroge l'entrepôt (scan de ../steam-reviews-website/src).</p>
+    <h3>Tables lues</h3>${linkList(w.reads)}`;
+}
+function showJob(j) {
+  const sched = D.schedules.filter(s => s.job === j.id);
+  const byGroup = {};
+  j.assets.forEach(a => (byGroup[D.assets[a]?.group] ||= []).push(a));
+  P().innerHTML = `<h2>${esc(j.name)}</h2>${badges(["Job Dagster", `${j.assets.length} assets`])}<p class="desc">${esc(j.description)}</p>
+    <h3>Déclenché par</h3>${sched.length ? sched.map(s => `<p><b>${esc(s.name)}</b> · <code>${esc(s.cron)}</code> ${esc(s.timezone)} · ${esc(s.default_status)}</p>`).join("") : '<p class="muted">Manuel (Launchpad) uniquement.</p>'}
+    ${Object.entries(byGroup).map(([g, ids]) => `<h3>${esc(g)} (${ids.length})</h3>${linkList(ids)}`).join("")}
+    <p><a class="btn" data-view-go="lineage" data-job="${esc(j.id)}" id="gojob">Voir le périmètre dans le lignage</a></p>`;
+  finish();
+  const go = document.getElementById("gojob");
+  if (go) go.onclick = () => { render("lineage"); highlightJob(j.id); document.querySelector(`#jobs [data-job="${j.id}"]`)?.classList.add("active"); showJob(j); };
+}
+function schedulePanel(s) {
+  return `<h2>${esc(s.name)}</h2>${badges(["Schedule", s.default_status])}${kv({ cron: s.cron, fuseau: s.timezone, job: s.job.slice(4) })}
+    <p class="desc">${esc(s.description)}</p><p class="muted">Statut par défaut au déploiement ; l'état réel se lit dans l'UI Dagster (un schedule peut avoir été stoppé à la main).</p>`;
+}
+function sensorPanel(s) {
+  return `<h2>${esc(s.name)}</h2>${badges(["Sensor", s.default_status])}<p class="desc">${esc(s.description)}</p>`
+    + codeBlocks([{ label: "sensors.py", code: s.code, lang: "python", file: s.file }]);
+}
+function resourcePanel(r) {
+  return `<h2>${esc(r.name)}</h2>${badges(["Resource", r.class])}<p class="desc">${esc(r.doc.trim())}</p><h3>Configuration</h3>${kv(r.fields)}`
+    + constantsTable(r.constants) + codeBlocks([{ label: "Classe", code: r.code, lang: "python", file: r.file }]);
+}
+function groupPanel(g) {
+  const ids = Object.values(D.assets).filter(a => a.group === g).map(a => a.id);
+  return `<h2>Groupe ${esc(g)}</h2>${badges([`${ids.length} assets`])}<h3>Assets</h3>${linkList(ids)}`;
+}
+function infraPanel(id) {
+  const s = D.services[id.slice(4)];
+  if (s) {
+    const hosts = D.caddy.filter(h => h.upstream === s.name);
+    const extra = { "svc:user-code": { label: "Dockerfile", code: D.dockerfile, lang: "dockerfile" },
+                    "svc:dagster-daemon": { label: "deploy/dagster.yaml", code: D.dagster_instance.yaml, lang: "yaml" },
+                    "svc:dagster-webserver": { label: "deploy/workspace.yaml", code: D.dagster_instance.workspace, lang: "yaml" },
+                    "svc:caddy": { label: "Caddyfile", code: D.caddy.map(h => h.block).join("\n\n"), lang: "plaintext" } }[id];
+    return `<h2>${esc(s.name)}</h2>${badges(["Conteneur", s.prod_only ? "prod uniquement" : "base + prod"])}
+      ${kv({ image: s.image, commande: Array.isArray(s.command) ? s.command.join(" ") : s.command, ports: s.ports.join(", "), volumes: s.volumes.join(" ; ") })}
+      ${hosts.length ? `<h3>Exposé par Caddy</h3>${hosts.map(h => `<p><b>https://${esc(h.host)}</b>${h.basicauth ? " · basic auth" : ""}</p>`).join("")}` : ""}
+      ${Object.keys(s.environment).length ? `<h3>Environnement</h3>${kv(s.environment)}` : ""}
+      ${graphLinks(id)}${codeBlocks([{ label: "Compose (fusionné)", code: s.yaml, lang: "yaml", file: "docker-compose.yml + docker-compose.prod.yml" }, extra].filter(Boolean))}`;
+  }
+  const notes = {
+    "svc:runs": [`Conteneurs de run`, `Chaque run Dagster s'exécute dans son propre conteneur, construit depuis l'image user-code (DockerRunLauncher). Un « compose up --build » ne tue donc pas les runs en cours. La file (QueuedRunCoordinator) borne la concurrence à ${D.dagster_instance.config?.run_coordinator?.config?.max_concurrent_runs} runs. run_monitoring passe en échec les runs dont le conteneur a disparu.`, D.dagster_instance.yaml],
+    "vol:pgdata": ["/mnt/pgdata/postgresql", "Volume Hetzner monté en bind dans Postgres (docker-compose.prod.yml, create_host_path: false). Les backups Hetzner ne couvrent pas ce volume."],
+    "vol:logs": ["dagster_compute_logs", "Volume partagé entre les conteneurs de run et le webserver, pour que les stdout/stderr des runs restent lisibles dans l'UI."],
+    "ext:internet": ["Internet", D.caddy.map(h => `https://${h.host} → ${h.upstream}${h.basicauth ? " (basic auth)" : ""}`).join("\n")],
+    "ext:github": ["GitHub Actions", "Push sur main → workflow Deploy : ssh deploy@VPS lance le script deploy (pull + compose up --build), puis rejoue les modèles dbt modifiés via l'API GraphQL de Dagster. Voir la vue CI/CD."],
+    "vps": [D.host.name, `IP ${D.host.ip}, utilisateur ${D.host.user}. Postgres n'écoute que sur 127.0.0.1:5432, le webserver Dagster sur 127.0.0.1:3001 ; seul Caddy est exposé (80/443).`],
+  }[id] || [id, ""];
+  return `<h2>${esc(notes[0])}</h2><p class="desc">${esc(notes[1])}</p>${graphLinks(id)}${notes[2] ? codeBlocks([{ label: "deploy/dagster.yaml", code: notes[2], lang: "yaml" }]) : ""}`;
+}
+function ciPanel(id) {
+  if (id === "dagster") return `<h2>Relance dbt après déploiement</h2><p class="desc">Le job « Run modified dbt models » compare le manifest du commit précédent au nouveau (dbt ls --select state:modified+ --exclude tag:nlp,state:unmodified), ouvre un tunnel SSH vers le webserver et appelle launchRun sur __ASSET_JOB avec ces modèles et leurs tests.</p>`;
+  if (id.startsWith("trigger:")) return `<h2>${esc(id.slice(8))}</h2>${graphLinks(id)}`;
+  const wfId = id.split(":").slice(0, 2).join(":");
+  const w = D.workflows.find(x => x.id === wfId);
+  const j = w?.jobs.find(x => id === `${w.id}:${x.name}`);
+  if (j) return `<h2>${esc(j.name)}</h2>${badges([w.name, w.file])}<h3>Étapes</h3><ol>${j.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>${graphLinks(id)}`;
+  return `<h2>${esc(w.name)}</h2>${badges([w.file, ...w.triggers])}${codeBlocks([{ label: w.file, code: w.code, lang: "yaml" }])}`;
+}
+
+// ---------------------------------------------------------------- intros
+const legend = items => `<div class="legend">${items.map(([k, t]) => k.startsWith("line") ? `<div><i class="line ${k.split(":")[1] || ""}" style="border-top-color:${css(k.split(":")[2] || "--edge")}"></i>${esc(t)}</div>` : `<div><i style="background:${css(KIND[k].color)}"></i>${esc(t || KIND[k].label)}</div>`).join("")}</div>`;
+const stats = () => {
+  const a = Object.values(D.assets);
+  return `${a.filter(x => x.type === "python").length} assets Python, ${a.filter(x => x.type === "dbt").length} modèles dbt, ${Object.keys(D.tables).length} tables raw, ${D.jobs.length} jobs, ${D.schedules.length} schedules, ${Object.keys(D.services).length} conteneurs.`;
+};
+function introLineage() {
+  P().innerHTML = `<div class="intro"><h2>Lignage des données</h2><p class="muted">${stats()}</p>
+    <p>De haut en bas : les APIs appelées, les assets Python qui écrivent dans le schéma raw, les modèles dbt qui en dérivent, puis les fichiers du site qui lisent les marts.</p>
+    <p>Cliquez un nœud pour voir sa logique (description, SQL ou Python, constantes, colonnes, tests) et surligner tout son amont et son aval. Le cadre « Périmètre d'un job » en bas à gauche surligne les assets de chaque job.</p>
+    <h3>Légende</h3>${legend([["api"], ["ingest"], ["raw"], ["staging"], ["intermediate"], ["marts"], ["web"], ["missing", "Table citée par le site, absente de ce repo"],
+      ["line::--api", "Appel HTTP"], ["line::--raw", "Écriture"], ["line:dash", "Lecture (les lectures qui remontent n'apparaissent qu'au survol)"], ["line", "ref / source dbt"]])}</div>`;
+  finish();
+}
+function introInfra() {
+  P().innerHTML = `<div class="intro"><h2>Infra de production</h2><p class="muted">${esc(D.host.name)} · ${esc(D.host.ip)}</p>
+    <p>Un seul VPS porte toute la stack Docker Compose. Caddy termine le TLS et route les trois sous-domaines. Le daemon Dagster lance chaque run dans un conteneur dédié, qui parle à Postgres et aux APIs.</p>
+    <h3>Sous-domaines</h3>${D.caddy.map(h => `<p><b>${esc(h.host)}</b> → ${esc(h.upstream)}:${esc(h.port)}${h.basicauth ? " · basic auth" : ""}</p>`).join("")}
+    <h3>Légende</h3>${legend([["service"], ["volume"], ["api", "API / service externe"], ["line::--accent", "Réseau (HTTP, gRPC, docker)"], ["line:dot", "Dépendance / accès"], ["line::--api", "Appel sortant"], ["line::--ci", "Déploiement"]])}</div>`;
+  finish();
+}
+function introOrchestration() {
+  P().innerHTML = `<div class="intro"><h2>Orchestration Dagster</h2><p class="muted">${stats()}</p>
+    <p>Schedules → jobs → groupes d'assets, avec le nombre d'assets du groupe que chaque job sélectionne. Les resources sont injectées dans les groupes qui les utilisent. Tout job en échec déclenche le sensor Discord. Survolez une arête pour voir son libellé.</p>
+    ${D.schedules.map(s => `<p><b>${esc(s.name)}</b> · <code>${esc(s.cron)}</code> ${esc(s.timezone)} → ${esc(s.job.slice(4))} <span class="muted">(${esc(s.default_status)} par défaut)</span></p>`).join("")}
+    <h3>Légende</h3>${legend([["schedule"], ["job"], ["group"], ["resource"], ["sensor"], ["line::--ci", "Déclenche"], ["line", "Sélectionne (n/total au survol)"], ["line:dot", "Resource injectée"], ["line:dash", "Alerte si échec (au survol d'un job)"]])}</div>`;
+  finish();
+}
+function introCicd() {
+  P().innerHTML = `<div class="intro"><h2>CI/CD</h2><p>Une PR vers main lance le lint (ruff, SQLFluff) et la validation des définitions Dagster. Un push sur main déploie sur le VPS, puis relance les modèles dbt modifiés et leur aval.</p>
+    <h3>Workflows</h3>${D.workflows.map(w => `<p><b>${esc(w.name)}</b> <span class="file">${esc(w.file)}</span><br>${w.jobs.map(j => esc(j.name)).join(" · ")}</p>`).join("")}</div>`;
+  finish();
+}
+
+// ---------------------------------------------------------------- init
+document.querySelectorAll("#views button").forEach(b => b.onclick = () => { render(b.dataset.view); try { localStorage.setItem("infra-map-view", b.dataset.view); } catch {} });
+document.getElementById("fit").onclick = () => G.fit();
+document.querySelectorAll("#zoom button").forEach(b => b.onclick = () => b.dataset.z === "fit" ? G.fit() : G.zoom(+b.dataset.z));
+document.getElementById("search").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  G.clear();
+  if (!q) return;
+  const hits = G.search(q);
+  G.mark(new Set(hits));
+  if (hits.length === 1) select(hits[0], true);
+});
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t;
+  const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.getElementById("hljs-dark").disabled = !dark;
+  document.getElementById("hljs-light").disabled = dark;
+}
+document.getElementById("theme").onclick = () => {
+  const dark = getComputedStyle(document.body).backgroundColor === "rgb(15, 17, 21)";
+  const t = dark ? "light" : "dark";
+  try { localStorage.setItem("infra-map-theme", t); } catch {}
+  applyTheme(t);
+};
+let savedTheme = null, savedView = null;
+try { savedTheme = localStorage.getItem("infra-map-theme"); savedView = localStorage.getItem("infra-map-view"); } catch {}
+applyTheme(savedTheme);
+fetch("data.json").then(r => r.json()).then(d => { D = d; render(VIEWS[savedView] ? savedView : "lineage"); })
+  .catch(e => { document.getElementById("loading").textContent = "data.json introuvable : lancez tools/infra_map/serve.py (" + e + ")"; });
+</script>
+</body>
+</html>
