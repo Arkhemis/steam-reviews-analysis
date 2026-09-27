@@ -13,8 +13,6 @@ from orchestration.steam.resources import SteamResource
 
 # GetItems plafonne à ~250 ids par requête (URL trop longue au-delà).
 CENSUS_BATCH_SIZE = 200
-# Enchaînés sans pause, les lots prennent un 429 toutes les ~30 requêtes.
-CENSUS_PAUSE_SECONDS = 0.5
 
 
 STEAM_APP_IDS_SQL = """
@@ -104,7 +102,6 @@ def steam_review_counts(
                 f"Recensé {scanned}/{total} ({scanned / total:.0%}) "
                 f"— {scanned / elapsed:.0f} jeux/s — {counted} compteurs"
             )
-            time.sleep(CENSUS_PAUSE_SECONDS)
 
     if batches_failed:
         context.log.warning(f"{batches_failed} lots en échec, repris au prochain run")

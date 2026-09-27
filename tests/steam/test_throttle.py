@@ -89,3 +89,51 @@ def test_reviews_speed_up_after_a_success_streak_but_not_below_the_floor(clock):
     for _ in range(resources.REVIEWS_SPEEDUP_AFTER):
         steam.get_summary(730)
     assert steam.reviews_interval_seconds() == pytest.approx(1.25)
+
+
+def test_store_items_have_their_own_interval(clock):
+    steam = steam_with_transport(
+        lambda request: httpx.Response(200, json={"response": {"store_items": []}})
+    )
+    start = clock.now
+    for _ in range(3):
+        steam.get_store_items([730])
+    assert clock.now - start == pytest.approx(2.6)
+
+
+def test_429_on_store_items_pauses_seconds_not_minutes(clock):
+    responses = iter([429, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(next(responses), json={"response": {"store_items": []}})
+
+    steam = steam_with_transport(handler)
+    start = clock.now
+    steam.get_store_items([730])
+
+    assert clock.now - start == pytest.approx(5)
+    assert steam.reviews_interval_seconds() == pytest.approx(1.25)
+
+
+def test_429_on_store_items_leaves_reviews_running(clock):
+    steam = steam_with_transport(ok)
+    steam._on_rate_limited("items", 730)
+    start = clock.now
+    steam.get_summary(730)
+    assert clock.now - start < 1
+
+
+def test_a_slot_reserved_before_a_429_waits_for_the_pause(clock, monkeypatch):
+    steam = steam_with_transport(ok)
+    steam._throttle("reviews")
+    start = clock.now
+
+    # Un autre thread prend un 429 pendant que celui-ci attend son créneau.
+    def sleep_then_429(seconds: float) -> None:
+        clock.sleep(seconds)
+        if steam._lanes["reviews"].paused_until == 0.0:
+            steam._on_rate_limited("reviews", 570)
+
+    monkeypatch.setattr(resources.time, "sleep", sleep_then_429)
+    steam._throttle("reviews")
+    assert clock.now - start == pytest.approx(1.25 + 300)
