@@ -34,6 +34,7 @@ PROGRESS_EVERY = 500
 
 # Au-dessus, un jeu est resynchronisé une nuit par semaine même sans mouvement :
 # GetItems ne voit ni les éditions de reviews ni les clés activées ailleurs.
+# Un jeu sans compteur GetItems (retiré du store) tourne aussi, quelle que soit sa taille.
 ROTATION_STEAM_COUNT = 1000
 
 
@@ -49,8 +50,8 @@ FROM raw.steam_review_counts
 WHERE last_backfill_at IS NOT NULL
   AND (
       steam_count IS DISTINCT FROM synced_steam_count
-      OR (steam_count >= %(rotation_steam_count)s
-          AND app_id %% 7 = extract(dow FROM now())::int)
+      OR (app_id %% 7 = extract(dow FROM now())::int
+          AND (steam_count >= %(rotation_steam_count)s OR steam_count IS NULL))
   )
 """
 
