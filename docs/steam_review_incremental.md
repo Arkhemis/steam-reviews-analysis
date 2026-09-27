@@ -283,13 +283,13 @@ Mesures faites en prod le soir du 24/09, serveur au repos, en trois passes : té
 Trois écarts au design, et la procédure de mise en production.
 
 **Écarts**
-- **Deux scans étroits de `versions` par nuit, au lieu d'un.** L'anti-join de l'append et l'alimentation du registre sont deux modèles dbt. Le registre part des reviews touchées dans raw et garde, pour chacune, les versions qui ne sont pas la plus récente. Son watermark est sa propre dernière nuit réussie (`max(detected_at)` − 3 jours), avec repli sur `versions` quand la compaction l'a vidé. Le déduire de `versions`, qui a déjà rattrapé son retard dans le même build, oublierait les reviews éditées au début d'une panne de plus de 3 jours.
+- **Deux scans étroits de `versions` par nuit, au lieu d'un.** L'anti-join de l'append et l'alimentation du registre sont deux modèles dbt. Le registre part des reviews touchées dans raw et garde, pour chacune, les versions qui ne sont pas la plus récente. Son watermark est sa propre dernière nuit réussie (`max(detected_at)` − 3 jours). Quand la compaction l'a vidé, il est reconstruit en entier : le recouvrement de 2 jours de l'append réinsère des versions périmées chargées avant toute fenêtre déduite de `versions` (doublons en prod le 27/09). Le déduire de `versions`, qui a déjà rattrapé son retard dans le même build, oublierait les reviews éditées au début d'une panne de plus de 3 jours.
 - **La compaction est lancée par l'op dbt de Dagster, juste avant le `dbt build`** (`orchestration/dbt/compaction.py`), et non par un op séparé. Ainsi, rien ne peut s'intercaler entre la compaction et l'append. La taille du registre est publiée en observation Dagster de `steam_review_outdated` à chaque run.
 - **Les compteurs d'une version sont figés à sa première capture.** Aujourd'hui, une review re-scrapée avec le même `timestamp_updated` (seconde-frontière, re-backfill d'un jeu) prend les `votes_up` et temps de jeu les plus récents. Désormais, seule la compaction les rafraîchit.
 
 **Réglages**
 - Les tests complets (unicité sur la vue, comparaison à raw sur 20 jeux tirés au sort) ne tournent que le dimanche, ou avec `--vars '{full_tests: true}'`. Les autres jours, ils passent à vide.
-- Le registre est recalculé en entier le 1er du mois, ou avec `--vars '{rebuild_steam_review_outdated: true}'`.
+- Le registre est recalculé en entier le 1er du mois, quand il est vide, ou avec `--vars '{rebuild_steam_review_outdated: true}'`.
 - `versions` et le registre ont `full_refresh=false`. Un full refresh depuis Dagster passe par la compaction. À la main : `dbt run-operation compact_steam_review`.
 
 **Mise en production**

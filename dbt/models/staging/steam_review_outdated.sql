@@ -47,7 +47,7 @@
     -- Nuit normale : on ne regarde que les reviews rechargées récemment.
 
     -- Depuis la dernière nuit du registre (max detected_at), 3 jours de recouvrement ;
-    -- registre vidé par la compaction : repli sur versions. Littéral, pour Citus.
+    -- jamais vide ici (registre vide = reconstruction complète). Littéral, pour Citus.
     {%- set last_night = run_query("SELECT MAX(detected_at) FROM " ~ this).columns[0].values()[0] if execute %}
 
     -- Étape 1 : les reviews que le loader a rechargées depuis la dernière nuit.
@@ -61,7 +61,7 @@
         WHERE loaded_at > {% if last_night -%}
             '{{ last_night.isoformat() }}'::timestamptz - INTERVAL '3 days'
         {%- else -%}
-            {{ steam_review_watermark(ref('steam_review_versions'), 3) }}
+            '1970-01-01'::timestamptz
         {%- endif %}
 
     ),

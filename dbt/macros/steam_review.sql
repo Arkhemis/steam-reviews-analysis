@@ -68,8 +68,14 @@ source_versions AS (
 
 
 {#- Premier jour du mois (ou var) : le registre est recalculé depuis versions pour se corriger. -#}
+{#- Registre vide = compaction : le recouvrement de l'append a pu réinsérer des versions
+    périmées chargées avant la fenêtre du registre, seule une relecture complète les retrouve. -#}
 {% macro steam_review_outdated_full_rebuild() %}
-    {{ return(not is_incremental() or var('rebuild_steam_review_outdated', run_started_at.day == 1)) }}
+    {%- if not is_incremental() -%}
+        {{ return(true) }}
+    {%- endif -%}
+    {%- set empty = execute and run_query("SELECT NOT EXISTS (SELECT 1 FROM " ~ this ~ ")").columns[0].values()[0] -%}
+    {{ return(var('rebuild_steam_review_outdated', run_started_at.day == 1 or empty)) }}
 {% endmacro %}
 
 

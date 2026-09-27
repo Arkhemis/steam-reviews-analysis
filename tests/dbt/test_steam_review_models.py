@@ -23,6 +23,8 @@ ENV = Environment(undefined=StrictUndefined)
 @pytest.fixture
 def warehouse():
     with duckdb.connect(":memory:") as conn:
+        # Les dates des fixtures sont en UTC, comme epoch() ; sinon DuckDB prend le fuseau local.
+        conn.execute("SET TimeZone = 'UTC'")
         conn.execute("CREATE SCHEMA raw")
         conn.execute("CREATE SCHEMA staging")
         conn.execute(
@@ -166,28 +168,26 @@ def test_incremental_registry_adds_only_newly_outdated_touched_versions(warehous
     assert outdated_keys(warehouse, query) == [(1, 10, date(2026, 9, 5))]
 
 
-def test_incremental_registry_falls_back_to_versions_after_compaction(warehouse):
+def test_rebuild_after_compaction_catches_versions_reinserted_by_the_append(warehouse):
+    """Cas de prod du 27/09 : la compaction ne garde que la version du 23/09, puis le
+    recouvrement de l'append réinsère celle du 22/09, chargée avant la fenêtre du registre."""
     add_versions(
         warehouse,
-        (1, 10, "2026-09-01", "2026-09-22", 1),
-        (1, 10, "2026-09-10", "2026-09-23", 2),
-        (1, 20, "2026-09-01", "2026-09-22", 3),
-        (1, 20, "2026-09-10", "2026-09-23", 4),
+        (1, 10, "2026-09-23", "2026-09-23", 2),
+        (1, 10, "2026-09-22", "2026-09-22", 1),
+        (1, 20, "2026-09-27", "2026-09-27", 3),
     )
     warehouse.executemany(
         "INSERT INTO raw.steam_reviews "
         "(app_id, recommendation_id, loaded_at) VALUES (?, ?, ?)",
-        [(1, 10, "2026-09-22"), (1, 20, "2026-09-21")],
+        [(1, 10, "2026-09-22"), (1, 10, "2026-09-23"), (1, 20, "2026-09-27")],
     )
 
     query = render_model(
-        warehouse,
-        "steam_review_outdated",
-        incremental=True,
-        watermark="'2026-09-21'::timestamptz",
+        warehouse, "steam_review_outdated", incremental=True, full_rebuild=True
     )
 
-    assert outdated_keys(warehouse, query) == [(1, 10, date(2026, 9, 1))]
+    assert outdated_keys(warehouse, query) == [(1, 10, date(2026, 9, 22))]
 
 
 def test_review_view_retains_the_latest_version_for_each_game(warehouse):

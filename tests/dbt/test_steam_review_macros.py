@@ -108,23 +108,52 @@ def test_watermark_rejects_an_empty_versions_table():
 
 
 @pytest.mark.parametrize(
-    ("day", "incremental", "variables", "expected"),
+    ("day", "incremental", "empty", "variables", "expected"),
     [
-        (2, False, {}, True),
-        (1, True, {}, True),
-        (2, True, {}, False),
-        (2, True, {"rebuild_steam_review_outdated": True}, True),
-        (1, True, {"rebuild_steam_review_outdated": False}, False),
+        (2, False, False, {}, True),
+        (1, True, False, {}, True),
+        (2, True, False, {}, False),
+        # Registre vidé par la compaction.
+        (2, True, True, {}, True),
+        (2, True, False, {"rebuild_steam_review_outdated": True}, True),
+        (1, True, False, {"rebuild_steam_review_outdated": False}, False),
     ],
 )
-def test_registry_full_rebuild_schedule(day, incremental, variables, expected):
+def test_registry_full_rebuild_schedule(day, incremental, empty, variables, expected):
+    queries = []
+
+    def run_query(query):
+        queries.append(query)
+        return SimpleNamespace(columns=[SimpleNamespace(values=lambda: [empty])])
+
     module = macro_module(
         started_at=datetime_module.datetime(2026, 9, day),
         incremental=incremental,
         variables=variables,
+        execute=True,
+        run_query=run_query,
+        this="staging.steam_review_outdated",
     )
 
     assert returned(module.steam_review_outdated_full_rebuild) is expected
+    if incremental:
+        assert queries == [
+            "SELECT NOT EXISTS (SELECT 1 FROM staging.steam_review_outdated)"
+        ]
+
+
+def test_registry_emptiness_is_not_queried_while_compiling():
+    def unexpected_query(_query):
+        raise AssertionError("run_query must not be called while compiling")
+
+    module = macro_module(
+        started_at=datetime_module.datetime(2026, 9, 2),
+        execute=False,
+        run_query=unexpected_query,
+        this="staging.steam_review_outdated",
+    )
+
+    assert returned(module.steam_review_outdated_full_rebuild) is False
 
 
 @pytest.mark.parametrize(
