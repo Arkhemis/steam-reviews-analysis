@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: review_highlight_pick
+    description: >
+      Reviews retenues pour review_highlight, sans leur texte : une ligne par
+      review. Table à part pour que le planner ait des statistiques sur ce top
+      et le hache, plutôt que les 183 M lignes de steam_review_versions.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - app_id
+              - recommendation_id
+    columns:
+      - name: recommendation_id
+        description: Identifiant Steam de la review.
+        data_tests:
+          - not_null
+
+      - name: app_id
+        description: Identifiant de l'application Steam concernée.
+        data_tests:
+          - not_null
+
+      - name: updated_at
+        description: >
+          Date de la dernière version de la review, qui complète la clé de
+          jointure avec steam_review_versions.
+        data_tests:
+          - not_null
+
+      - name: rank_in_game
+        description: >
+          Rang d'utilité de la review dans son (jeu, avis, langue), y compris
+          pour les reviews grossières ou drôles ajoutées après le top.
+
+      - name: pick
+        description: Raison de la sélection (useful, crude ou funny).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['useful', 'crude', 'funny']
