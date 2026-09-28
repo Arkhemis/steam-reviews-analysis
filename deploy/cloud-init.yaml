@@ -23,7 +23,9 @@
 #        /dev/disk/by-id/scsi-0HC_Volume_<id> /mnt/pgdata ext4 defaults,nofail 0 0
 #   5. sudo systemctl daemon-reload && sudo mount -a
 #   6. Verify: df -h /mnt/pgdata should show the real volume, not the root disk.
-#   7. Only then: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   7. As `deploy`, clone steam-reviews-analysis and steam-reviews-website
+#      into ~/apps (the /usr/local/bin/deploy launcher expects both).
+#   8. Only then: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 users:
   - name: deploy
@@ -55,6 +57,14 @@ write_files:
     content: |
       [Unit]
       RequiresMountsFor=/mnt/pgdata
+  # Frozen launcher: the logic lives in deploy/deploy.sh, read after the pull.
+  - path: /usr/local/bin/deploy
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      git -C ~/apps/steam-reviews-analysis pull --ff-only
+      exec bash ~/apps/steam-reviews-analysis/deploy/deploy.sh
 
 runcmd:
   - mkdir -p /mnt/pgdata
