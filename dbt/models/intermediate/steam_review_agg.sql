@@ -1,3 +1,5 @@
+{{ config(order_by='steam_app_id') }}
+
 WITH reviews AS (
 
     SELECT
@@ -11,13 +13,13 @@ WITH reviews AS (
 
 aggregated AS (
 
+    -- quantileExactInclusive interpole comme PERCENTILE_CONT.
     SELECT
         app_id AS steam_app_id,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (
-            ORDER BY author_playtime_forever_minutes
-        ) AS median_playtime_forever_minutes,
-        AVG(primarily_steam_deck::int) AS pct_primarily_steam_deck,
-        AVG(refunded::int) AS pct_refunded
+        quantileExactInclusive(0.5)(author_playtime_forever_minutes)  -- noqa: LT01
+            AS median_playtime_forever_minutes,
+        avg(toUInt8(primarily_steam_deck)) AS pct_primarily_steam_deck,
+        avg(toUInt8(refunded)) AS pct_refunded
 
     FROM reviews
     GROUP BY app_id

@@ -1,4 +1,5 @@
-# Stack pipeline (PLAN §8), périmètre : IGDB -> Postgres -> reviews -> dbt.
+# Stack pipeline (PLAN §8), périmètre : IGDB -> ClickHouse -> reviews -> dbt.
+# Postgres ne sert que de stockage d'instance à Dagster.
 # Tous les services lisent le .env (non commité). Voir .env.example.
 
 x-dagster-env: &dagster-env
@@ -8,6 +9,10 @@ x-dagster-env: &dagster-env
   POSTGRES_USER: ${POSTGRES_USER}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   POSTGRES_DB: ${POSTGRES_DB}
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_PORT: "8123"
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
   IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
   IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
   DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
@@ -22,6 +27,36 @@ networks:
     name: steam-reviews-analysis_default
 
 services:
+  clickhouse:
+    # Version LTS figée : les réglages de config.d en dépendent.
+    image: clickhouse/clickhouse-server:26.8.14.3
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - chdata:/var/lib/clickhouse
+      # Fichiers montés un à un : l'image écrit ses propres fichiers dans users.d.
+      - ./deploy/clickhouse/config.d/steam.xml:/etc/clickhouse-server/config.d/steam.xml:ro
+      - ./deploy/clickhouse/users.d/steam.xml:/etc/clickhouse-server/users.d/steam.xml:ro
+      # DDL de raw : joué au premier démarrage (volume vide).
+      - ./db/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # /ping ne demande pas d'identifiants : le mot de passe reste hors de la config.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Stockage d'instance de Dagster. Encore en image Citus : c'est la source de
+  # la copie de raw vers ClickHouse (docs/migration_clickhouse.md).
   postgres:
     image: citusdata/citus:14.1-pg16
     command: postgres -c shared_preload_libraries=citus -c temp_file_limit=30GB
@@ -60,6 +95,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
 
   dagster-webserver:
     build:
@@ -91,6 +128,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
       user-code:
         condition: service_healthy
 
@@ -119,11 +158,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
       user-code:
         condition: service_healthy
 
 volumes:
   pgdata:
+  chdata:
   # Nom explicite pour la même raison que le réseau : DockerRunLauncher le cite
   # en dur, or le préfixe de projet dépend du dossier ou de `-p`.
   dagster_compute_logs:

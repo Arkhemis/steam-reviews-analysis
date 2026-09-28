@@ -1,11 +1,11 @@
 from dagster import Definitions, EnvVar
 from dagster_dbt import DbtCliResource
 
+from orchestration.clickhouse import ClickHouseResource
 from orchestration.dbt import definitions as dbt_steam_reviews
 from orchestration.igdb import definitions as igdb
 from orchestration.igdb.resources import IGDBResource
 from orchestration.jobs import daily_pipeline_job
-from orchestration.postgres import PostgresResource
 from orchestration.project import dbt_steam_reviews_project
 from orchestration.schedules import daily_pipeline_schedule
 from orchestration.sensors import discord_run_failure_sensor
@@ -24,12 +24,12 @@ defs = Definitions.merge(
         # Surveille tous les jobs du code location, pas seulement les transverses.
         sensors=[discord_run_failure_sensor],
         resources={
-            "postgres": PostgresResource(
-                host=EnvVar("POSTGRES_HOST").get_value(),
-                port=EnvVar.int("POSTGRES_PORT").get_value(),
-                user=EnvVar("POSTGRES_USER").get_value(),
-                password=EnvVar("POSTGRES_PASSWORD").get_value(),
-                database=EnvVar("POSTGRES_DB").get_value(),
+            # Postgres ne sert plus qu'au stockage de Dagster (deploy/dagster.yaml).
+            "clickhouse": ClickHouseResource(
+                host=EnvVar("CLICKHOUSE_HOST").get_value(),
+                port=EnvVar.int("CLICKHOUSE_PORT").get_value(),
+                user=EnvVar("CLICKHOUSE_USER").get_value(),
+                password=EnvVar("CLICKHOUSE_PASSWORD").get_value(),
             ),
             "steam": SteamResource(),
             "igdb": IGDBResource(

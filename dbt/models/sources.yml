@@ -2,8 +2,7 @@ version: 2
 
 sources:
   - name: raw
-    description: Données brutes chargées par Dagster (IGDB + Steam), cf. db/init.sql.
-    database: "{{ env_var('POSTGRES_DB') }}"
+    description: Données brutes chargées par Dagster (IGDB + Steam), cf. db/clickhouse/init.sql.
     schema: raw
     loader: dagster
 
@@ -70,7 +69,7 @@ sources:
 
       - name: steam_reviews
         description: >
-          Reviews individuelles Steam, telles que renvoyées par l'API (une ligne par review).
+          Reviews individuelles Steam, telles que renvoyées par l'API (une ligne par version).
           Alimentée par steam_reviews_backfill puis par steam_reviews_incremental.
         config:
           meta:
@@ -87,7 +86,9 @@ sources:
             data_tests:
               - not_null
           - name: payload
-            description: Payload JSON brut de la review.
+            description: >
+              Payload de la review en type JSON : les clés à null et les objets
+              vides disparaissent, un chemin absent se lit comme NULL.
           - name: timestamp_created
             description: Timestamp Unix de création de la review.
           - name: timestamp_updated
@@ -121,7 +122,9 @@ sources:
             data_tests:
               - not_null
           - name: payload
-            description: Payload JSON brut de l'annonce.
+            description: Payload JSON brut de l'annonce (String).
+          - name: payload_hash
+            description: Empreinte du payload, calculée par Dagster pour n'écrire que les annonces modifiées.
           - name: rtime32_start_time
             description: >
               Timestamp Unix de publication de l'annonce, borne du croisement avec la
@@ -144,6 +147,6 @@ sources:
               - unique
               - not_null
           - name: payload
-            description: Item JSON brut de IStoreBrowseService/GetItems.
+            description: Item JSON brut de IStoreBrowseService/GetItems (String).
           - name: loaded_at
             description: Horodatage de chargement par Dagster.

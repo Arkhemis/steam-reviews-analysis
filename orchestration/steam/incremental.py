@@ -4,7 +4,6 @@ from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple
 
-import psycopg
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -13,19 +12,19 @@ from dagster import (
     get_dagster_logger,
 )
 
-from orchestration.postgres import PostgresResource
+from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.backfill import (
     STOP_BACKOFF_BASE_SECONDS,
+    REVIEW_COLUMNS,
     STOP_MAX_RETRIES,
-    UPDATE_SUMMARY_SQL,
     fetch_first_page,
     stop_tolerance,
-    summary_params,
+    write_summaries,
 )
 from orchestration.steam.resources import SteamResource
 
-# Un thread et une connexion Postgres par jeu en cours de traitement. Au-delà
-# de 3, les threads attendent le throttle /appreviews connexion ouverte.
+# Un thread par jeu en cours de traitement. Au-delà de 3, les threads
+# attendent le throttle /appreviews.
 INCREMENTAL_WORKERS = 3
 
 # Reviews gardées en mémoire par jeu avant envoi au serveur (afin d'éviter un OOM)
@@ -42,52 +41,55 @@ ROTATION_STEAM_COUNT = 1000
 # synchronisation, réussie ou non (un échec laisse l'écart, donc le jeu revient).
 # Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
 # pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
+# toDayOfWeek(...) % 7 : dimanche = 0, comme le dow de Postgres.
 RELEVANT_APP_IDS = """
 SELECT app_id,
        total_reviews,
-       COALESCE(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
-FROM raw.steam_review_counts
+       coalesce(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
+FROM steam_review_counts
 WHERE last_backfill_at IS NOT NULL
   AND (
       steam_count IS DISTINCT FROM synced_steam_count
-      OR (app_id %% 7 = extract(dow FROM now())::int
-          AND (steam_count >= %(rotation_steam_count)s OR steam_count IS NULL))
+      OR (app_id % 7 = toDayOfWeek(now()) % 7
+          AND (steam_count >= {rotation_steam_count:Int64} OR steam_count IS NULL))
   )
 """
 
-INSERT_REVIEW_SQL = """
-INSERT INTO raw.steam_reviews (
-    recommendation_id, app_id, payload, timestamp_created, timestamp_updated
-)
-VALUES (%s, %s, %s, %s, %s)
-"""
-
 UPDATE_CHECKPOINT_SQL = """
-UPDATE raw.steam_review_counts
-SET last_seen_timestamp_updated = GREATEST(
-        COALESCE(last_seen_timestamp_updated, 0),
-        %s
+UPDATE steam_review_counts
+SET last_seen_timestamp_updated = greatest(
+        coalesce(last_seen_timestamp_updated, 0),
+        {max_timestamp_updated:Int64}
     ),
     synced_steam_count = steam_count
-WHERE app_id = %s
+WHERE app_id = {app_id:UInt32}
 """
 
 # Un scan par run au lieu d'un par jeu, et le compteur redevient exact quoi
 # qu'il ait dérivé. LEFT JOIN pour que les jeux backfillés dont plus aucune
 # review n'est stockée retombent à 0 au lieu de garder leur ancien compteur.
-RECOUNT_BACKFILLED_SQL = """
-WITH stored AS (
-    SELECT app_id, count(DISTINCT recommendation_id) AS reviews_stored
-    FROM raw.steam_reviews
+# Agrégation dans l'ordre de la clé : un jeu à la fois en mémoire. Sans FINAL :
+# les doublons en attente de fusion ne changent pas un compte distinct.
+STORED_COUNTS_SQL = """
+SELECT c.app_id AS app_id,
+       c.total_reviews_backfilled AS total_reviews_backfilled,
+       ifNull(stored.reviews_stored, 0) AS reviews_stored
+FROM steam_review_counts AS c
+LEFT JOIN (
+    SELECT app_id, uniqExact(recommendation_id) AS reviews_stored
+    FROM steam_reviews
     GROUP BY app_id
-)
-UPDATE raw.steam_review_counts AS c
-SET total_reviews_backfilled = COALESCE(stored.reviews_stored, 0)
-FROM raw.steam_review_counts AS census
-LEFT JOIN stored ON stored.app_id = census.app_id
-WHERE census.app_id = c.app_id
-  AND census.last_backfill_at IS NOT NULL
-  AND c.total_reviews_backfilled IS DISTINCT FROM COALESCE(stored.reviews_stored, 0)
+) AS stored ON stored.app_id = c.app_id
+WHERE c.last_backfill_at IS NOT NULL
+SETTINGS final = 0, optimize_aggregation_in_order = 1, join_use_nulls = 1
+"""
+
+UPDATE_BACKFILLED_SQL = """
+UPDATE steam_review_counts
+SET total_reviews_backfilled = transform(
+        app_id, {ids:Array(UInt32)}, {counts:Array(Int64)}, toInt64(0)
+    )
+WHERE app_id IN {ids:Array(UInt32)}
 """
 
 
@@ -109,9 +111,9 @@ class AppSync(NamedTuple):
 def steam_reviews_incremental(
     context: AssetExecutionContext,
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
-    relevant_apps = postgres.fetch_all(
+    relevant_apps = clickhouse.query(
         RELEVANT_APP_IDS, {"rotation_steam_count": ROTATION_STEAM_COUNT}
     )
     total = len(relevant_apps)
@@ -133,7 +135,7 @@ def steam_reviews_incremental(
             pool.submit(
                 sync_app_reviews,
                 steam,
-                postgres,
+                clickhouse,
                 row["app_id"],
                 row["last_seen_timestamp_updated"],
                 row["total_reviews"],
@@ -146,12 +148,12 @@ def steam_reviews_incremental(
             try:
                 result = future.result()
             except Exception:
-                # Chaque jeu a sa propre transaction : un échec isolé ne coûte
-                # que ce jeu, repris au prochain run.
+                # Un échec isolé ne coûte que ce jeu : son checkpoint n'a pas
+                # bougé, il est repris au prochain run.
                 apps_failed += 1
                 context.log.exception(
                     f"app_id={app_id}: échec de la synchronisation, "
-                    "aucune donnée enregistrée (repris au prochain run)"
+                    "checkpoint inchangé (repris au prochain run)"
                 )
                 continue
 
@@ -176,7 +178,7 @@ def steam_reviews_incremental(
         f"Intervalle /appreviews en fin de run : {steam.reviews_interval_seconds():.2f}s"
     )
 
-    apps_recounted = recount_backfilled(postgres)
+    apps_recounted = recount_backfilled(clickhouse)
     context.log.info(
         f"total_reviews_backfilled recalculé depuis raw.steam_reviews "
         f"({apps_recounted} jeux corrigés)"
@@ -185,7 +187,7 @@ def steam_reviews_incremental(
     if apps_incomplete:
         context.log.warning(
             f"{apps_incomplete} jeux laissés incomplets (checkpoint non rejoint) : "
-            "rien n'a été enregistré pour eux, ils seront repris au prochain run."
+            "checkpoint inchangé, ils seront repris au prochain run."
         )
 
     return MaterializeResult(
@@ -341,62 +343,56 @@ def iter_review_batches(
 
 def sync_app_reviews(
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
     app_id: int,
     last_seen_timestamp_updated: int,
     total_reviews: int | None = None,
 ) -> AppSync:
-    """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau."""
+    """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau.
+
+    Le checkpoint n'avance qu'après les insertions. S'il n'est pas rejoint, les
+    versions déjà insérées restent : la relance repart du même checkpoint, et
+    raw déduplique celles qu'elle réinsère.
+    """
     logger = get_dagster_logger()
     pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated, total_reviews)
     fetched = 0
     versions_inserted = 0
     max_timestamp_updated = last_seen_timestamp_updated
 
-    with postgres.connect() as conn:
-        for batch in iter_review_batches(pages, FLUSH_REVIEWS):
-            fetched += len(batch)
-            max_timestamp_updated = max(
-                max_timestamp_updated,
-                max(review["timestamp_updated"] for review in batch),
-            )
-            versions_inserted += insert_versions(conn, app_id, batch)
+    for batch in iter_review_batches(pages, FLUSH_REVIEWS):
+        fetched += len(batch)
+        max_timestamp_updated = max(
+            max_timestamp_updated,
+            max(review["timestamp_updated"] for review in batch),
+        )
+        versions_inserted += insert_versions(clickhouse, app_id, batch)
 
-        if not pages.reached_checkpoint:
-            conn.rollback()
-            # Transaction à part : les totaux du jour restent vrais sans les reviews.
-            write_summary(conn, app_id, pages.summary)
-            logger.warning(
-                f"app_id={app_id}: checkpoint non atteint ; seuls les totaux sont enregistrés"
-            )
-            return AppSync(fetched, 0, False)
+    # Les totaux du jour restent vrais même sans le checkpoint.
+    if pages.summary is not None:
+        write_summaries(clickhouse, {app_id: pages.summary})
+    if not pages.reached_checkpoint:
+        logger.warning(
+            f"app_id={app_id}: checkpoint non atteint ; seuls les totaux sont enregistrés"
+        )
+        return AppSync(fetched, 0, False)
 
-        with conn.cursor() as cur:
-            cur.execute(UPDATE_CHECKPOINT_SQL, (max_timestamp_updated, app_id))
-        write_summary(conn, app_id, pages.summary)
-
+    clickhouse.command(
+        UPDATE_CHECKPOINT_SQL,
+        {"app_id": app_id, "max_timestamp_updated": max_timestamp_updated},
+    )
     return AppSync(fetched, versions_inserted, True)
 
 
-def write_summary(
-    conn: psycopg.Connection, app_id: int, summary: dict[str, Any] | None
-) -> None:
-    """Écrit les totaux de la page 1 et commite la transaction en cours."""
-    if summary is not None:
-        with conn.cursor() as cur:
-            cur.execute(UPDATE_SUMMARY_SQL, summary_params(app_id, summary))
-    conn.commit()
-
-
 def insert_versions(
-    conn: psycopg.Connection, app_id: int, reviews: list[dict[str, Any]]
+    clickhouse: ClickHouseResource, app_id: int, reviews: list[dict[str, Any]]
 ) -> int:
     """Insère les versions du lot sans vérifier ce qui est déjà en base.
 
     `last_seen_timestamp_updated` est le max des `timestamp_updated` stockés
     pour ce jeu : une review plus récente que le checkpoint ne peut pas y être.
-    Seule la seconde-frontière peut donc produire un doublon, que le modèle
-    staging écarte déjà (ROW_NUMBER par recommendation_id).
+    Seule la seconde-frontière peut donc produire un doublon, que raw
+    déduplique (même clé de tri).
     """
     if not reviews:
         return 0
@@ -407,17 +403,26 @@ def insert_versions(
         for review in reviews
     }
     rows = [review_to_row(app_id, review) for review in versions.values()]
-    with conn.cursor() as cur:
-        cur.executemany(INSERT_REVIEW_SQL, rows)
+    clickhouse.insert("steam_reviews", rows, REVIEW_COLUMNS)
     return len(rows)
 
 
-def recount_backfilled(postgres: PostgresResource) -> int:
-    """Réaligne total_reviews_backfilled sur ce que contient raw.steam_reviews."""
-    with postgres.connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(RECOUNT_BACKFILLED_SQL)
-            return cur.rowcount
+def recount_backfilled(clickhouse: ClickHouseResource) -> int:
+    """Réaligne total_reviews_backfilled sur ce que contient raw.steam_reviews.
+
+    Renvoie le nombre de jeux corrigés.
+    """
+    drifted = [
+        (row["app_id"], row["reviews_stored"])
+        for row in clickhouse.query(STORED_COUNTS_SQL)
+        if row["total_reviews_backfilled"] != row["reviews_stored"]
+    ]
+    if drifted:
+        ids, counts = zip(*drifted)
+        clickhouse.command(
+            UPDATE_BACKFILLED_SQL, {"ids": list(ids), "counts": list(counts)}
+        )
+    return len(drifted)
 
 
 def review_to_row(app_id: int, review: dict[str, Any]) -> tuple:

@@ -12,13 +12,13 @@ from dagster import (
     get_dagster_logger,
 )
 
-from orchestration.postgres import PostgresResource
+from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.resources import SteamResource
 
 # Au-delà de ce volume, un jeu est considéré comme "big"
 HEAVY_REVIEW_THRESHOLD = 10000
 
-# Pour les jeux volumineux, on upsert/commit tous les N pages Steam
+# Pour les jeux volumineux, on insère tous les N pages Steam
 HEAVY_PAGE_FLUSH_INTERVAL = 1000
 
 
@@ -40,43 +40,85 @@ def stop_tolerance(total_reviews: int | None) -> int:
 # Un jeu apparu au recensement GetItems n'a pas encore de total : son compteur
 # Steam (sans les clés) sert d'ordre de grandeur pour le classer.
 ABSENT_STEAM_IDS = """
-SELECT app_id, total_reviews, steam_count FROM raw.steam_review_counts
+SELECT app_id, total_reviews, steam_count FROM steam_review_counts
 WHERE last_backfill_at IS NULL
-ORDER BY COALESCE(total_reviews, steam_count) ASC NULLS FIRST
+ORDER BY coalesce(total_reviews, steam_count) ASC NULLS FIRST
 """
 
-INSERT_REVIEWS_SQL = """
-INSERT INTO raw.steam_reviews (
-    recommendation_id, app_id, payload, timestamp_created, timestamp_updated
-)
-VALUES (%s, %s, %s, %s, %s);
-"""
+REVIEW_COLUMNS = [
+    "recommendation_id",
+    "app_id",
+    "payload",
+    "timestamp_created",
+    "timestamp_updated",
+]
 
+# Les UPDATE sont groupés par lot : transform() associe à chaque app_id sa valeur.
+# Les SET lisent tous les valeurs d'avant l'UPDATE.
 MARK_BACKFILLED_SQL = """
-UPDATE raw.steam_review_counts
-SET last_backfill_at = now(),
-    total_reviews_backfilled = %s,
-    last_seen_timestamp_updated = GREATEST(
-        COALESCE(last_seen_timestamp_updated, 0),
-        %s
+UPDATE steam_review_counts
+SET last_backfill_at = now64(6),
+    total_reviews_backfilled = transform(
+        app_id, {ids:Array(UInt32)}, {fetched:Array(Int64)}, toInt64(0)
+    ),
+    last_seen_timestamp_updated = greatest(
+        coalesce(last_seen_timestamp_updated, 0),
+        transform(app_id, {ids:Array(UInt32)}, {max_ts:Array(Int64)}, toInt64(0))
     ),
     synced_steam_count = steam_count
-WHERE app_id = %s;
+WHERE app_id IN {ids:Array(UInt32)}
 """
 
 # Totaux de la page 1 de /appreviews, écrits même si la pagination échoue :
 # ils restent vrais, et servent de garde-fou d'arrêt au run suivant.
 UPDATE_SUMMARY_SQL = """
-UPDATE raw.steam_review_counts
+UPDATE steam_review_counts
 SET prev_total_reviews = total_reviews,
-    total_reviews      = %s,
-    total_positive     = %s,
-    total_negative     = %s,
-    review_score       = %s,
-    review_score_desc  = %s,
-    checked_at         = now()
-WHERE app_id = %s;
+    total_reviews      = transform(app_id, {ids:Array(UInt32)}, {total_reviews:Array(Nullable(Int64))}, total_reviews),
+    total_positive     = transform(app_id, {ids:Array(UInt32)}, {total_positive:Array(Nullable(Int64))}, total_positive),
+    total_negative     = transform(app_id, {ids:Array(UInt32)}, {total_negative:Array(Nullable(Int64))}, total_negative),
+    review_score       = transform(app_id, {ids:Array(UInt32)}, {review_score:Array(Nullable(Int32))}, review_score),
+    review_score_desc  = transform(app_id, {ids:Array(UInt32)}, {review_score_desc:Array(Nullable(String))}, review_score_desc),
+    checked_at         = now64(6)
+WHERE app_id IN {ids:Array(UInt32)}
 """
+
+SUMMARY_FIELDS = [
+    "total_reviews",
+    "total_positive",
+    "total_negative",
+    "review_score",
+    "review_score_desc",
+]
+
+
+def write_summaries(
+    clickhouse: ClickHouseResource, summaries: dict[int, dict[str, Any]]
+) -> None:
+    """Écrit les totaux de la page 1 de chaque jeu, en un seul UPDATE."""
+    if not summaries:
+        return
+    parameters: dict[str, list] = {"ids": list(summaries)}
+    for field in SUMMARY_FIELDS:
+        parameters[field] = [summary.get(field) for summary in summaries.values()]
+    clickhouse.command(UPDATE_SUMMARY_SQL, parameters)
+
+
+def mark_backfilled(
+    clickhouse: ClickHouseResource, marks: list[tuple[int, int, int]]
+) -> None:
+    """Marque les jeux backfillés : (app_id, reviews chargées, max timestamp_updated)."""
+    if not marks:
+        return
+    ids, fetched, max_ts = zip(*marks)
+    clickhouse.command(
+        MARK_BACKFILLED_SQL,
+        {"ids": list(ids), "fetched": list(fetched), "max_ts": list(max_ts)},
+    )
+
+
+def insert_reviews(clickhouse: ClickHouseResource, rows: list[tuple]) -> None:
+    clickhouse.insert("steam_reviews", rows, REVIEW_COLUMNS)
 
 
 def fetch_first_page(
@@ -96,17 +138,6 @@ def fetch_first_page(
         f"app_id={app_id}: page 1 sans query_summary après {SUMMARY_RETRIES} relances"
     )
     return review_page, None
-
-
-def summary_params(app_id: int, summary: dict[str, Any]) -> tuple:
-    return (
-        summary.get("total_reviews"),
-        summary.get("total_positive"),
-        summary.get("total_negative"),
-        summary.get("review_score"),
-        summary.get("review_score_desc"),
-        app_id,
-    )
 
 
 CENSUS_WORKERS = 5
@@ -189,7 +220,7 @@ def fetch_steam_reviews(
 def reviews_to_rows(app_id: int, reviews: list["dict"]) -> list[tuple]:
     return [
         (
-            review["recommendationid"],
+            int(review["recommendationid"]),
             app_id,
             json.dumps(review),
             review["timestamp_created"],
@@ -201,63 +232,47 @@ def reviews_to_rows(app_id: int, reviews: list["dict"]) -> list[tuple]:
 
 def backfill_heavy_app_id(
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
     context: AssetExecutionContext,
     app_id: int,
     total_reviews: int | None,
 ) -> tuple[int, bool]:
-    """Pagine et upsert un jeu volumineux page par page, en envoyant les lignes au
-    serveur tous les HEAVY_PAGE_FLUSH_INTERVAL pages pour ne jamais garder tout le
-    jeu en mémoire.
+    """Pagine un jeu volumineux et insère ses reviews tous les
+    HEAVY_PAGE_FLUSH_INTERVAL pages, pour ne jamais garder tout le jeu en mémoire.
 
-    Renvoie (reviews chargées, backfill complet). Le commit n'a lieu qu'à la fin.
+    Renvoie (reviews chargées, backfill complet). Sans transaction, une
+    pagination incomplète garde les reviews déjà insérées : last_backfill_at
+    reste NULL et la relance les réinsère, ce que raw déduplique.
     """
     fetched = 0
     max_ts = 0
     pending_rows: list[tuple] = []
     pages_since_flush = 0
     pages = ReviewPages(steam, app_id, total_reviews)
-    with postgres.connect() as conn:
-        for reviews in pages:
-            for review in reviews:
-                max_ts = max(max_ts, review["timestamp_updated"])
-            pending_rows.extend(reviews_to_rows(app_id, reviews))
-            fetched += len(reviews)
-            pages_since_flush += 1
-            if pages_since_flush >= HEAVY_PAGE_FLUSH_INTERVAL:
-                # Envoyé au serveur mais pas commité : la mémoire du process est
-                # libérée sans renoncer à pouvoir tout annuler.
-                with conn.cursor() as cur:
-                    cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
-                pending_rows = []
-                pages_since_flush = 0
+    for reviews in pages:
+        for review in reviews:
+            max_ts = max(max_ts, review["timestamp_updated"])
+        pending_rows.extend(reviews_to_rows(app_id, reviews))
+        fetched += len(reviews)
+        pages_since_flush += 1
+        if pages_since_flush >= HEAVY_PAGE_FLUSH_INTERVAL:
+            insert_reviews(clickhouse, pending_rows)
+            pending_rows = []
+            pages_since_flush = 0
+    insert_reviews(clickhouse, pending_rows)
 
-        if pending_rows:
-            with conn.cursor() as cur:
-                cur.executemany(INSERT_REVIEWS_SQL, pending_rows)
+    total_reviews = pages.total_reviews
+    if pages.summary is not None:
+        write_summaries(clickhouse, {app_id: pages.summary})
+    if not pages.complete:
+        context.log.warning(
+            f"[volumineux] app_id={app_id}: {fetched}/{total_reviews} reviews "
+            "seulement, last_backfill_at laissé NULL (sera retenté au prochain run)"
+        )
+        return fetched, False
 
-        total_reviews = pages.total_reviews
-        if not pages.complete:
-            conn.rollback()
-            if pages.summary is not None:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        UPDATE_SUMMARY_SQL, summary_params(app_id, pages.summary)
-                    )
-                conn.commit()
-            context.log.warning(
-                f"[volumineux] app_id={app_id}: {fetched}/{total_reviews} reviews "
-                "seulement, insertion annulée et last_backfill_at laissé NULL "
-                "(sera retenté au prochain run)"
-            )
-            return 0, False
-
-        with conn.cursor() as cur:
-            if pages.summary is not None:
-                cur.execute(UPDATE_SUMMARY_SQL, summary_params(app_id, pages.summary))
-            cur.execute(MARK_BACKFILLED_SQL, (fetched, max_ts, app_id))
-        conn.commit()
-
+    # En dernier : un arrêt avant ce marquage fait rejouer le jeu.
+    mark_backfilled(clickhouse, [(app_id, fetched, max_ts)])
     context.log.info(f"[volumineux] app_id={app_id}: {fetched} reviews chargées")
     return fetched, True
 
@@ -270,9 +285,9 @@ def backfill_heavy_app_id(
 def steam_reviews_backfill(
     context: AssetExecutionContext,
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
-    rows = postgres.fetch_all(ABSENT_STEAM_IDS)
+    rows = clickhouse.query(ABSENT_STEAM_IDS)
     zero_ids: list[int] = []
     # (app_id, total_reviews) : le total recensé sert de garde-fou contre les
     # faux signaux de fin de pagination (cf. iter_review_pages).
@@ -299,28 +314,20 @@ def steam_reviews_backfill(
 
     loaded = 0
     backfilled = 0
-    # Jeux dont la pagination s'est arrêtée trop tôt malgré les relances : ni
-    # insérés ni marqués, ils repasseront au prochain run.
+    # Jeux dont la pagination s'est arrêtée trop tôt malgré les relances : non
+    # marqués, ils repasseront au prochain run.
     incomplete = 0
     start = time.monotonic()
 
     if zero_ids:
-        with postgres.connect() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    MARK_BACKFILLED_SQL, [(0, 0, app_id) for app_id in zero_ids]
-                )
-            conn.commit()
+        mark_backfilled(clickhouse, [(app_id, 0, 0) for app_id in zero_ids])
         backfilled += len(zero_ids)
         context.log.info(
             f"[sans review] {len(zero_ids)} jeux marqués backfillés directement, "
             "0 appel API."
         )
 
-    with (
-        postgres.connect() as conn,
-        ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool,
-    ):
+    with ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool:
         for batch_num, batch_start in enumerate(
             range(0, len(light_apps), CENSUS_BATCH_SIZE), start=1
         ):
@@ -330,11 +337,11 @@ def steam_reviews_backfill(
                 batch,
             )
             batch_rows = []
-            mark_params = []
-            summaries = []
+            marks = []
+            summaries = {}
             for (app_id, _), (app_reviews, pages) in zip(batch, reviews_by_app):
                 if pages.summary is not None:
-                    summaries.append(summary_params(app_id, pages.summary))
+                    summaries[app_id] = pages.summary
                 app_total = pages.total_reviews
                 if not pages.complete:
                     incomplete += 1
@@ -348,17 +355,14 @@ def steam_reviews_backfill(
                 app_max_ts = max(
                     (r["timestamp_updated"] for r in app_reviews), default=0
                 )
-                mark_params.append((len(app_reviews), app_max_ts, app_id))
-            with conn.cursor() as cur:
-                if summaries:
-                    cur.executemany(UPDATE_SUMMARY_SQL, summaries)
-                if batch_rows:
-                    cur.executemany(INSERT_REVIEWS_SQL, batch_rows)
-                if mark_params:
-                    cur.executemany(MARK_BACKFILLED_SQL, mark_params)
-            conn.commit()
+                marks.append((app_id, len(app_reviews), app_max_ts))
+            # Reviews d'abord, marquage ensuite : un arrêt entre les deux fait
+            # rejouer le lot, et raw déduplique.
+            insert_reviews(clickhouse, batch_rows)
+            write_summaries(clickhouse, summaries)
+            mark_backfilled(clickhouse, marks)
             loaded += len(batch_rows)
-            backfilled += len(mark_params)
+            backfilled += len(marks)
             elapsed = time.monotonic() - start
             rate = backfilled / elapsed if elapsed > 0 else 0
             eta_min = (total - backfilled) / rate / 60 if rate > 0 else float("inf")
@@ -377,7 +381,7 @@ def steam_reviews_backfill(
     with ThreadPoolExecutor(max_workers=CENSUS_WORKERS) as pool:
         futures = {
             pool.submit(
-                backfill_heavy_app_id, steam, postgres, context, app_id, total_reviews
+                backfill_heavy_app_id, steam, clickhouse, context, app_id, total_reviews
             ): app_id
             for app_id, total_reviews in heavy_apps
         }
@@ -407,8 +411,8 @@ def steam_reviews_backfill(
     if incomplete:
         context.log.warning(
             f"{incomplete} jeux laissés incomplets (pagination Steam arrêtée trop "
-            "tôt malgré les relances) : rien n'a été inséré pour eux, ils seront "
-            "repris au prochain run."
+            "tôt malgré les relances) : non marqués, ils seront repris au "
+            "prochain run."
         )
 
     return MaterializeResult(

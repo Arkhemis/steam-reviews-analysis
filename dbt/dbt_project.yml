@@ -11,21 +11,17 @@ clean-targets: [target, logs]
 models:
   steam_reviews:
     +materialized: table
+    # Plusieurs clés de tri sont nullables (voted_up, language, steam_app_id…).
+    +settings:
+      allow_nullable_key: 1
     +meta:
       severity: warn
     +persist_docs:
       relation: true
       columns: true
     staging:
-      +materialized: table
       +tags: [staging]
-      +pre-hook: "SET default_table_access_method = 'columnar'; SET max_parallel_workers_per_gather = 0; SET work_mem = '256MB'"
-      +post-hook: "{{ analyze_model() }}"
-    # steam_review est une vue à anti-join : sans ces réglages, merge join et tri des 183 M lignes.
-    # Les pre-hooks propres à un modèle passent après et l'emportent.
     intermediate:
       +tags: [intermediate]
-      +pre-hook: "SET work_mem = '128MB'; SET enable_mergejoin = off"
     marts:
       +tags: [marts]
-      +pre-hook: "SET work_mem = '128MB'; SET enable_mergejoin = off"

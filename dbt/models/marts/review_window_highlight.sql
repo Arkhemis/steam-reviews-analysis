@@ -1,18 +1,11 @@
-{{
-    config(
-        pre_hook="SET work_mem = '1GB'",
-        indexes=[
-            {'columns': ['window_name', 'category', 'language', 'rank'], 'type': 'btree'},
-        ]
-    )
-}}
+{{ config(order_by='(window_name, category, language, rank)') }}
 
 -- Mêmes bornes que game_window_score : ancrées sur la dernière date ingérée,
 -- jamais sur CURRENT_DATE, pour que la fenêtre ne soit pas vide quand
 -- l'ingestion a plusieurs jours de retard.
 WITH bounds AS (
 
-    SELECT MAX(review_date) AS latest
+    SELECT max(review_date) AS latest
     FROM {{ ref('game_review_trend_daily') }}
 
 ),
@@ -21,7 +14,7 @@ windows AS (
 
     SELECT
         'week' AS window_name,
-        (latest - INTERVAL '6 days')::DATE AS starts_on,
+        latest - 6 AS starts_on,
         latest AS ends_on
     FROM bounds
 
@@ -29,36 +22,28 @@ windows AS (
 
     SELECT
         'month' AS window_name,
-        (latest - INTERVAL '29 days')::DATE AS starts_on,
+        latest - 29 AS starts_on,
         latest AS ends_on
     FROM bounds
 
 ),
 
 -- Une seule lecture de steam_review sert les deux fenêtres : la plus large
--- (trente jours) contient l'autre. La table est columnar et sans index : le
--- filtre sur created_at, comparé à une valeur connue dès le début du scan,
--- laisse Citus sauter les chunk groups hors fenêtre, et seules les colonnes
--- citées ici sont décompressées. Le CTE est relu plus bas pour récupérer le
--- texte des lauréats : MATERIALIZED garantit qu'on ne rescanne pas la source.
-recent_reviews AS MATERIALIZED (
+-- (trente jours) contient l'autre. Le texte n'est pas lu ici : les lauréats le
+-- récupèrent à la fin, par leur clé de tri.
+recent_reviews AS (
 
     SELECT
         recommendation_id,
         app_id,
         language,
-        review_text,
-        voted_up,
         votes_up,
         votes_funny,
         weighted_vote_score,
-        author_personaname,
-        author_avatar,
-        author_playtime_at_review_minutes,
         created_at
     FROM {{ ref('steam_review') }}
     WHERE
-        created_at >= (SELECT (b.latest - INTERVAL '29 days')::DATE FROM bounds AS b)
+        created_at >= (SELECT b.latest - 29 FROM bounds AS b)
         AND review_text_length > {{ var('min_review_length', 20) }}
         AND NOT is_generic
         AND language IS NOT NULL
@@ -75,27 +60,34 @@ recent_reviews AS MATERIALIZED (
 candidates AS (
 
     SELECT
-        w.window_name,
-        c.category,
-        r.language,
-        r.app_id,
-        r.recommendation_id,
-        r.votes_up,
+        w.window_name AS window_name,
+        r.category AS category,
+        r.language AS language,
+        r.app_id AS app_id,
+        r.recommendation_id AS recommendation_id,
+        r.votes_up AS votes_up,
 
         -- Clé de tri principale propre à chaque catégorie : les votes « drôle »
         -- pour funny, le score pondéré de Steam pour helpful.
-        CASE
-            WHEN c.category = 'funny' THEN r.votes_funny::NUMERIC
-            ELSE r.weighted_vote_score
-        END AS primary_score
+        if(
+            r.category = 'funny',
+            toDecimal128(r.votes_funny, 20),
+            r.weighted_vote_score
+        ) AS primary_score
 
-    FROM recent_reviews AS r
-    INNER JOIN windows AS w
-        ON DATE(r.created_at) BETWEEN w.starts_on AND w.ends_on
-    CROSS JOIN (VALUES ('funny'), ('helpful')) AS c (category)
+    FROM (
+        SELECT
+            *,
+            arrayJoin(['funny', 'helpful']) AS category
+        FROM recent_reviews
+    ) AS r
+    CROSS JOIN windows AS w
     WHERE
-        (c.category = 'funny' AND r.votes_funny > 0)
-        OR (c.category = 'helpful' AND r.votes_up > 0)
+        toDate(r.created_at) BETWEEN w.starts_on AND w.ends_on
+        AND (
+            (r.category = 'funny' AND r.votes_funny > 0)
+            OR (r.category = 'helpful' AND r.votes_up > 0)
+        )
 
 ),
 
@@ -120,7 +112,7 @@ best_per_game AS (
             recommendation_id,
             votes_up,
             primary_score,
-            ROW_NUMBER() OVER (
+            row_number() OVER (
                 PARTITION BY window_name, category, language, app_id
                 ORDER BY primary_score DESC, votes_up DESC, recommendation_id ASC
             ) AS rank_in_game
@@ -146,7 +138,7 @@ ranked AS (
             language,
             app_id,
             recommendation_id,
-            ROW_NUMBER() OVER (
+            row_number() OVER (
                 PARTITION BY window_name, category, language
                 ORDER BY primary_score DESC, votes_up DESC, recommendation_id ASC
             ) AS rank
@@ -154,18 +146,45 @@ ranked AS (
     ) AS ranked_games
     WHERE rank <= {{ var('top_n_window_reviews', 5) }}
 
+),
+
+-- Texte et auteur des lauréats. Le filtre IN porte sur la clé de tri de
+-- steam_review : seules les granules des lauréats sont lues.
+winners AS (
+
+    SELECT
+        recommendation_id,
+        app_id,
+        review_text,
+        voted_up,
+        votes_up,
+        votes_funny,
+        weighted_vote_score,
+        author_personaname,
+        author_avatar,
+        author_playtime_at_review_minutes,
+        created_at
+    FROM {{ ref('steam_review') }}
+    WHERE
+        (app_id, recommendation_id) IN (
+            SELECT
+                k.app_id,
+                k.recommendation_id
+            FROM ranked AS k
+        )
+
 )
 
 SELECT
-    k.window_name,
+    k.window_name AS window_name,
     k.category,
     k.language,
-    k.rank::INT AS rank,
+    toInt32(k.rank) AS rank,
     w.starts_on,
     w.ends_on,
 
-    r.recommendation_id,
-    r.app_id,
+    r.recommendation_id AS recommendation_id,
+    r.app_id AS app_id,
     r.review_text,
 
     r.voted_up,
@@ -181,5 +200,5 @@ SELECT
 FROM ranked AS k
 INNER JOIN windows AS w
     USING (window_name)
-INNER JOIN recent_reviews AS r
+INNER JOIN winners AS r
     USING (recommendation_id, app_id)

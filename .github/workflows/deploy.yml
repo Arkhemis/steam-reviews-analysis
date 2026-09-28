@@ -34,9 +34,8 @@ jobs:
 
     # `dbt parse` rend le profile sans ouvrir de connexion.
     env:
-      POSTGRES_USER: ci
-      POSTGRES_PASSWORD: ci
-      POSTGRES_DB: ci
+      CLICKHOUSE_USER: ci
+      CLICKHOUSE_PASSWORD: ci
 
     steps:
       - uses: actions/checkout@v4

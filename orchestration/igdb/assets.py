@@ -7,7 +7,7 @@ from pathlib import Path
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
 from orchestration.igdb.resources import IGDBResource
-from orchestration.postgres import PostgresResource
+from orchestration.clickhouse import ClickHouseResource
 
 BATCH_SIZE = 1000
 
@@ -15,25 +15,16 @@ BATCH_SIZE = 1000
 # brut pour que le front puisse composer t_thumb, t_720p, etc.
 COVER_URL_TEMPLATE = "https://images.igdb.com/igdb/image/upload/t_720p/{image_id}.jpg"
 
-# Les trois tableaux sont castés explicitement : psycopg sérialise les listes
-# avec un type inconnu (oid 0), et `genres` est vide pour ~4 % des jeux.
-UPSERT_SQL = """
-INSERT INTO raw.igdb_games (
-    igdb_id, steam_app_id, name, first_release_date,
-    genres, developers, publishers,
-    cover_url, loaded_at
-)
-VALUES (%s, %s, %s, %s, %s::text[], %s::text[], %s::text[], %s, now())
-ON CONFLICT (igdb_id) DO UPDATE
-SET steam_app_id       = EXCLUDED.steam_app_id,
-    name               = EXCLUDED.name,
-    first_release_date = EXCLUDED.first_release_date,
-    genres             = EXCLUDED.genres,
-    developers         = EXCLUDED.developers,
-    publishers         = EXCLUDED.publishers,
-    cover_url          = EXCLUDED.cover_url,
-    loaded_at          = now();
-"""
+COLUMNS = [
+    "igdb_id",
+    "steam_app_id",
+    "name",
+    "first_release_date",
+    "genres",
+    "developers",
+    "publishers",
+    "cover_url",
+]
 
 # Relève la limite de taille de champ CSV pour ne pas planter.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -64,13 +55,13 @@ def _steam_app_ids_from_external_dump(path: Path) -> dict[str, int]:
         "Liste des jeux IGDB et leur steam_app_id, via les data dumps IGDB "
         "(external_games + games), enrichie des genres, developers, publishers, "
         "cover et date de sortie (dumps genres + companies + "
-        "involved_companies + covers). Upsert dans raw.igdb_games."
+        "involved_companies + covers). Insertion dans raw.igdb_games."
     ),
 )
 def igdb_games(
     context: AssetExecutionContext,
     igdb: IGDBResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
     with tempfile.TemporaryDirectory(prefix="igdb_dumps_") as tmp:
         tmp_dir = Path(tmp)
@@ -127,10 +118,7 @@ def igdb_games(
 
         total_games = 0
         upserted = 0
-        with (
-            open(games_path, newline="", encoding="utf-8", errors="replace") as f,
-            postgres.connect() as conn,
-        ):
+        with open(games_path, newline="", encoding="utf-8", errors="replace") as f:
             reader = csv.DictReader(f)
             batch: list[tuple] = []
             for row in reader:
@@ -175,7 +163,7 @@ def igdb_games(
 
                 batch.append(
                     (
-                        igdb_id,
+                        int(igdb_id),
                         steam_app_id,
                         row.get("name"),
                         first_release_date,
@@ -187,13 +175,13 @@ def igdb_games(
                 )
 
                 if len(batch) >= BATCH_SIZE:
-                    _flush(conn, batch)
+                    clickhouse.insert("igdb_games", batch, COLUMNS)
                     upserted += len(batch)
                     batch = []
-                    context.log.info(f"IGDB : {upserted} jeux Steam upsertés")
+                    context.log.info(f"IGDB : {upserted} jeux Steam insérés")
 
             if batch:
-                _flush(conn, batch)
+                clickhouse.insert("igdb_games", batch, COLUMNS)
                 upserted += len(batch)
 
     return MaterializeResult(
@@ -203,8 +191,3 @@ def igdb_games(
             "rows_upserted": MetadataValue.int(upserted),
         }
     )
-
-
-def _flush(conn, batch: list[tuple]) -> None:
-    with conn.cursor() as cur:
-        cur.executemany(UPSERT_SQL, batch)

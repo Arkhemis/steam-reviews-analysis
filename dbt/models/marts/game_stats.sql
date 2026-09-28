@@ -1,17 +1,9 @@
-{{
-    config(
-        indexes=[
-            {'columns': ['steam_app_id'], 'type': 'btree'},
-            {'columns': ['total_reviews'], 'type': 'btree'},
-            {'columns': ['parent_steam_app_id'], 'type': 'btree'},
-        ]
-    )
-}}
+{{ config(order_by='steam_app_id') }}
 
 
 SELECT
     i.igdb_id,
-    i.steam_app_id,
+    i.steam_app_id AS steam_app_id,
     i.game_name,
     i.genres,
     i.developers,
@@ -28,16 +20,16 @@ SELECT
     g.is_available,
 
     grc.total_reviews,
-    ROUND(
-        100.0 * grc.total_positive
-        / NULLIF(grc.total_reviews, 0),
+    round(
+        100 * grc.total_positive
+        / nullIf(grc.total_reviews, 0),
         1
     ) AS pct_positive_reviews,
     grc.review_score,
 
     review_agg.median_playtime_forever_minutes,
-    ROUND(100.0 * review_agg.pct_primarily_steam_deck, 1) AS pct_primarily_steam_deck,
-    ROUND(100.0 * review_agg.pct_refunded, 1) AS pct_refunded
+    round(100 * review_agg.pct_primarily_steam_deck, 1) AS pct_primarily_steam_deck,
+    round(100 * review_agg.pct_refunded, 1) AS pct_refunded
 
 FROM {{ ref('igdb_game') }} AS i
 LEFT JOIN {{ ref('game_review_count') }} AS grc

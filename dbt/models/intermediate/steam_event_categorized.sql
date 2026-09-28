@@ -1,8 +1,10 @@
+{{ config(order_by='(app_id, gid)') }}
+
 SELECT
 
     e.app_id,
     e.gid,
-    DATE(e.started_at) AS started_on,
+    toDate(e.started_at) AS started_on,
     CASE
         WHEN e.event_type IN (28, 1) THEN 'news'
         WHEN e.event_type IN (12, 13, 14) THEN 'update'
@@ -23,14 +25,9 @@ SELECT
     e.comment_count,
 
     -- Steam substitue {STEAM_CLAN_IMAGE} par la racine du CDN de ses groupes.
-    ARRAY(
-        SELECT
-            REPLACE(
-                img.parts[1],
-                '{STEAM_CLAN_IMAGE}',
-                'https://clan.cloudflare.steamstatic.com/images'
-            )
-        FROM REGEXP_MATCHES(e.announcement_text, '\[img\]([^\[]+?)\[/img\]', 'g') AS img (parts)
+    arrayMap(
+        img -> replaceAll(img[1], '{STEAM_CLAN_IMAGE}', 'https://clan.cloudflare.steamstatic.com/images'),  -- noqa: RF03
+        extractAllGroups(ifNull(e.announcement_text, ''), '\\[img\\]([^\\[]+?)\\[/img\\]')
     ) AS image_urls
 
 FROM {{ ref('steam_event') }} AS e

@@ -1,3 +1,5 @@
+{{ config(order_by='steam_app_id') }}
+
 SELECT
     app_id AS steam_app_id,
     total_reviews,

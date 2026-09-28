@@ -1,38 +1,50 @@
+{{ config(order_by='steam_app_id') }}
+
 SELECT
     app_id AS steam_app_id,
-    NULLIF(payload ->> 'name', '') COLLATE "C" AS name,
+    nullIf(JSONExtractString(payload, 'name'), '') AS name,
 
-    CASE (payload ->> 'type')::int
-        WHEN 0 THEN 'game'
-        WHEN 1 THEN 'demo'
-        WHEN 2 THEN 'mod'
-        WHEN 4 THEN 'dlc'
-        WHEN 11 THEN 'music'
-        ELSE 'other'
-    END AS app_type,
-    (payload -> 'related_items' ->> 'parent_appid')::int AS parent_steam_app_id,
+    multiIf(
+        type = 0, 'game',
+        type = 1, 'demo',
+        type = 2, 'mod',
+        type = 4, 'dlc',
+        type = 11, 'music',
+        'other'
+    ) AS app_type,
+    JSONExtract(payload, 'related_items', 'parent_appid', 'Nullable(UInt32)') AS parent_steam_app_id,
 
     -- success = 15 : app retirée du store, fiche vide
-    (payload ->> 'success')::int = 1 AS is_available,
-    (payload ->> 'visible')::boolean AS is_visible,
-    COALESCE((payload ->> 'unlisted')::boolean, FALSE) AS is_unlisted,
-    COALESCE((payload ->> 'is_free')::boolean, FALSE) AS is_free,
+    CAST(JSONExtract(payload, 'success', 'Nullable(Int64)') = 1, 'Nullable(Bool)') AS is_available,
+    JSONExtract(payload, 'visible', 'Nullable(Bool)') AS is_visible,
+    ifNull(JSONExtract(payload, 'unlisted', 'Nullable(Bool)'), false) AS is_unlisted,
+    ifNull(JSONExtract(payload, 'is_free', 'Nullable(Bool)'), false) AS is_free,
     -- Steam n'envoie ces clés que lorsqu'elles valent true
-    COALESCE((payload ->> 'is_early_access')::boolean, FALSE) AS is_early_access,
-    COALESCE((payload ->> 'is_coming_soon')::boolean, FALSE) AS is_coming_soon,
+    ifNull(JSONExtract(payload, 'is_early_access', 'Nullable(Bool)'), false) AS is_early_access,
+    ifNull(JSONExtract(payload, 'is_coming_soon', 'Nullable(Bool)'), false) AS is_coming_soon,
 
-    ROUND(
-        COALESCE(
-            payload -> 'best_purchase_option' ->> 'original_price_in_cents',
-            payload -> 'best_purchase_option' ->> 'final_price_in_cents'
-        )::numeric / 100,
+    -- GetItems sérialise les prix en chaînes : JSONExtract les lit quand même.
+    toDecimal64(
+        coalesce(
+            JSONExtract(payload, 'best_purchase_option', 'original_price_in_cents', 'Nullable(Int64)'),
+            JSONExtract(payload, 'best_purchase_option', 'final_price_in_cents', 'Nullable(Int64)')
+        ),
         2
-    ) AS price_usd,
+    ) / 100 AS price_usd,
 
     -- Date prévue, et non effective, quand is_coming_soon
-    TO_TIMESTAMP(NULLIF((payload -> 'release' ->> 'steam_release_date')::bigint, 0)) AS steam_release_date,
-    TO_TIMESTAMP(NULLIF((payload -> 'release' ->> 'original_release_date')::bigint, 0)) AS original_release_date,
-    TO_TIMESTAMP(NULLIF((payload -> 'release' ->> 'release_from_early_access_date')::bigint, 0))
-        AS release_from_early_access_date
+    toDateTime(nullIf(JSONExtract(payload, 'release', 'steam_release_date', 'Nullable(Int64)'), 0), 'UTC')
+        AS steam_release_date,
+    toDateTime(nullIf(JSONExtract(payload, 'release', 'original_release_date', 'Nullable(Int64)'), 0), 'UTC')
+        AS original_release_date,
+    toDateTime(
+        nullIf(JSONExtract(payload, 'release', 'release_from_early_access_date', 'Nullable(Int64)'), 0), 'UTC'
+    ) AS release_from_early_access_date
 
-FROM {{ source('raw', 'steam_game_details') }}
+FROM (
+    SELECT
+        app_id,
+        payload,
+        JSONExtract(payload, 'type', 'Nullable(Int64)') AS type
+    FROM {{ source('raw', 'steam_game_details') }}
+)

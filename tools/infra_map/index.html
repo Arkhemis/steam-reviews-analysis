@@ -204,7 +204,7 @@ function lineageSpec() {
   const lanes = [
     { id: "api", title: "APIs", sub: "HTTP", color: "--api" },
     { id: "ingest", title: "Ingestion", sub: "assets Dagster", color: "--ingest" },
-    { id: "raw", title: "Postgres raw", sub: "tables sources", color: "--raw" },
+    { id: "raw", title: "ClickHouse raw", sub: "tables sources", color: "--raw" },
     { id: "staging", title: "Staging", sub: "dbt", color: "--staging" },
     { id: "intermediate", title: "Intermediate", sub: "dbt", color: "--intermediate" },
     { id: "marts", title: "Marts", sub: "dbt", color: "--marts" },
@@ -252,11 +252,11 @@ function infraSpec() {
     { id: "edge", title: "Entrée", sub: "TLS · routage", color: "--accent", select: "vps" },
     { id: "front", title: "Services web", sub: "exposés par Caddy", color: "--web", select: "vps" },
     { id: "dagster", title: "Dagster", sub: "orchestration", color: "--ingest", select: "vps" },
-    { id: "data", title: "Données", sub: "Postgres · volumes", color: "--raw", select: "vps" },
+    { id: "data", title: "Données", sub: "ClickHouse · Postgres · volumes", color: "--raw", select: "vps" },
     { id: "apis", title: "APIs externes", sub: "appelées par les runs", color: "--api" },
   ];
-  const laneOf = { caddy: "edge", website: "front", "dagster-webserver": "front", dbgate: "front", "dagster-daemon": "dagster", "user-code": "dagster", postgres: "data" };
-  const glyphOf = { caddy: "TLS", website: "web", "dagster-webserver": "UI", dbgate: "db", "dagster-daemon": "dmn", "user-code": "gRPC", postgres: "pg" };
+  const laneOf = { caddy: "edge", website: "front", "dagster-webserver": "front", dbgate: "front", "dagster-daemon": "dagster", "user-code": "dagster", postgres: "data", clickhouse: "data" };
+  const glyphOf = { caddy: "TLS", website: "web", "dagster-webserver": "UI", dbgate: "db", "dagster-daemon": "dmn", "user-code": "gRPC", postgres: "pg", clickhouse: "ch" };
   const hostFor = name => D.caddy.find(h => h.upstream === name);
   const nodes = [
     { id: "ext:internet", lane: "ext", title: "Internet", sub: D.caddy.map(h => h.host.split(".")[0]).join(" · "), glyph: "www", color: "--api", tint: true },
@@ -278,11 +278,13 @@ function infraSpec() {
   edge("svc:dagster-webserver", "svc:user-code", "net", "gRPC :4000");
   edge("svc:dagster-daemon", "svc:user-code", "net", "gRPC :4000");
   edge("svc:dagster-daemon", "svc:runs", "net", "docker run");
-  Object.values(D.services).forEach(s => s.name !== "caddy" && s.depends_on.forEach(d => edge(s.id, `svc:${d}`, "dep", d === "postgres" ? "SQL" : "dépend de")));
-  edge("svc:runs", "svc:postgres", "dep", "SQL");
+  Object.values(D.services).forEach(s => s.name !== "caddy" && s.depends_on.forEach(d => edge(s.id, `svc:${d}`, "dep", ["postgres", "clickhouse"].includes(d) ? "SQL" : "dépend de")));
+  edge("svc:runs", "svc:clickhouse", "dep", "SQL");
+  edge("svc:runs", "svc:postgres", "dep", "stockage Dagster");
   edge("svc:runs", "vol:logs", "dep", "stdout / stderr");
   edge("svc:dagster-webserver", "vol:logs", "dep", "lit les logs", true);
   edge("svc:postgres", "vol:pgdata", "dep", "bind mount");
+  edge("svc:clickhouse", "vol:pgdata", "dep", "bind mount");
   ["api:appreviews", "api:getitems", "api:events", "api:igdb"].forEach(a => edge("svc:runs", a, "call", "HTTP"));
   edge("svc:dagster-daemon", "api:discord", "call", "run en échec");
   edge("ext:github", "svc:user-code", "ci", "compose up --build");
@@ -318,7 +320,7 @@ function orchestrationSpec() {
     D.sensors.forEach(s => edge(j.id, s.id, "read", "si échec", true));
   });
   D.resources.forEach(r => {
-    const gs = new Set(Object.values(D.assets).filter(a => a.type === "python" ? a.resources.includes(r.name) : ["dbt", "postgres"].includes(r.name)).map(a => a.group));
+    const gs = new Set(Object.values(D.assets).filter(a => a.type === "python" ? a.resources.includes(r.name) : ["dbt", "clickhouse"].includes(r.name)).map(a => a.group));
     gs.forEach(g => edge(r.id, `group:${g}`, "dep", "injectée"));
   });
   D.sensors.forEach(s => edge(s.id, "api:discord", "call", "webhook"));
@@ -736,8 +738,8 @@ function tablePanel(t) {
   const readers = Object.values(D.assets).filter(a => a.reads?.includes(t.id) || a.sources?.includes(t.id)).map(a => a.id);
   return `<h2>${esc(t.name)}</h2>${badges(["Table raw", t.storage])}
     <h3>Écrite par</h3>${linkList(writers)}<h3>Lue par</h3>${linkList(readers)}${columnsTable(t.columns)}
-    ${codeBlocks([{ label: "DDL (db/init.sql)", code: t.ddl, lang: "sql", file: "db/init.sql" }])}
-    <p class="muted" style="margin-top:14px">db/init.sql ne s'exécute qu'au premier démarrage de Postgres : toute nouvelle colonne se migre à la main en prod.</p>`;
+    ${codeBlocks([{ label: "DDL (db/clickhouse/init.sql)", code: t.ddl, lang: "sql", file: "db/clickhouse/init.sql" }])}
+    <p class="muted" style="margin-top:14px">db/clickhouse/init.sql ne s'exécute qu'au premier démarrage de ClickHouse : toute nouvelle colonne se migre à la main en prod.</p>`;
 }
 function apiPanel(a) {
   const users = Object.values(D.assets).filter(x => x.apis?.includes(a.id)).map(x => x.id);
@@ -797,11 +799,11 @@ function infraPanel(id) {
   }
   const notes = {
     "svc:runs": [`Conteneurs de run`, `Chaque run Dagster s'exécute dans son propre conteneur, construit depuis l'image user-code (DockerRunLauncher). Un « compose up --build » ne tue donc pas les runs en cours. La file (QueuedRunCoordinator) borne la concurrence à ${D.dagster_instance.config?.run_coordinator?.config?.max_concurrent_runs} runs. run_monitoring passe en échec les runs dont le conteneur a disparu.`, D.dagster_instance.yaml],
-    "vol:pgdata": ["/mnt/pgdata/postgresql", "Volume Hetzner monté en bind dans Postgres (docker-compose.prod.yml, create_host_path: false). Les backups Hetzner ne couvrent pas ce volume."],
+    "vol:pgdata": ["/mnt/pgdata", "Volume Hetzner monté en bind dans ClickHouse (clickhouse/) et Postgres (postgresql/), avec create_host_path: false (docker-compose.prod.yml). Les backups Hetzner ne couvrent pas ce volume : raw est sauvegardé par BACKUP vers /var/backups/clickhouse, sur le disque local."],
     "vol:logs": ["dagster_compute_logs", "Volume partagé entre les conteneurs de run et le webserver, pour que les stdout/stderr des runs restent lisibles dans l'UI."],
     "ext:internet": ["Internet", D.caddy.map(h => `https://${h.host} → ${h.upstream}${h.basicauth ? " (basic auth)" : ""}`).join("\n")],
     "ext:github": ["GitHub Actions", "Push sur main → workflow Deploy : ssh deploy@VPS lance le script deploy (pull + compose up --build), puis rejoue les modèles dbt modifiés via l'API GraphQL de Dagster. Voir la vue CI/CD."],
-    "vps": [D.host.name, `IP ${D.host.ip}, utilisateur ${D.host.user}. Postgres n'écoute que sur 127.0.0.1:5432, le webserver Dagster sur 127.0.0.1:3001 ; seul Caddy est exposé (80/443).`],
+    "vps": [D.host.name, `IP ${D.host.ip}, utilisateur ${D.host.user}. ClickHouse et Postgres n'écoutent que sur 127.0.0.1, le webserver Dagster sur 127.0.0.1:3001 ; seul Caddy est exposé (80/443).`],
   }[id] || [id, ""];
   return `<h2>${esc(notes[0])}</h2><p class="desc">${esc(notes[1])}</p>${graphLinks(id)}${notes[2] ? codeBlocks([{ label: "deploy/dagster.yaml", code: notes[2], lang: "yaml" }]) : ""}`;
 }
@@ -831,7 +833,7 @@ function introLineage() {
 }
 function introInfra() {
   P().innerHTML = `<div class="intro"><h2>Infra de production</h2><p class="muted">${esc(D.host.name)} · ${esc(D.host.ip)}</p>
-    <p>Un seul VPS porte toute la stack Docker Compose. Caddy termine le TLS et route les trois sous-domaines. Le daemon Dagster lance chaque run dans un conteneur dédié, qui parle à Postgres et aux APIs.</p>
+    <p>Un seul VPS porte toute la stack Docker Compose. Caddy termine le TLS et route les trois sous-domaines. Le daemon Dagster lance chaque run dans un conteneur dédié, qui écrit dans ClickHouse et appelle les APIs ; Postgres ne garde que l'état de Dagster.</p>
     <h3>Sous-domaines</h3>${D.caddy.map(h => `<p><b>${esc(h.host)}</b> → ${esc(h.upstream)}:${esc(h.port)}${h.basicauth ? " · basic auth" : ""}</p>`).join("")}
     <h3>Légende</h3>${legend([["service"], ["volume"], ["api", "API / service externe"], ["line::--accent", "Réseau (HTTP, gRPC, docker)"], ["line:dot", "Dépendance / accès"], ["line::--api", "Appel sortant"], ["line::--ci", "Déploiement"]])}</div>`;
   finish();

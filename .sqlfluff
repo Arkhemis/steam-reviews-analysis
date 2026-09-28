@@ -1,12 +1,17 @@
 [sqlfluff]
-dialect = postgres
+dialect = clickhouse
 templater = dbt
 max_line_length = 140
 # ST06: pas de contrainte sur l'ordre des colonnes dans le SELECT.
 # RF04: des noms de colonnes sources (ex. `language`) sont des mots-clés SQL.
 # ST09: pas de contrainte sur l'ordre des tables dans les JOIN.
 # ST07: USING autorisé dans les JOIN.
-exclude_rules = ST06, RF04, ST09, ST07
+# CP03: les fonctions ClickHouse sont sensibles à la casse (toDateTime, countIf).
+# AL09: ClickHouse garde le préfixe des colonnes de USING (`t.app_id`) : l'alias explicite est requis.
+# CV02: ifNull est la forme idiomatique de ClickHouse.
+exclude_rules = ST06, RF04, ST09, ST07, CP03, AL09, CV02
+# Les lambdas de english_lexemes dépassent la profondeur par défaut.
+max_parse_depth = 1024
 
 [sqlfluff:templater:dbt]
 project_dir = dbt/
@@ -14,9 +19,6 @@ profiles_dir = dbt/
 
 [sqlfluff:rules:capitalisation.identifiers]
 extended_capitalisation_policy = snake
-
-[sqlfluff:rules:capitalisation.functions]
-extended_capitalisation_policy = upper
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = upper

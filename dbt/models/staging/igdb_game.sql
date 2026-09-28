@@ -1,3 +1,5 @@
+{{ config(order_by='igdb_id') }}
+
 SELECT
     igdb_id,
     steam_app_id,

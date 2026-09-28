@@ -1,0 +1,14 @@
+<!-- Profil de l'unique compte (CLICKHOUSE_USER, créé par l'image avec le profil default). -->
+<clickhouse>
+    <profiles>
+        <default>
+            <max_threads>4</max_threads>
+            <max_memory_usage>2684354560</max_memory_usage>
+            <!-- Débordement sur disque au-delà de 1 Go. -->
+            <max_bytes_before_external_group_by>1073741824</max_bytes_before_external_group_by>
+            <max_bytes_before_external_sort>1073741824</max_bytes_before_external_sort>
+            <!-- grace_hash déborde sur disque ; les autres servent quand il ne s'applique pas. -->
+            <join_algorithm>grace_hash,parallel_hash,hash</join_algorithm>
+        </default>
+    </profiles>
+</clickhouse>

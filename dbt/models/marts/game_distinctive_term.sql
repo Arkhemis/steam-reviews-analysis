@@ -1,13 +1,7 @@
--- join_collapse_limit : sans lui le planificateur joint corpus_term et
--- cell_size sur voted_up seul, soit 1,7 milliard de lignes à trier.
 {{
     config(
         tags=['nlp'],
-        pre_hook="SET work_mem = '512MB'; SET hash_mem_multiplier = 4;"
-        " SET enable_mergejoin = off; SET join_collapse_limit = 1",
-        indexes=[
-            {'columns': ['app_id', 'voted_up', 'rank_in_game'], 'type': 'btree'},
-        ]
+        order_by='(app_id, voted_up, rank_in_game)',
     )
 }}
 
@@ -30,7 +24,7 @@ corpus_term AS (
     SELECT
         voted_up,
         lexeme,
-        SUM(occurrences) AS occurrences
+        sum(occurrences) AS occurrences
     FROM cell_term
     GROUP BY voted_up, lexeme
 
@@ -40,7 +34,7 @@ corpus_size AS (
 
     SELECT
         voted_up,
-        SUM(occurrences) AS tokens
+        sum(occurrences) AS tokens
     FROM corpus_term
     GROUP BY voted_up
 
@@ -51,7 +45,7 @@ cell_size AS (
     SELECT
         app_id,
         voted_up,
-        SUM(occurrences) AS tokens
+        sum(occurrences) AS tokens
     FROM cell_term
     GROUP BY app_id, voted_up
 
@@ -60,21 +54,21 @@ cell_size AS (
 confronted AS (
 
     SELECT
-        c.app_id,
-        c.voted_up,
-        c.lexeme,
-        c.occurrences,
-        c.reviews,
+        c.app_id AS app_id,
+        c.voted_up AS voted_up,
+        c.lexeme AS lexeme,
+        c.occurrences AS occurrences,
+        c.reviews AS reviews,
 
-        c.occurrences::double precision AS y_game,
-        (k.occurrences - c.occurrences)::double precision AS y_rest,
-        cs.tokens::double precision AS n_game,
-        (ks.tokens - cs.tokens)::double precision AS n_rest,
+        toFloat64(c.occurrences) AS y_game,
+        toFloat64(k.occurrences - c.occurrences) AS y_rest,
+        toFloat64(cs.tokens) AS n_game,
+        toFloat64(ks.tokens - cs.tokens) AS n_rest,
 
         -- Prior de Dirichlet informatif : la fréquence du terme dans tout le
         -- corpus, ce qui régularise les termes rares.
-        k.occurrences::double precision AS alpha_term,
-        ks.tokens::double precision AS alpha_total
+        toFloat64(k.occurrences) AS alpha_term,
+        toFloat64(ks.tokens) AS alpha_total
 
     FROM cell_term AS c
     INNER JOIN corpus_term AS k
@@ -90,20 +84,19 @@ log_odds AS (
 
     SELECT
         *,
-        LN(
+        log(
             (y_game + alpha_term) / (n_game + alpha_total - y_game - alpha_term)
-        ) - LN(
+        ) - log(
             (y_rest + alpha_term) / (n_rest + alpha_total - y_rest - alpha_term)
         ) AS delta,
-        SQRT(1.0 / (y_game + alpha_term) + 1.0 / (y_rest + alpha_term)) AS delta_stderr
+        sqrt(1.0 / (y_game + alpha_term) + 1.0 / (y_rest + alpha_term)) AS delta_stderr
 
     FROM confronted
 
 ),
 
-scored AS MATERIALIZED (
+scored AS (
 
-    -- Matérialiser : sinon la macro p-value réexpanse ce calcul six fois.
     SELECT
         *,
         delta / delta_stderr AS z_score
@@ -124,12 +117,11 @@ ranked AS (
 
     SELECT
         *,
-        -- p décroît strictement avec |z| : même classement, sans porter
-        -- le polynôme entier en clé de tri.
-        ROW_NUMBER() OVER (
-            PARTITION BY app_id, voted_up ORDER BY ABS(z_score) DESC, lexeme ASC
+        -- p décroît strictement avec |z| : même classement, en triant sur z.
+        row_number() OVER (
+            PARTITION BY app_id, voted_up ORDER BY abs(z_score) DESC, lexeme ASC
         ) AS p_rank,
-        COUNT(*) OVER (PARTITION BY app_id, voted_up) AS tested
+        count() OVER (PARTITION BY app_id, voted_up) AS tested
     FROM with_p
 
 ),
@@ -139,8 +131,9 @@ controlled AS (
     -- Benjamini-Hochberg : plus grand rang k tel que p(k) <= k*q/m.
     SELECT
         *,
-        MAX(p_rank) FILTER (
-            WHERE p_value <= p_rank * {{ var('fdr_q', 0.05) }} / tested
+        -- Aucun rang retenu : 0, que p_rank (>= 1) ne franchit jamais.
+        maxIf(
+            p_rank, p_value <= p_rank * {{ var('fdr_q', 0.05) }} / tested
         ) OVER (PARTITION BY app_id, voted_up) AS bh_cutoff
     FROM ranked
 
@@ -166,9 +159,9 @@ ordered AS (
         occurrences,
         reviews,
         p_value,
-        ROUND(delta::numeric, 4) AS log_odds_delta,
-        ROUND(z_score::numeric, 2) AS z_score,
-        ROW_NUMBER() OVER (
+        round(delta, 4) AS log_odds_delta,
+        round(z_score, 2) AS z_score,
+        row_number() OVER (
             PARTITION BY app_id, voted_up ORDER BY z_score DESC, lexeme ASC
         ) AS rank_in_game
     FROM retained

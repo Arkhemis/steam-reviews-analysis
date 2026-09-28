@@ -1,3 +1,4 @@
+import hashlib
 import json
 import time
 from collections.abc import Iterator
@@ -13,9 +14,7 @@ from dagster import (
     get_dagster_logger,
 )
 
-import psycopg
-
-from orchestration.postgres import PostgresResource
+from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.resources import SteamApiError, SteamResource
 
 EVENTS_WORKERS = 8
@@ -32,38 +31,30 @@ NO_ANNOUNCEMENT_HUB = 42
 # page récente, de ceux dont l'historique reste à charger.
 SELECT_APPS_SQL = """
 SELECT
-    c.app_id,
-    EXISTS (
-        SELECT 1 FROM raw.steam_events AS e WHERE e.app_id = c.app_id
-    ) AS has_events
-FROM raw.steam_review_counts AS c
+    app_id,
+    app_id IN (SELECT DISTINCT app_id FROM steam_events) AS has_events
+FROM steam_review_counts
 -- Un jeu tout juste recensé n'a pas encore de total : son compteur GetItems le remplace.
-WHERE COALESCE(c.total_reviews, c.steam_count) >= %s
-ORDER BY COALESCE(c.total_reviews, c.steam_count) DESC;
+WHERE coalesce(total_reviews, steam_count) >= {min_total_reviews:Int64}
+ORDER BY coalesce(total_reviews, steam_count) DESC
 """
 
 
 KNOWN_EVENT_SQL = """
 SELECT 1
-FROM raw.steam_events
-WHERE app_id = %s AND gid = ANY(%s)
+FROM steam_events
+WHERE app_id = {app_id:UInt32} AND gid IN {gids:Array(String)}
 LIMIT 1
 """
 
-
-UPSERT_EVENT_SQL = """
-INSERT INTO raw.steam_events (
-    gid, app_id, payload, rtime32_start_time
-)
-VALUES (%s, %s, %s, %s)
-ON CONFLICT (app_id, gid) DO UPDATE
-SET payload            = EXCLUDED.payload,
-    rtime32_start_time = EXCLUDED.rtime32_start_time,
-    loaded_at          = now()
--- Chaque page récente revient en entier : sans ce filtre, on réécrirait
--- chaque nuit des annonces inchangées et loaded_at ne dirait plus rien.
-WHERE raw.steam_events.payload IS DISTINCT FROM EXCLUDED.payload
+# Empreinte des annonces déjà en base, pour n'écrire que les nouvelles ou modifiées.
+KNOWN_HASHES_SQL = """
+SELECT app_id, gid, payload_hash
+FROM steam_events
+WHERE (app_id, gid) IN {keys:Array(Tuple(UInt32, String))}
 """
+
+EVENT_COLUMNS = ["gid", "app_id", "payload", "payload_hash", "rtime32_start_time"]
 
 
 class SteamEventsConfig(Config):
@@ -93,11 +84,13 @@ def steam_events(
     context: AssetExecutionContext,
     config: SteamEventsConfig,
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
     apps = [
         (row["app_id"], config.full_refresh or not row["has_events"])
-        for row in postgres.fetch_all(SELECT_APPS_SQL, (MIN_TOTAL_REVIEWS,))
+        for row in clickhouse.query(
+            SELECT_APPS_SQL, {"min_total_reviews": MIN_TOTAL_REVIEWS}
+        )
     ]
     total = len(apps)
     full_history = sum(1 for _, whole in apps if whole)
@@ -108,20 +101,17 @@ def steam_events(
     )
 
     scanned = 0
-    events_upserted = 0
+    events_fetched = 0
     events_written = 0
     apps_without_hub = 0
     apps_failed = 0
     start = time.monotonic()
 
-    with (
-        postgres.connect() as conn,
-        ThreadPoolExecutor(max_workers=EVENTS_WORKERS) as pool,
-    ):
+    with ThreadPoolExecutor(max_workers=EVENTS_WORKERS) as pool:
         for batch_start in range(0, total, EVENTS_BATCH_SIZE):
             batch = apps[batch_start : batch_start + EVENTS_BATCH_SIZE]
             results = list(
-                pool.map(lambda app: fetch_app_events(steam, postgres, *app), batch)
+                pool.map(lambda app: fetch_app_events(steam, clickhouse, *app), batch)
             )
 
             batch_rows = [
@@ -129,14 +119,10 @@ def steam_events(
                 for result in results
                 for event in result.events
             ]
-            if batch_rows:
-                with conn.cursor() as cur:
-                    cur.executemany(UPSERT_EVENT_SQL, batch_rows)
-                    events_written += cur.rowcount
-            conn.commit()
+            events_written += write_events(clickhouse, batch_rows)
 
             scanned += len(batch)
-            events_upserted += len(batch_rows)
+            events_fetched += len(batch_rows)
             apps_without_hub += sum(1 for r in results if r.missing_hub)
             apps_failed += sum(1 for r in results if r.failed)
 
@@ -145,7 +131,7 @@ def steam_events(
             eta_min = (total - scanned) / rate / 60 if rate > 0 else float("inf")
             context.log.info(
                 f"Scanné {scanned}/{total} ({scanned / total:.0%}) "
-                f"— {rate:.2f} jeux/s — {events_upserted} annonces ({events_written} écrites) — ETA {eta_min:.0f} min"
+                f"— {rate:.2f} jeux/s — {events_fetched} annonces ({events_written} écrites) — ETA {eta_min:.0f} min"
             )
 
     if apps_without_hub:
@@ -159,7 +145,7 @@ def steam_events(
         metadata={
             "apps_scanned": MetadataValue.int(scanned),
             "apps_full_history": MetadataValue.int(full_history),
-            "events_upserted": MetadataValue.int(events_upserted),
+            "events_fetched": MetadataValue.int(events_fetched),
             "events_written": MetadataValue.int(events_written),
             "apps_without_hub": MetadataValue.int(apps_without_hub),
             "apps_failed": MetadataValue.int(apps_failed),
@@ -168,19 +154,36 @@ def steam_events(
     )
 
 
+def write_events(clickhouse: ClickHouseResource, rows: list[tuple]) -> int:
+    """Insère les annonces nouvelles ou modifiées, et renvoie leur nombre.
+
+    Chaque page récente revient en entier : sans ce filtre, on réécrirait
+    chaque nuit des annonces inchangées et loaded_at ne dirait plus rien.
+    """
+    # Une même clé peut revenir deux fois dans le lot : la dernière gagne.
+    latest = {(row[1], row[0]): row for row in rows}
+    if not latest:
+        return 0
+    known = {
+        (row["app_id"], row["gid"]): row["payload_hash"]
+        for row in clickhouse.query(KNOWN_HASHES_SQL, {"keys": list(latest)})
+    }
+    changed = [row for key, row in latest.items() if known.get(key) != row[3]]
+    clickhouse.insert("steam_events", changed, EVENT_COLUMNS)
+    return len(changed)
+
+
 def has_known_event(
-    conn: psycopg.Connection, app_id: int, events: list[dict[str, Any]]
+    clickhouse: ClickHouseResource, app_id: int, events: list[dict[str, Any]]
 ) -> bool:
     """Dit si l'une des annonces de la page est déjà en base."""
     gids = [event_gid(event) for event in events]
-    with conn.cursor() as cur:
-        cur.execute(KNOWN_EVENT_SQL, (app_id, gids))
-        return cur.fetchone() is not None
+    return bool(clickhouse.query(KNOWN_EVENT_SQL, {"app_id": app_id, "gids": gids}))
 
 
 def iter_app_events(
     steam: SteamResource,
-    conn: psycopg.Connection,
+    clickhouse: ClickHouseResource,
     app_id: int,
     whole_history: bool,
 ) -> Iterator[dict[str, Any]]:
@@ -194,24 +197,23 @@ def iter_app_events(
         yield from events
         # Steam trie par rtime32_start_time décroissant : un gid déjà en base
         # signifie que le retard est rattrapé, quel qu'il soit.
-        if not whole_history and has_known_event(conn, app_id, events):
+        if not whole_history and has_known_event(clickhouse, app_id, events):
             return
         offset += len(events)
 
 
 def fetch_app_events(
     steam: SteamResource,
-    postgres: PostgresResource,
+    clickhouse: ClickHouseResource,
     app_id: int,
     whole_history: bool,
 ) -> AppEvents:
     """Récupère les annonces d'un jeu sans jamais faire tomber le run."""
     logger = get_dagster_logger()
     try:
-        with postgres.connect() as conn:
-            return AppEvents(
-                app_id, list(iter_app_events(steam, conn, app_id, whole_history))
-            )
+        return AppEvents(
+            app_id, list(iter_app_events(steam, clickhouse, app_id, whole_history))
+        )
     except SteamApiError as exc:
         if exc.success == NO_ANNOUNCEMENT_HUB:
             return AppEvents(app_id, [], missing_hub=True)
@@ -224,7 +226,7 @@ def fetch_app_events(
 
 def event_gid(event: dict[str, Any]) -> str:
     """Clé de l'annonce : le gid du post relaie celui de l'événement quand Steam
-    le laisse à 0, sinon elles s'écrasent entre elles sur la PK (app_id, gid)."""
+    le laisse à 0, sinon elles s'écrasent entre elles sur la clé (app_id, gid)."""
     gid = str(event["gid"])
     if gid == "0":
         return str(event.get("announcement_body", {}).get("gid") or gid)
@@ -232,10 +234,18 @@ def event_gid(event: dict[str, Any]) -> str:
 
 
 def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
-    """Ligne à upserter pour une annonce."""
+    """Ligne à insérer pour une annonce, empreinte du payload comprise."""
+    payload = json.dumps(event)
     return (
         event_gid(event),
         app_id,
-        json.dumps(event),
+        payload,
+        payload_hash(payload),
         event.get("rtime32_start_time"),
     )
+
+
+def payload_hash(payload: str) -> int:
+    """Empreinte stable sur 64 bits (hash() de Python change à chaque processus)."""
+    digest = hashlib.blake2b(payload.encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "little")

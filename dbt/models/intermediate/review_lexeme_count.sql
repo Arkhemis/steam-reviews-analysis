@@ -1,11 +1,8 @@
 {{
     config(
         tags=['nlp'],
-        pre_hook="SET work_mem = '1GB'; SET hash_mem_multiplier = 8; SET max_parallel_workers_per_gather = 0",
-        indexes=[
-            {'columns': ['app_id', 'voted_up'], 'type': 'btree'},
-            {'columns': ['lexeme'], 'type': 'btree'},
-        ]
+        order_by='(app_id, voted_up, lexeme)',
+        query_settings={'allow_experimental_nlp_functions': 1},
     )
 }}
 
@@ -17,8 +14,6 @@ WITH eligible AS (
         voted_up
     FROM {{ ref('steam_review') }}
     WHERE
-        -- Deux réglages distincts : Steam dit « koreana » ou « brazilian »
-        -- là où PostgreSQL attend un nom de configuration de recherche.
         language = '{{ var("terms_language", "english") }}'
         AND author_playtime_at_review_minutes > 120
         AND review_text_length > {{ var('min_review_length', 20) }}
@@ -29,18 +24,19 @@ WITH eligible AS (
 ranked AS (
 
     -- Classer sur les seuls identifiants : porter review_text ici ferait
-    -- trier une quinzaine de Go sur disque.
+    -- trier une quinzaine de Go.
     SELECT
         recommendation_id,
         app_id,
         voted_up,
-        COUNT(*) OVER (PARTITION BY app_id, voted_up) AS reviews_in_cell,
+        count() OVER (PARTITION BY app_id, voted_up) AS reviews_in_cell,
 
         -- recommendation_id croît avec le temps : trier dessus ne
-        -- retiendrait que les reviews de lancement.
-        ROW_NUMBER() OVER (
+        -- retiendrait que les reviews de lancement. Hash en hexadécimal
+        -- minuscule, comme MD5() de Postgres : même ordre, même échantillon.
+        row_number() OVER (
             PARTITION BY app_id, voted_up
-            ORDER BY MD5(recommendation_id::text)
+            ORDER BY lower(hex(MD5(toString(recommendation_id))))
         ) AS rank_in_cell
 
     FROM eligible
@@ -62,35 +58,30 @@ selected AS (
 
 ),
 
+-- Un texte copié-collé dans une même cellule ne compte qu'une fois.
 sampled AS (
 
-    SELECT DISTINCT ON (s.app_id, s.voted_up, MD5(r.review_text))
-        s.app_id,
-        s.voted_up,
-        r.review_text
-    FROM selected AS s
-    INNER JOIN {{ ref('steam_review') }} AS r
+    SELECT
+        s.recommendation_id AS recommendation_id,
+        s.app_id AS app_id,
+        s.voted_up AS voted_up,
+        r.review_text AS review_text
+    FROM {{ ref('steam_review') }} AS r
+    INNER JOIN selected AS s
         USING (recommendation_id, app_id)
     ORDER BY s.app_id, s.voted_up, MD5(r.review_text), s.recommendation_id
+    LIMIT 1 BY s.app_id, s.voted_up, MD5(r.review_text)  -- noqa: PRS
 
 ),
 
 lexemes AS (
 
     SELECT
-        s.app_id,
-        s.voted_up,
-        t.lexeme,
-        COALESCE(CARDINALITY(t.positions), 1) AS occurrences
-    FROM sampled AS s,
-        LATERAL UNNEST(
-            TO_TSVECTOR('{{ var("terms_search_config", "english") }}', s.review_text)
-        ) AS t (lexeme, positions, weights)
-    WHERE
-        LENGTH(t.lexeme) BETWEEN 3 AND 40
-
-        -- Écarte nombres, dates et fragments d'URL, que le stemmer laisse passer.
-        AND t.lexeme ~ '^[[:alpha:]]'
+        app_id,
+        voted_up,
+        recommendation_id,
+        arrayJoin({{ english_lexemes('review_text') }}) AS lexeme
+    FROM sampled
 
 ),
 
@@ -100,8 +91,8 @@ counted AS (
         app_id,
         voted_up,
         lexeme,
-        SUM(occurrences) AS occurrences,
-        COUNT(*) AS reviews
+        count() AS occurrences,
+        uniqExact(recommendation_id) AS reviews
     FROM lexemes
     GROUP BY app_id, voted_up, lexeme
 
