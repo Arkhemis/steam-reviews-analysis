@@ -1,6 +1,11 @@
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS citus_columnar;
+-- Pousse les filtres dans le scan columnar quelle que soit la corrélation (défaut 0,9) :
+-- app_id est regroupé mais pas trié (corrélation -0,35), sinon aucun chunk group n'est sauté.
+DO $$ BEGIN
+    EXECUTE format('ALTER DATABASE %I SET columnar.qual_pushdown_correlation_threshold = 0', current_database());
+END $$;
 -- ---------------------------------------------------------------------------
 -- Liste des jeux (source IGDB)
 -- ---------------------------------------------------------------------------
