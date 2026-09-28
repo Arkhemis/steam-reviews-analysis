@@ -25,7 +25,7 @@
 #   6. Verify: df -h /mnt/pgdata should show the real volume, not the root disk.
 #   7. As `deploy`, clone steam-reviews-analysis and steam-reviews-website
 #      into ~/apps (the /usr/local/bin/deploy launcher expects both).
-#   8. Only then: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   8. Only then, as `deploy`: run `deploy`.
 
 users:
   - name: deploy
