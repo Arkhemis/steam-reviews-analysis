@@ -11,6 +11,10 @@ from pydantic import PrivateAttr
 # comptage ou une jointure verrait les doublons en attente.
 SESSION_SETTINGS = {"final": 1}
 
+# Les paramètres liés partent dans l'URL, que le serveur borne à 1 Mio
+# (http_max_uri_size) : les longues listes s'envoient par tranches.
+PARAM_BATCH_SIZE = 5000
+
 
 class ClickHouseResource(ConfigurableResource):
     """Clients clickhouse-connect vers ClickHouse, un par thread.

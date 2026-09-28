@@ -25,6 +25,6 @@
 
 {% else %}
 
-{{ steam_review_parse(source('raw', 'steam_reviews')) }}
+    {{ steam_review_parse(source('raw', 'steam_reviews')) }}
 
 {% endif %}

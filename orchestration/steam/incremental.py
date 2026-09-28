@@ -1,3 +1,4 @@
+import itertools
 import json
 import time
 from collections.abc import Iterable, Iterator
@@ -12,7 +13,7 @@ from dagster import (
     get_dagster_logger,
 )
 
-from orchestration.clickhouse import ClickHouseResource
+from orchestration.clickhouse import PARAM_BATCH_SIZE, ClickHouseResource
 from orchestration.steam.backfill import (
     STOP_BACKOFF_BASE_SECONDS,
     REVIEW_COLUMNS,
@@ -417,8 +418,8 @@ def recount_backfilled(clickhouse: ClickHouseResource) -> int:
         for row in clickhouse.query(STORED_COUNTS_SQL)
         if row["total_reviews_backfilled"] != row["reviews_stored"]
     ]
-    if drifted:
-        ids, counts = zip(*drifted)
+    for batch in itertools.batched(drifted, PARAM_BATCH_SIZE):
+        ids, counts = zip(*batch)
         clickhouse.command(
             UPDATE_BACKFILLED_SQL, {"ids": list(ids), "counts": list(counts)}
         )

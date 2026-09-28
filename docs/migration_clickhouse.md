@@ -84,9 +84,10 @@ Budget mémoire sur le CX33 (8 Go) : ClickHouse plafonné à ~3,5 Go (`max_serve
 
 Valeurs de départ, d'après le banc : `max_server_memory_usage` à 3,5 Go, `max_memory_usage` à 2,5 Go par requête, débordement des tris et `GROUP BY` à partir de 1 Go.
 
-Utilisateurs : un seul compte, comme aujourd'hui (`CLICKHOUSE_USER`). Variables d'environnement :
+Utilisateurs : un compte d'écriture, comme aujourd'hui (`CLICKHOUSE_USER`), et en prod un compte `play` en lecture seule pour l'interface `/play` publiée sur `clickhouse.steam.reviews` (`users.d/play.xml`). Caddy force `user=play` et retire les autres identifiants : le compte d'écriture n'est pas joignable depuis internet. Variables d'environnement :
 
 - `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_USER` et `CLICKHOUSE_PASSWORD` pour les chargeurs, dbt, le site et dbgate ;
+- `CLICKHOUSE_PLAY_PASSWORD` pour le compte `play`, exigée par `docker-compose.prod.yml` ;
 - `POSTGRES_*` pour Dagster seul (`deploy/dagster.yaml`).
 
 ## Schéma ClickHouse
@@ -257,6 +258,7 @@ Un push sur `main` déclenche `deploy.yml`, dont le job `dbt-modified-models` la
    - Les deux PR prêtes : analyse, site, et branche LLM si elle est fusionnée d'ici là.
    - Validation complète en local sur l'échantillon de 10 % : chargeurs contre les API réelles, `dbt build`, pages du site.
    - Image ClickHouse figée.
+   - Sur le VPS : créer `/mnt/pgdata/clickhouse` et `/var/backups/clickhouse` au nom de l'uid 101 (celui de ClickHouse dans l'image), sinon Docker crée le second au nom de root et `BACKUP` échoue ; ajouter `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` et `CLICKHOUSE_PLAY_PASSWORD` au `.env`.
    - `BACKUP` d'essai d'une petite table vers `/var/backups/clickhouse`, puis `RESTORE` dans une base de test.
 1. **Gel.** Mettre en pause plannings et sensors Dagster, attendre la fin des runs. Le site continue de lire les marts Citus.
 2. *(supprimée : la sauvegarde de raw part de ClickHouse, à l'étape 7.)*

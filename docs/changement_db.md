@@ -1,6 +1,8 @@
 # Lenteur des filtres par app_id et alternatives à Citus columnar
 
-État au 28 septembre 2026.
+État au 28 septembre 2026, avant la décision de migrer vers ClickHouse.
+
+> Analyse antérieure à la migration. Le banc suivant ([migration_clickhouse.md](migration_clickhouse.md)) a montré que ClickHouse tient sous 3,5 Go de RAM sur le VPS, avec un disque proche de Citus, des agrégats ~8× plus rapides et un DML natif : la recommandation « rester sur Citus » ci-dessous est caduque.
 
 ## Diagnostic
 
@@ -19,7 +21,7 @@ Ce regroupement n'était pourtant pas utilisé, parce que Citus ne pousse un fil
 
 ## Correctif appliqué
 
-J'ai posé `ALTER DATABASE steam_reviews SET columnar.qual_pushdown_correlation_threshold = 0` en prod, et je l'ai versionné dans [db/init.sql](../db/init.sql).
+J'ai posé `ALTER DATABASE steam_reviews SET columnar.qual_pushdown_correlation_threshold = 0` en prod. Il n'est pas versionné : Citus disparaît avec la migration.
 
 | Requête | Avant | Après |
 | --- | --- | --- |

@@ -1,0 +1,32 @@
+<!-- Compte de l'interface publique /play (clickhouse.steam.reviews) : lecture seule,
+     requêtes bornées. Monté en prod seulement, avec CLICKHOUSE_PLAY_PASSWORD. -->
+<clickhouse>
+    <profiles>
+        <play>
+            <!-- 2 : /play fixe ses propres réglages (format, limites de résultat). -->
+            <readonly>2</readonly>
+            <max_threads>2</max_threads>
+            <max_memory_usage>1073741824</max_memory_usage>
+            <max_execution_time>60</max_execution_time>
+            <constraints>
+                <max_threads><max>2</max></max_threads>
+                <max_memory_usage><max>1073741824</max></max_memory_usage>
+                <max_execution_time><max>60</max></max_execution_time>
+            </constraints>
+        </play>
+    </profiles>
+    <users>
+        <play>
+            <password from_env="CLICKHOUSE_PLAY_PASSWORD"/>
+            <networks><ip>::/0</ip></networks>
+            <profile>play</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON raw.*</query>
+                <query>GRANT SELECT ON staging.*</query>
+                <query>GRANT SELECT ON intermediate.*</query>
+                <query>GRANT SELECT ON marts.*</query>
+            </grants>
+        </play>
+    </users>
+</clickhouse>

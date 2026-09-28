@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 import json
 import time
 from collections.abc import Iterator
@@ -14,7 +15,7 @@ from dagster import (
     get_dagster_logger,
 )
 
-from orchestration.clickhouse import ClickHouseResource
+from orchestration.clickhouse import PARAM_BATCH_SIZE, ClickHouseResource
 from orchestration.steam.resources import SteamApiError, SteamResource
 
 EVENTS_WORKERS = 8
@@ -166,7 +167,8 @@ def write_events(clickhouse: ClickHouseResource, rows: list[tuple]) -> int:
         return 0
     known = {
         (row["app_id"], row["gid"]): row["payload_hash"]
-        for row in clickhouse.query(KNOWN_HASHES_SQL, {"keys": list(latest)})
+        for keys in itertools.batched(latest, PARAM_BATCH_SIZE)
+        for row in clickhouse.query(KNOWN_HASHES_SQL, {"keys": list(keys)})
     }
     changed = [row for key, row in latest.items() if known.get(key) != row[3]]
     clickhouse.insert("steam_events", changed, EVENT_COLUMNS)

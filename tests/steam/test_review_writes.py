@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.backfill import (
     insert_reviews,
@@ -89,7 +91,11 @@ def test_reinserted_versions_are_deduplicated(clickhouse: ClickHouseResource) ->
     assert json.loads(rows[0][2])["review"] == stored[0]["text"]
 
 
-def test_recount_fixes_only_drifted_games(clickhouse: ClickHouseResource) -> None:
+def test_recount_fixes_only_drifted_games(
+    clickhouse: ClickHouseResource, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Un jeu par UPDATE : les corrections partent par tranches.
+    monkeypatch.setattr("orchestration.steam.incremental.PARAM_BATCH_SIZE", 1)
     clickhouse.command(
         "INSERT INTO steam_review_counts (app_id, total_reviews_backfilled, last_backfill_at) "
         "VALUES (10, 2, now64(6)), (20, 9, now64(6)), (30, NULL, now64(6)), (40, 5, NULL)"

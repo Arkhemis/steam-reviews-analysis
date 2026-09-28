@@ -92,7 +92,12 @@ funny AS (
         WHERE
             r.rank_in_game > {{ var('top_n_reviews', 30) }}
             AND r.votes_funny > 0
-            AND r.recommendation_id NOT IN (SELECT c.recommendation_id FROM crude AS c)
+            AND (r.app_id, r.recommendation_id) NOT IN (
+                SELECT
+                    c.app_id,
+                    c.recommendation_id
+                FROM crude AS c
+            )
     ) AS f
     WHERE funny_rank <= {{ var('top_funny_reviews', 10) }}
 
