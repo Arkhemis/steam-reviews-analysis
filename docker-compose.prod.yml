@@ -90,6 +90,7 @@ services:
       - website
       - dagster-webserver
       - dbgate
+      - clickhouse
 
 volumes:
   caddy_data:

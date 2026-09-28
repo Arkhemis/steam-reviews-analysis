@@ -33,3 +33,19 @@ db.steam.reviews {
 		output file /var/log/caddy/admin-access.log
 	}
 }
+
+# Interface /play de ClickHouse, protégée par le login ClickHouse : un basicauth
+# bloquerait /play, qui envoie « Authorization: never » et met le login dans l'URL.
+clickhouse.steam.reviews {
+	reverse_proxy clickhouse:8123
+
+	log {
+		output file /var/log/caddy/admin-access.log
+		# Le mot de passe passe dans l'URL : il ne doit pas finir dans le log.
+		format filter {
+			request>uri query {
+				delete password
+			}
+		}
+	}
+}
