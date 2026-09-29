@@ -161,45 +161,90 @@
         "dutch": ["douche"],
         "romanian": ["cum"]
     } -%}
-    {#- Une review en capitales perd souvent ses accents : « ENCULES » pour « enculé ». -#}
-    {#- ı et İ : RE2 ne les rapproche pas de i et I (« AMINA » en turc). -#}
-    {%- set latin_variants = ["aàáâãäå", "cç", "eéèêë", "iíìîïıİ", "nñ", "oóòôõö", "uúùûü", "yýÿ"] -%}
-    {%- set letter_class = {} -%}
+    {#- Une review en capitales perd souvent ses accents : « ENCULES » pour « enculé ».
+        Texte et mots sont ramenés à la lettre de base ; İ l'est avant lowerUTF8,
+        qui en ferait « i » + point combinant. -#}
+    {%- set latin_variants = ["aàáâãäå", "cç", "eéèêë", "iíìîïı", "nñ", "oóòôõö", "uúùûü", "yýÿ"] -%}
+    {%- set fold = {} -%}
     {%- for variants in latin_variants -%}
-        {%- for letter in variants -%}{%- do letter_class.update({letter: "[" ~ variants ~ "]"}) -%}{%- endfor -%}
+        {%- for letter in variants[1:] -%}{%- do fold.update({letter: variants[0]}) -%}{%- endfor -%}
     {%- endfor -%}
-    {#- RE2 n'a pas \m et \M : frontières de mot écrites à la main. Backslashes
-        doublés pour le littéral SQL de ClickHouse. -#}
-    {%- set word_start = "(?:^|[^\\\\pL\\\\pN_])" -%}
-    {%- set word_end = "(?:[^\\\\pL\\\\pN_]|$)" -%}
+    {%- set folded_text = "translateUTF8(lowerUTF8(translateUTF8(" ~ text_column ~ ", 'İ', 'i')), '"
+        ~ fold.keys() | join ~ "', '" ~ fold.values() | join ~ "')" -%}
+    {#- Pas de grande regex : les listes de mots sont deux fois plus rapides. Un mot est une
+        suite de lettres, chiffres et _, comme avant ; tokens() colle « … » ou « » »
+        au mot, et unicodeWord coupe tout caractère non ASCII. -#}
+    {%- set text_words = "extractAll(" ~ folded_text ~ ", '[\\\\p{L}\\\\p{N}_]+')" -%}
     {%- set glued_languages = ["schinese", "tchinese", "japanese", "koreana", "thai"] -%}
-    {%- set crude_patterns = {} -%}
+    {%- set review_language = "if(" ~ language_column ~ " IN ('" ~ swears.keys() | join("', '")
+        ~ "'), " ~ language_column ~ ", 'english')" -%}
+    {%- set english_words = [] -%}
+    {%- set native_words = [] -%}
+    {%- set false_friends = [] -%}
+    {%- set phrase_checks = {} -%}
     {%- for language in swears -%}
         {%- set glued = language in glued_languages -%}
-        {%- set native = swears[language] -%}
-        {%- set english = swears["english"] | reject("in", english_false_friends.get(language, [])) | list -%}
-        {%- set words = (english if glued else native + english) | unique | list -%}
-        {%- set long_words = [] -%}
-        {%- set short_words = [] -%}
-        {%- for word in words -%}
-            {%- set chars = [] -%}
-            {%- for char in word | lower -%}{%- do chars.append(letter_class.get(char, char)) -%}{%- endfor -%}
-            {%- if word | length > 3 -%}{%- do long_words.append(chars | join) -%}{%- else -%}{%- do short_words.append(chars | join) -%}{%- endif -%}
+        {%- set phrase_filters = [] -%}
+        {%- set phrases = [] -%}
+        {%- for word in (swears["english"] if glued else swears[language] + swears["english"]) | unique -%}
+            {%- set english = word in swears["english"] and (language == "english" or word not in swears[language]) -%}
+            {#- Découpé comme le texte. -#}
+            {%- set folded = [] -%}
+            {%- set parts = [""] -%}
+            {%- for char in word | lower -%}
+                {%- set char = fold.get(char, char) -%}
+                {%- do folded.append(char) -%}
+                {%- if char.isalnum() or char == "_" -%}{%- do parts.append(parts.pop() ~ char) -%}
+                {%- elif parts[-1] -%}{%- do parts.append("") -%}{%- endif -%}
+            {%- endfor -%}
+            {%- set base = parts | select | join(" ") -%}
+            {#- Le pluriel (e?s)? ne vaut que pour les mots de plus de 3 lettres. -#}
+            {%- for form in ([base, base ~ "s", base ~ "es"] if word | length > 3 else [base]) -%}
+                {%- if " " in form -%}{%- do phrases.append(" " ~ form ~ " ") -%}
+                {%- elif not english -%}{%- do native_words.append((language, form)) -%}
+                {%- elif language == "english" -%}{%- do english_words.append(form) -%}{%- endif -%}
+            {%- endfor -%}
+            {%- if " " in base -%}{%- do phrase_filters.append(folded | join) -%}{%- endif -%}
         {%- endfor -%}
-        {%- set parts = ["♥"] -%}
-        {%- if glued -%}{%- do parts.append(native | join("|")) -%}{%- endif -%}
-        {%- do parts.append(word_start ~ "(" ~ long_words | join("|") ~ ")(e?s)?" ~ word_end) -%}
-        {%- if short_words -%}{%- do parts.append(word_start ~ "(" ~ short_words | join("|") ~ ")" ~ word_end) -%}{%- endif -%}
-        {%- do crude_patterns.update({language: parts | join("|")}) -%}
+        {%- for word in english_false_friends.get(language, []) -%}
+            {%- for form in ([word, word ~ "s", word ~ "es"] if word | length > 3 else [word]) -%}
+                {%- do false_friends.append((language, form)) -%}
+            {%- endfor -%}
+        {%- endfor -%}
+        {#- Préfiltre sur le texte, puis frontières de mot sur les seules lignes retenues. -#}
+        {%- set checks = [] -%}
+        {%- if phrases -%}
+            {%- do checks.append("multiSearchAny(" ~ folded_text ~ ", ['" ~ phrase_filters | unique | join("', '")
+                ~ "']) AND multiSearchAny(concat(' ', arrayStringConcat(" ~ text_words ~ ", ' '), ' '), ['"
+                ~ phrases | unique | join("', '") ~ "'])") -%}
+        {%- endif -%}
+        {%- if glued -%}{%- do checks.append("multiSearchAny(" ~ text_column ~ ", ['" ~ swears[language] | join("', '") ~ "'])") -%}{%- endif -%}
+        {%- if checks -%}{%- do phrase_checks.update({language: checks | join(" OR ")}) -%}{%- endif -%}
     {%- endfor -%}
-    {#- multiIf n'évalue que la branche de la langue ; un CASE les évaluerait toutes. -#}
+    {%- set native_tuples = [] -%}
+    {%- for language, form in native_words | unique -%}{%- do native_tuples.append("('" ~ language ~ "', '" ~ form ~ "')") -%}{%- endfor -%}
+    {%- set false_friend_tuples = [] -%}
+    {%- for language, form in false_friends -%}{%- do false_friend_tuples.append("('" ~ language ~ "', '" ~ form ~ "')") -%}{%- endfor -%}
     ifNull(
-        multiIf(
-        {%- for language, pattern in crude_patterns.items() %}
-            {{ language_column }} = '{{ language }}', match({{ text_column }}, '(?i){{ pattern }}'),
-        {%- endfor %}
-            match({{ text_column }}, '(?i){{ crude_patterns["english"] }}')
-        ),
+        bitOr(bitOr(
+            arrayExists(
+                word -> bitOr(
+                    ({{ review_language }}, word) IN ({{ native_tuples | join(", ") }}),
+                    bitAnd(
+                        word IN ('{{ english_words | unique | join("', '") }}'),
+                        ({{ review_language }}, word) NOT IN ({{ false_friend_tuples | join(", ") }})
+                    )
+                ),
+                {{ text_words }}
+            ),
+            {#- multiIf n'évalue que la branche de la langue ; un CASE les évaluerait toutes. #}
+            multiIf(
+            {%- for language, check in phrase_checks.items() %}
+                {{ review_language }} = '{{ language }}', {{ check }},
+            {%- endfor %}
+                false
+            )
+        ), position({{ text_column }}, '♥') > 0),
         false
     )
 {%- endmacro %}

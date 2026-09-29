@@ -9,6 +9,9 @@
             <max_bytes_before_external_sort>1073741824</max_bytes_before_external_sort>
             <!-- grace_hash déborde sur disque ; les autres servent quand il ne s'applique pas. -->
             <join_algorithm>grace_hash,parallel_hash,hash</join_algorithm>
+            <!-- Profileurs coupés par défaut : trace_log ne se remplit qu'à la demande. -->
+            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
         </default>
     </profiles>
 </clickhouse>
