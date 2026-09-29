@@ -54,7 +54,8 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
     recommendation_id UInt64,
     app_id            UInt32,
-    payload           JSON,
+    -- ZSTD(3) : ratio 3,2 contre 1,9 en LZ4 par défaut.
+    payload           JSON CODEC(ZSTD(3)),
     timestamp_created Int64 CODEC(Delta, ZSTD),
     timestamp_updated Int64 CODEC(Delta, ZSTD),
     loaded_at         DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD)
@@ -87,4 +88,19 @@ CREATE TABLE IF NOT EXISTS raw.steam_game_details (
     payload   String CODEC(ZSTD(3)),
     loaded_at DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
+ORDER BY app_id;
+
+-- ---------------------------------------------------------------------------
+-- Résumés LLM des reviews par jeu
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw.game_review_summaries (
+    app_id                      UInt32,
+    summary                     String,
+    pros                        Array(String),
+    cons                        Array(String),
+    model                       String,
+    reviews_used                Int32,
+    total_reviews_at_generation Int64,
+    generated_at                DateTime64(6, 'UTC')
+) ENGINE = ReplacingMergeTree(generated_at)
 ORDER BY app_id;
