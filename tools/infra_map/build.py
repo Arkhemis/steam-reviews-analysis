@@ -21,15 +21,14 @@ sys.path.insert(0, str(REPO))
 
 # Valeurs factices : le chargement des définitions exige ces variables, aucune connexion n'est ouverte.
 for var in (
-    "POSTGRES_HOST",
-    "POSTGRES_USER",
-    "POSTGRES_PASSWORD",
-    "POSTGRES_DB",
+    "CLICKHOUSE_HOST",
+    "CLICKHOUSE_USER",
+    "CLICKHOUSE_PASSWORD",
     "IGDB_CLIENT_ID",
     "IGDB_CLIENT_SECRET",
 ):
     os.environ.setdefault(var, "infra-map")
-os.environ.setdefault("POSTGRES_PORT", "5432")
+os.environ.setdefault("CLICKHOUSE_PORT", "8123")
 
 SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.I)
 
@@ -114,53 +113,61 @@ def module_constants(source: str) -> list[dict]:
     return out
 
 
-def sql_tables(source: str) -> tuple[set[str], set[str]]:
-    reads = set(re.findall(r"\b(?:FROM|JOIN)\s+(raw\.\w+)", source))
-    writes = set(
-        re.findall(r"\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+(raw\.\w+)", source)
+def sql_tables(source: str, known: set[str]) -> tuple[set[str], set[str]]:
+    """Tables raw lues et écrites : le SQL des chargeurs ne nomme pas la base."""
+    name = r"(?:raw\.)?(\w+)"
+    reads = set(re.findall(rf"\b(?:FROM|JOIN)\s+{name}", source))
+    writes = set(re.findall(rf"\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+{name}", source))
+    writes |= set(re.findall(r"\.insert\(\s*\"(\w+)\"", source))
+    return (
+        {f"raw.{t}" for t in reads if f"raw.{t}" in known},
+        {f"raw.{t}" for t in writes if f"raw.{t}" in known},
     )
-    return reads, writes
+
+
+def split_column(line: str) -> tuple[str, str] | None:
+    """(nom, type) d'une ligne de colonne ; le type peut imbriquer des parenthèses."""
+    m = re.match(r"(\w+)\s+(.*)", line)
+    if not m:
+        return None
+    depth, end = 0, len(m.group(2))
+    for i, ch in enumerate(m.group(2)):
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if ch == " " and depth == 0:
+            end = i
+            break
+    return m.group(1), m.group(2)[:end]
 
 
 # ---------------------------------------------------------------------------
-# Postgres : tables raw depuis db/init.sql
+# ClickHouse : tables raw depuis db/clickhouse/init.sql
 # ---------------------------------------------------------------------------
+INIT_SQL = "db/clickhouse/init.sql"
+
+
 def raw_tables() -> dict[str, dict]:
-    sql = read(REPO / "db/init.sql")
+    sql = read(REPO / INIT_SQL)
     tables = {}
     for m in re.finditer(
-        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\)(.*?);", sql, re.S
+        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\) ENGINE = (\w+)", sql, re.S
     ):
-        name, body, tail = m.group(1), m.group(2), m.group(3)
-        cols = []
+        name, body, engine = m.group(1), m.group(2), m.group(3)
+        cols, comment = [], []
         for line in body.splitlines():
             line = line.strip().rstrip(",")
-            cm = re.match(
-                r"(\w+)\s+([A-Z][A-Z ]*(?:\[\])?(?:\s*\(\w+\))?)(.*?)(?:--\s*(.*))?$",
-                line,
-            )
-            if cm and cm.group(1).upper() not in ("PRIMARY", "UNIQUE", "CONSTRAINT"):
+            if line.startswith("--"):
+                comment.append(line.lstrip("- "))
+                continue
+            col = split_column(line)
+            if col:
                 cols.append(
-                    {
-                        "name": cm.group(1),
-                        "type": cm.group(2).strip(),
-                        "description": cm.group(4) or "",
-                    }
+                    {"name": col[0], "type": col[1], "description": " ".join(comment)}
                 )
-        tables[name] = {
-            "columns": cols,
-            "storage": "columnar" if "columnar" in tail else "heap",
-        }
-    for m in re.finditer(r"ALTER TABLE (raw\.\w+)(.*?);", sql, re.S):
-        for col, typ in re.findall(r"ADD COLUMN IF NOT EXISTS (\w+) (\w+)", m.group(2)):
-            tables.setdefault(m.group(1), {"columns": [], "storage": "heap"})[
-                "columns"
-            ].append(
-                {"name": col, "type": typ, "description": "migration (ALTER TABLE)"}
-            )
+            comment = []
+        tables[name] = {"columns": cols, "storage": engine}
     for name, t in tables.items():
         t["ddl"] = "\n\n".join(
-            b.strip() for b in re.split(r"\n(?=-- -+|CREATE|ALTER)", sql) if name in b
+            b.strip() for b in re.split(r"\n(?=-- -+|CREATE)", sql) if name in b
         )
     return tables
 
@@ -171,6 +178,8 @@ def raw_tables() -> dict[str, dict]:
 def load_orchestration():
 
     from orchestration.definitions import defs
+
+    raw_table_names = set(raw_tables())
     from orchestration.project import dbt_steam_reviews_project
 
     manifest = json.loads(Path(dbt_steam_reviews_project.manifest_path).read_text())
@@ -262,7 +271,7 @@ def load_orchestration():
             module = sys.modules[fn.__module__]
             module_src = inspect.getsource(module)
             src, line = inspect.getsourcelines(fn)
-            reads, writes = sql_tables(module_src)
+            reads, writes = sql_tables(module_src, raw_table_names)
             calls = set(
                 re.findall(
                     r"\.(get_summary|get_all_reviews|get_events|get_store_items|download_dump)\(",

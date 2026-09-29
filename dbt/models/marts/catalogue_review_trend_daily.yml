@@ -11,7 +11,7 @@ models:
       catalogue ou un volume d'avis par jour se lisaient jusqu'ici en
       réagrégeant douze mois de (jeu, jour) à chaque affichage — des centaines
       de milliers de lignes pour en rendre 365. Ici, une ligne par jour, lue
-      par index.
+      dans une table triée par date.
 
       Le grain est le jour de création de la review, pas celui de son édition :
       il vient tel quel du modèle source.

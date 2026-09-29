@@ -15,7 +15,7 @@ models:
       retenue d'abord, puis les jeux sont classés entre eux.
 
       Sans ce modèle, le site devrait parcourir staging.steam_review — une
-      table columnar de plusieurs dizaines de Go, sans index — à chaque
+      table de plusieurs dizaines de Go, triée par jeu et non par date — à chaque
       expiration de cache. Le scan est fait ici une fois par nuit, restreint
       aux trente derniers jours.
 

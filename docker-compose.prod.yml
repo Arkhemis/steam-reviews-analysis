@@ -2,6 +2,23 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 services:
+  clickhouse:
+    volumes:
+      - type: bind
+        source: /mnt/pgdata/clickhouse
+        target: /var/lib/clickhouse
+        bind:
+          create_host_path: false
+      # Sur le disque local, pas sur le volume : BACKUP ... TO File('...').
+      - /var/backups/clickhouse:/backups
+      - ./deploy/clickhouse/config.d/steam.xml:/etc/clickhouse-server/config.d/steam.xml:ro
+      - ./deploy/clickhouse/users.d/steam.xml:/etc/clickhouse-server/users.d/steam.xml:ro
+      # Compte de clickhouse.steam.reviews, en prod seulement.
+      - ./deploy/clickhouse/users.d/play.xml:/etc/clickhouse-server/users.d/play.xml:ro
+      - ./db/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      CLICKHOUSE_PLAY_PASSWORD: ${CLICKHOUSE_PLAY_PASSWORD:?}
+
   postgres:
     volumes:
       - type: bind
@@ -23,8 +40,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     depends_on:
       postgres:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
 
   dbgate:
@@ -32,7 +55,12 @@ services:
     restart: unless-stopped
     environment:
       SKIP_ALL_AUTH: "true"
-      CONNECTIONS: postgres
+      CONNECTIONS: clickhouse,postgres
+      LABEL_clickhouse: ClickHouse
+      URL_clickhouse: http://clickhouse:8123
+      USER_clickhouse: ${CLICKHOUSE_USER}
+      PASSWORD_clickhouse: ${CLICKHOUSE_PASSWORD}
+      ENGINE_clickhouse: clickhouse@dbgate-plugin-clickhouse
       LABEL_postgres: Postgres
       SERVER_postgres: postgres
       PORT_postgres: "5432"
@@ -44,6 +72,8 @@ services:
       - dbgate_data:/root/.dbgate
     depends_on:
       postgres:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
 
   caddy:
@@ -64,6 +94,7 @@ services:
       - website
       - dagster-webserver
       - dbgate
+      - clickhouse
 
 volumes:
   caddy_data:

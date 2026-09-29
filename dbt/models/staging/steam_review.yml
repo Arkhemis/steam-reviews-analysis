@@ -4,9 +4,11 @@ models:
   - name: steam_review
     description: >
       Dernière version de chaque review Steam, nettoyée et typée depuis le payload
-      JSON brut. Vue : steam_review_versions privée de steam_review_outdated.
-    # Tests complets le dimanche seulement : chacun relit les 183 M lignes à travers l'anti-join.
-    # Le delta de chaque nuit est testé sur steam_review_versions.
+      JSON de raw. Table ReplacingMergeTree(review_version), alimentée en append :
+      les versions dépassées disparaissent à la fusion, et final = 1 les masque
+      avant. Une correction de parse se fait par UPDATE, sans reconstruction.
+    # Tests de la table entière le dimanche seulement (183 M lignes) ;
+    # chaque nuit, les tests de colonnes ne lisent que les 3 derniers jours.
     data_tests:
       - weekly_unique_combination_of_columns:
           arguments:
@@ -19,108 +21,180 @@ models:
             error_if: ">10000"
     columns:
       - name: recommendation_id
+        data_type: "UInt64"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: Identifiant Steam de la review (unique par jeu, pas globalement).
 
       - name: app_id
+        data_type: "UInt32"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: Identifiant de l'application Steam concernée.
 
       - name: author_steamid
+        data_type: "Nullable(UInt64)"
         description: Identifiant Steam (64 bits) de l'auteur de la review.
 
       - name: author_personaname
+        data_type: "Nullable(String)"
         description: Pseudo affiché de l'auteur au moment de la review.
 
       - name: author_profile_url
+        data_type: "Nullable(String)"
         description: URL du profil Steam de l'auteur.
 
       - name: author_avatar
+        data_type: "Nullable(String)"
         description: URL de l'avatar de l'auteur.
 
       - name: author_persona_status
+        data_type: "Nullable(String)"
         description: Statut de présence Steam de l'auteur (ex. en ligne, hors ligne).
 
       - name: author_num_games_owned
+        data_type: "Nullable(Int32)"
         description: Nombre de jeux possédés par l'auteur.
 
       - name: author_num_reviews
+        data_type: "Nullable(Int32)"
         description: Nombre total de reviews écrites par l'auteur.
 
       - name: author_playtime_forever_minutes
+        data_type: "Nullable(Int32)"
         description: Temps de jeu total de l'auteur sur ce jeu, en minutes.
 
       - name: author_playtime_at_review_minutes
+        data_type: "Nullable(Int32)"
         description: Temps de jeu de l'auteur au moment de la review, en minutes.
 
       - name: author_playtime_last_two_weeks_minutes
+        data_type: "Nullable(Int32)"
         description: Temps de jeu de l'auteur sur les deux dernières semaines, en minutes.
 
       - name: author_last_played_at
+        data_type: "Nullable(DateTime('UTC'))"
         description: Horodatage de la dernière session de jeu de l'auteur.
 
       - name: review_text
+        data_type: "Nullable(String)"
+        codec: ZSTD(3)
         description: Texte libre de la review.
 
       - name: review_text_length
+        data_type: "Nullable(UInt32)"
         description: >
           Longueur de review_text en caractères (NULL si la review est sans
           texte). Matérialisée pour que les modèles aval puissent filtrer sur
           la taille sans relire toute la colonne review_text.
 
       - name: is_generic
+        data_type: "Bool"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: >
           Vrai si la review est mise en forme en checklist (✅ / ☐), un gabarit
           récurrent qui produit peu de texte utile.
 
       - name: has_profanity
+        data_type: "Bool"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: >
           Vrai si la review est grossière : une série de cœurs de Steam
           (« ♥♥♥♥ ») ou un gros mot écrit en clair dans sa langue. Voir la
           macro has_profanity.
 
       - name: language
+        data_type: "LowCardinality(Nullable(String))"
         description: Langue déclarée de la review (code langue Steam, ex. french, english).
 
       - name: voted_up
+        data_type: "Nullable(Bool)"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: Vrai si la review est positive (recommandation), faux sinon.
 
       - name: votes_up
+        data_type: "Nullable(Int32)"
         description: Nombre de votes "utile" reçus par la review.
 
       - name: votes_funny
+        data_type: "Nullable(Int32)"
         description: Nombre de votes "drôle" reçus par la review.
 
       - name: weighted_vote_score
+        data_type: "Nullable(Decimal(38, 20))"
         description: Score de pertinence pondéré utilisé par Steam pour le tri des reviews.
 
       - name: comment_count
+        data_type: "Nullable(Int32)"
         description: Nombre de commentaires sur la review.
 
       - name: steam_purchase
+        data_type: "Nullable(Bool)"
         description: Vrai si le jeu a été acheté sur Steam par l'auteur.
 
       - name: received_for_free
+        data_type: "Nullable(Bool)"
         description: Vrai si l'auteur a reçu le jeu gratuitement.
 
       - name: written_during_early_access
+        data_type: "Nullable(Bool)"
         description: Vrai si la review a été écrite alors que le jeu était en accès anticipé.
 
       - name: primarily_steam_deck
+        data_type: "Nullable(Bool)"
         description: Vrai si l'auteur joue principalement sur Steam Deck.
 
       - name: refunded
+        data_type: "Nullable(Bool)"
         description: Vrai si l'achat a été remboursé.
 
       - name: app_release_date
+        data_type: "Nullable(DateTime64(3, 'UTC'))"
         description: Date de sortie du jeu telle que renseignée dans le payload de la review.
 
       - name: reactions
+        data_type: "Nullable(String)"
+        codec: ZSTD(3)
         description: Réactions (emojis) laissées sur la review, au format JSON brut.
 
       - name: created_at
+        data_type: "DateTime('UTC')"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: Horodatage de création de la review.
 
       - name: updated_at
+        data_type: "DateTime('UTC')"
+        data_tests:
+          - not_null:
+              config:
+                where: "loaded_at > now() - INTERVAL 3 DAY"
         description: Horodatage de dernière mise à jour de la review.
 
       - name: loaded_at
-        description: Horodatage de chargement de la review par Dagster.
+        data_type: "DateTime64(6, 'UTC')"
+        description: >
+          Horodatage de chargement de la version dans raw ; sert à relire raw
+          depuis le dernier passage.
+
+      - name: review_version
+        data_type: "UInt64"
+        description: >
+          Version retenue par ReplacingMergeTree : timestamp_updated dans les 32
+          bits hauts, secondes de loaded_at dans les 32 bits bas. La version la
+          plus récente gagne, puis, à version égale, la dernière capture.

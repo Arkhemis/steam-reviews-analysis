@@ -29,6 +29,10 @@ run_launcher:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
       - POSTGRES_DB
+      - CLICKHOUSE_HOST
+      - CLICKHOUSE_PORT
+      - CLICKHOUSE_USER
+      - CLICKHOUSE_PASSWORD
       - IGDB_CLIENT_ID
       - IGDB_CLIENT_SECRET
     network: steam-reviews-analysis_default

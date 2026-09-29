@@ -1,10 +1,4 @@
-{{
-    config(
-        indexes=[
-            {'columns': ['app_id', 'started_on'], 'type': 'btree'},
-        ]
-    )
-}}
+{{ config(order_by='(app_id, started_on)') }}
 
 WITH eligible_events AS (
 
@@ -20,8 +14,8 @@ WITH eligible_events AS (
         image_urls,
         votes_up + votes_down AS total_votes,
 
-        COALESCE(
-            votes_down::numeric / NULLIF(votes_up + votes_down, 0),
+        coalesce(
+            votes_down / nullIf(votes_up + votes_down, 0),
             0
         ) AS pct_negative
 
@@ -34,9 +28,9 @@ monthly_score AS (
 
     SELECT
         app_id,
-        DATE_TRUNC('month', review_date)::date AS period_month,
-        SUM(total_reviews) AS reviews,
-        SUM(total_positive) AS positive_reviews
+        toStartOfMonth(review_date) AS period_month,
+        sum(total_reviews) AS reviews,
+        sum(total_positive) AS positive_reviews
     FROM {{ ref('game_review_trend_daily') }}
     GROUP BY 1, 2
 
@@ -48,10 +42,11 @@ monthly_baseline AS (
         app_id,
         period_month,
         reviews,
-        positive_reviews::numeric / NULLIF(reviews, 0) AS pct_positive,
+        positive_reviews / nullIf(reviews, 0) AS pct_positive,
 
-        SUM(positive_reviews) OVER w
-        / NULLIF(SUM(reviews) OVER w, 0) AS baseline_positive
+        -- Premier mois : fenêtre vide, somme à 0, baseline NULL comme en Postgres.
+        sum(positive_reviews) OVER w
+        / nullIf(sum(reviews) OVER w, 0) AS baseline_positive
 
     FROM monthly_score
     WINDOW w AS (
@@ -74,7 +69,7 @@ shock_months AS (
     FROM monthly_baseline
     WHERE
         reviews >= {{ var('shock_min_reviews', 200) }}
-        AND ABS(pct_positive - baseline_positive) >= {{ var('shock_delta', 0.15) }}
+        AND abs(pct_positive - baseline_positive) >= {{ var('shock_delta', 0.15) }}
 
 ),
 
@@ -91,8 +86,8 @@ most_discussed AS (
         SELECT
             app_id,
             gid,
-            ROW_NUMBER() OVER (
-                PARTITION BY app_id, EXTRACT(YEAR FROM started_on)
+            row_number() OVER (
+                PARTITION BY app_id, toYear(started_on)
                 ORDER BY total_votes DESC, comment_count DESC, gid ASC
             ) AS rk
         FROM eligible_events
@@ -110,8 +105,8 @@ controversial AS (
         SELECT
             app_id,
             gid,
-            ROW_NUMBER() OVER (
-                PARTITION BY app_id, DATE_TRUNC('month', started_on)
+            row_number() OVER (
+                PARTITION BY app_id, toStartOfMonth(started_on)
                 ORDER BY votes_down DESC, gid ASC
             ) AS rk
         FROM eligible_events
@@ -134,10 +129,10 @@ shock_rescue AS (
         gid
     FROM (
         SELECT
-            e.app_id,
-            e.gid,
-            ROW_NUMBER() OVER (
-                PARTITION BY e.app_id, DATE_TRUNC('month', e.started_on)
+            e.app_id AS app_id,
+            e.gid AS gid,
+            row_number() OVER (
+                PARTITION BY e.app_id, toStartOfMonth(e.started_on)
                 ORDER BY
                     CASE WHEN s.delta < 0 THEN e.pct_negative ELSE -e.pct_negative END DESC,
                     e.total_votes DESC,
@@ -147,7 +142,7 @@ shock_rescue AS (
         INNER JOIN shock_months AS s
             ON
                 e.app_id = s.app_id
-                AND DATE_TRUNC('month', e.started_on) = s.period_month
+                AND toStartOfMonth(e.started_on) = s.period_month
         WHERE e.total_votes >= {{ var('controversy_min_votes', 100) }}
     ) AS ranked
     WHERE rk <= 1
@@ -161,14 +156,14 @@ selected AS (
         gid
     FROM most_discussed
 
-    UNION
+    UNION DISTINCT
 
     SELECT
         app_id,
         gid
     FROM controversial
 
-    UNION
+    UNION DISTINCT
 
     SELECT
         app_id,
@@ -178,8 +173,8 @@ selected AS (
 )
 
 SELECT
-    e.app_id,
-    e.gid,
+    e.app_id AS app_id,
+    e.gid AS gid,
     e.started_on,
     e.event_category,
     e.headline,
@@ -187,18 +182,20 @@ SELECT
     e.votes_down,
     e.comment_count,
 
-    ROW_NUMBER() OVER (
-        PARTITION BY e.app_id, EXTRACT(YEAR FROM e.started_on)
+    row_number() OVER (
+        PARTITION BY e.app_id, toYear(e.started_on)
         ORDER BY e.total_votes DESC, e.comment_count DESC, e.gid ASC
     ) AS rank_in_year,
 
-    e.image_urls[1] AS image_url,
+    -- Un tableau vide renvoie '' en ClickHouse : NULL, comme Postgres.
+    if(empty(e.image_urls), NULL, e.image_urls[1]) AS image_url,
 
-    ROUND(e.pct_negative, 4) AS pct_negative,
+    round(e.pct_negative, 4) AS pct_negative,
 
-    (
+    CAST(
         e.pct_negative <= {{ var('controversy_pct_negative', 0.25) }}
-        OR e.total_votes < {{ var('controversy_min_votes', 100) }}
+        OR e.total_votes < {{ var('controversy_min_votes', 100) }},
+        'Nullable(Bool)'
     ) AS is_well_received
 
 FROM eligible_events AS e

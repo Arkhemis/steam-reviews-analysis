@@ -1,15 +1,30 @@
--- Dernière version de chaque review : versions moins le registre des versions dépassées.
--- Les consommateurs posent enable_mergejoin = off (cf. dbt_project.yml) : sinon tri des 183 M lignes.
-{{ config(materialized='view') }}
+-- Dernière version de chaque review. ReplacingMergeTree(review_version) ne
+-- garde, à la fusion, que la version la plus récente, puis la dernière capture.
+-- full_refresh=false : reconstruire doublerait le disque le temps du build.
+-- final = 0 : la déduplication de raw est inutile, celle de cette table suffit.
+{{ config(
+    materialized='incremental',
+    incremental_strategy='append',
+    engine='ReplacingMergeTree(review_version)',
+    order_by='(app_id, recommendation_id)',
+    settings={'enable_block_number_column': 1, 'enable_block_offset_column': 1},
+    query_settings={'final': 0},
+    on_schema_change='append_new_columns',
+    full_refresh=false,
+    contract={'enforced': true},
+) }}
 
-SELECT v.*
-FROM {{ ref('steam_review_versions') }} AS v
-WHERE
-    NOT EXISTS (
-        SELECT 1
-        FROM {{ ref('steam_review_outdated') }} AS o
-        WHERE
-            o.app_id = v.app_id
-            AND o.recommendation_id = v.recommendation_id
-            AND o.updated_at = v.updated_at
-    )
+{% if is_incremental() %}
+
+-- Les lignes de raw chargées depuis le dernier passage, moins 2 jours de marge.
+-- Les versions relues reviennent avec la même review_version et fusionnent.
+{{ steam_review_parse(
+    "(SELECT * FROM " ~ source('raw', 'steam_reviews')
+    ~ " WHERE loaded_at > (SELECT max(loaded_at) FROM " ~ this ~ ") - INTERVAL 2 DAY)"
+) }}
+
+{% else %}
+
+    {{ steam_review_parse(source('raw', 'steam_reviews')) }}
+
+{% endif %}

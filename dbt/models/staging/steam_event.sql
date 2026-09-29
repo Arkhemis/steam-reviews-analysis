@@ -1,37 +1,42 @@
+{{ config(order_by='(app_id, gid)') }}
+
 SELECT
     app_id,
-    gid COLLATE "C" AS gid,
+    gid,
 
     -- announcement_body.gid est l'id du post, distinct du gid de l'événement
-    (payload -> 'announcement_body' ->> 'gid') COLLATE "C" AS announcement_gid,
+    JSONExtract(payload, 'announcement_body', 'gid', 'Nullable(String)') AS announcement_gid,
 
     -- 28 = actu, 12/13/14 = mise à jour, 20/21/35 = promo, 11 = stream, 10 = sortie
-    (payload ->> 'event_type')::int AS event_type,
-    (payload ->> 'comment_type') COLLATE "C" AS comment_type,
+    JSONExtract(payload, 'event_type', 'Nullable(Int32)') AS event_type,
+    JSONExtract(payload, 'comment_type', 'Nullable(String)') AS comment_type,
 
-    NULLIF((payload ->> 'build_id')::bigint, 0) AS build_id,
-    NULLIF(payload ->> 'build_branch', '') COLLATE "C" AS build_branch,
+    nullIf(JSONExtract(payload, 'build_id', 'Nullable(Int64)'), 0) AS build_id,
+    nullIf(JSONExtract(payload, 'build_branch', 'Nullable(String)'), '') AS build_branch,
 
-    (payload -> 'announcement_body' ->> 'headline') COLLATE "C" AS headline,
-    (payload -> 'announcement_body' ->> 'body') COLLATE "C" AS announcement_text,
-    payload -> 'announcement_body' -> 'tags' AS tags,
+    JSONExtract(payload, 'announcement_body', 'headline', 'Nullable(String)') AS headline,
+    JSONExtract(payload, 'announcement_body', 'body', 'Nullable(String)') AS announcement_text,
+    JSONExtract(payload, 'announcement_body', 'tags', 'Array(String)') AS tags,
 
-    TO_TIMESTAMP(rtime32_start_time) AS started_at,  -- noqa: CP02
-    TO_TIMESTAMP((payload -> 'announcement_body' ->> 'posttime')::bigint) AS posted_at,
-    TO_TIMESTAMP((payload -> 'announcement_body' ->> 'updatetime')::bigint) AS updated_at,
-    TO_TIMESTAMP((payload ->> 'rtime32_last_modified')::bigint) AS last_modified_at,
+    toDateTime(rtime32_start_time, 'UTC') AS started_at,  -- noqa: CP02
+    toDateTime(JSONExtract(payload, 'announcement_body', 'posttime', 'Nullable(Int64)'), 'UTC') AS posted_at,
+    toDateTime(JSONExtract(payload, 'announcement_body', 'updatetime', 'Nullable(Int64)'), 'UTC') AS updated_at,
+    toDateTime(JSONExtract(payload, 'rtime32_last_modified', 'Nullable(Int64)'), 'UTC') AS last_modified_at,
 
     -- Steam met 0 pour « absent » sur ces cinq champs, d'un tiers des annonces
     -- (end_time) à la quasi-totalité (visibility_end).
-    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_end_time')::bigint, 0)) AS ended_at,
-    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_visibility_start')::bigint, 0)) AS visible_from,
-    TO_TIMESTAMP(NULLIF((payload ->> 'rtime32_visibility_end')::bigint, 0)) AS visible_until,
-    TO_TIMESTAMP(NULLIF((payload ->> 'rtime_created')::bigint, 0)) AS created_at,
-    TO_TIMESTAMP(NULLIF((payload ->> 'rtime_mod_reviewed')::bigint, 0)) AS mod_reviewed_at,
+    toDateTime(nullIf(JSONExtract(payload, 'rtime32_end_time', 'Nullable(Int64)'), 0), 'UTC') AS ended_at,
+    toDateTime(nullIf(JSONExtract(payload, 'rtime32_visibility_start', 'Nullable(Int64)'), 0), 'UTC')
+        AS visible_from,
+    toDateTime(nullIf(JSONExtract(payload, 'rtime32_visibility_end', 'Nullable(Int64)'), 0), 'UTC')
+        AS visible_until,
+    toDateTime(nullIf(JSONExtract(payload, 'rtime_created', 'Nullable(Int64)'), 0), 'UTC') AS created_at,
+    toDateTime(nullIf(JSONExtract(payload, 'rtime_mod_reviewed', 'Nullable(Int64)'), 0), 'UTC')
+        AS mod_reviewed_at,
 
-    (payload -> 'announcement_body' ->> 'voteupcount')::int AS votes_up,
-    (payload -> 'announcement_body' ->> 'votedowncount')::int AS votes_down,
-    (payload -> 'announcement_body' ->> 'commentcount')::int AS comment_count,
+    JSONExtract(payload, 'announcement_body', 'voteupcount', 'Nullable(Int32)') AS votes_up,
+    JSONExtract(payload, 'announcement_body', 'votedowncount', 'Nullable(Int32)') AS votes_down,
+    JSONExtract(payload, 'announcement_body', 'commentcount', 'Nullable(Int32)') AS comment_count,
 
     loaded_at
 

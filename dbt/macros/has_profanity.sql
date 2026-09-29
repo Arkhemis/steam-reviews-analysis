@@ -162,11 +162,16 @@
         "romanian": ["cum"]
     } -%}
     {#- Une review en capitales perd souvent ses accents : « ENCULES » pour « enculé ». -#}
-    {%- set latin_variants = ["aàáâãäå", "cç", "eéèêë", "iíìîï", "nñ", "oóòôõö", "uúùûü", "yýÿ"] -%}
+    {#- ı et İ : RE2 ne les rapproche pas de i et I (« AMINA » en turc). -#}
+    {%- set latin_variants = ["aàáâãäå", "cç", "eéèêë", "iíìîïıİ", "nñ", "oóòôõö", "uúùûü", "yýÿ"] -%}
     {%- set letter_class = {} -%}
     {%- for variants in latin_variants -%}
         {%- for letter in variants -%}{%- do letter_class.update({letter: "[" ~ variants ~ "]"}) -%}{%- endfor -%}
     {%- endfor -%}
+    {#- RE2 n'a pas \m et \M : frontières de mot écrites à la main. Backslashes
+        doublés pour le littéral SQL de ClickHouse. -#}
+    {%- set word_start = "(?:^|[^\\\\pL\\\\pN_])" -%}
+    {%- set word_end = "(?:[^\\\\pL\\\\pN_]|$)" -%}
     {%- set glued_languages = ["schinese", "tchinese", "japanese", "koreana", "thai"] -%}
     {%- set crude_patterns = {} -%}
     {%- for language in swears -%}
@@ -183,17 +188,18 @@
         {%- endfor -%}
         {%- set parts = ["♥"] -%}
         {%- if glued -%}{%- do parts.append(native | join("|")) -%}{%- endif -%}
-        {%- do parts.append("\\m(" ~ long_words | join("|") ~ ")(e?s)?\\M") -%}
-        {%- if short_words -%}{%- do parts.append("\\m(" ~ short_words | join("|") ~ ")\\M") -%}{%- endif -%}
+        {%- do parts.append(word_start ~ "(" ~ long_words | join("|") ~ ")(e?s)?" ~ word_end) -%}
+        {%- if short_words -%}{%- do parts.append(word_start ~ "(" ~ short_words | join("|") ~ ")" ~ word_end) -%}{%- endif -%}
         {%- do crude_patterns.update({language: parts | join("|")}) -%}
     {%- endfor -%}
-    COALESCE(
-        CASE {{ language_column }}
+    {#- multiIf n'évalue que la branche de la langue ; un CASE les évaluerait toutes. -#}
+    ifNull(
+        multiIf(
         {%- for language, pattern in crude_patterns.items() %}
-            WHEN '{{ language }}' THEN ({{ text_column }} COLLATE "und-x-icu") ~* '{{ pattern }}'
+            {{ language_column }} = '{{ language }}', match({{ text_column }}, '(?i){{ pattern }}'),
         {%- endfor %}
-            ELSE ({{ text_column }} COLLATE "und-x-icu") ~* '{{ crude_patterns["english"] }}'
-        END,
-        FALSE
+            match({{ text_column }}, '(?i){{ crude_patterns["english"] }}')
+        ),
+        false
     )
 {%- endmacro %}

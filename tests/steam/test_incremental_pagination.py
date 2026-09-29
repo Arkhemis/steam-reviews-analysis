@@ -10,8 +10,6 @@ from typing import Any
 
 import pytest
 
-from contextlib import contextmanager
-
 from orchestration.steam import incremental
 from orchestration.steam.backfill import SUMMARY_RETRIES
 from orchestration.steam.incremental import NewReviewPages, sync_app_reviews
@@ -121,91 +119,61 @@ def test_replays_page_one_when_the_summary_is_missing(slept: list[float]) -> Non
     assert pages.reached_checkpoint
 
 
-class FakeCursor:
-    def __init__(self, conn: "FakeConn") -> None:
-        self.conn = conn
+class FakeClickHouse:
+    """Enregistre les insertions et les UPDATE au lieu de les jouer."""
 
-    def __enter__(self) -> "FakeCursor":
-        return self
-
-    def __exit__(self, *exc_info: object) -> bool:
-        return False
-
-    def execute(self, sql: str, params: tuple) -> None:
-        target = (
-            self.conn.summaries if "total_positive" in sql else self.conn.checkpoints
-        )
-        target.append(params)
-
-    def executemany(self, sql: str, rows: list[tuple]) -> None:
-        self.conn.inserted.extend(rows)
-
-
-class FakeConn:
     def __init__(self) -> None:
         self.inserted: list[tuple] = []
-        self.checkpoints: list[tuple] = []
-        self.summaries: list[tuple] = []
-        self.commits = 0
+        self.checkpoints: list[dict] = []
+        self.summaries: list[dict] = []
 
-    def cursor(self) -> FakeCursor:
-        return FakeCursor(self)
+    def insert(self, table: str, rows: list[tuple], column_names: list[str]) -> None:
+        self.inserted.extend(rows)
 
-    def commit(self) -> None:
-        self.commits += 1
-
-    def rollback(self) -> None:
-        self.inserted.clear()
-        self.checkpoints.clear()
-
-
-class FakePostgres:
-    def __init__(self, conn: FakeConn) -> None:
-        self.conn = conn
-
-    @contextmanager
-    def connect(self):
-        yield self.conn
+    def command(self, sql: str, parameters: dict) -> None:
+        target = self.summaries if "total_positive" in sql else self.checkpoints
+        target.append(parameters)
 
 
 def test_sync_hands_the_census_total_to_the_paginator(slept: list[float]) -> None:
     """Le total recensé doit descendre jusqu'au paginateur, sinon rien ne change."""
     steam = FakeSteam(reviews(86), total_reviews=None)
-    conn = FakeConn()
+    clickhouse = FakeClickHouse()
 
     result = sync_app_reviews(
         steam,
-        FakePostgres(conn),
+        clickhouse,
         app_id=3544130,
         last_seen_timestamp_updated=0,
         total_reviews=86,
     )
 
     assert result.reached_checkpoint
-    assert len(conn.inserted) == 86
+    assert len(clickhouse.inserted) == 86
     assert slept == []
 
 
 def test_sync_keeps_page_one_totals_when_the_checkpoint_is_missed(
     slept: list[float],
 ) -> None:
-    """Pagination ratée : les reviews sont annulées, pas les totaux du jour."""
+    """Pagination ratée : le checkpoint ne bouge pas, les totaux du jour sont écrits."""
     steam = FakeSteam(reviews(86), total_reviews=1000)
-    conn = FakeConn()
+    clickhouse = FakeClickHouse()
 
     # Checkpoint plus ancien que toutes les reviews servies : jamais rejoint.
     result = sync_app_reviews(
         steam,
-        FakePostgres(conn),
+        clickhouse,
         app_id=3544130,
         last_seen_timestamp_updated=1_600_000_000,
     )
 
     assert not result.reached_checkpoint
-    assert conn.inserted == []
-    assert conn.checkpoints == []
-    assert conn.summaries[0][0] == 1000
-    assert conn.commits == 1
+    assert result.versions_inserted == 0
+    # Sans transaction, les versions restent : la relance repart du même checkpoint.
+    assert len(clickhouse.inserted) == 86
+    assert clickhouse.checkpoints == []
+    assert clickhouse.summaries[0]["total_reviews"] == [1000]
 
 
 class FakeSteamTerminalPage:

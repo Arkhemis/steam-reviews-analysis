@@ -1,12 +1,7 @@
-{{
-    config(
-        pre_hook="SET work_mem = '1GB'",
-        post_hook="ANALYZE {{ this }}",
-    )
-}}
+{{ config(order_by='(app_id, recommendation_id)') }}
 
--- Sélection de review_highlight, en table analysée : en CTE sans statistiques, le
--- planner hachait les 183 M lignes de versions au lieu de ce top (OOM le 27/09).
+-- Sélection de review_highlight, en table à part : sa jointure avec la staging
+-- hache ce top (~9 M lignes), pas les 183 M reviews.
 
 -- Par (jeu, avis, langue) : les top_n_reviews reviews les plus utiles, puis
 -- jusqu'à top_crude_reviews reviews grossières et top_funny_reviews parmi les
@@ -42,7 +37,7 @@ ranked AS (
         voted_up,
         votes_funny,
         has_profanity,
-        ROW_NUMBER() OVER (
+        row_number() OVER (
             PARTITION BY app_id, voted_up, language
             ORDER BY weighted_vote_score DESC, votes_up DESC, recommendation_id ASC
         ) AS rank_in_game
@@ -64,7 +59,7 @@ crude AS (
             app_id,
             updated_at,
             rank_in_game,
-            ROW_NUMBER() OVER (
+            row_number() OVER (
                 PARTITION BY app_id, voted_up, language
                 ORDER BY votes_funny DESC, rank_in_game ASC
             ) AS crude_rank
@@ -89,16 +84,20 @@ funny AS (
             r.app_id,
             r.updated_at,
             r.rank_in_game,
-            ROW_NUMBER() OVER (
+            row_number() OVER (
                 PARTITION BY r.app_id, r.voted_up, r.language
                 ORDER BY r.votes_funny DESC, r.rank_in_game ASC
             ) AS funny_rank
         FROM ranked AS r
-        LEFT JOIN crude AS c ON c.recommendation_id = r.recommendation_id
         WHERE
             r.rank_in_game > {{ var('top_n_reviews', 30) }}
             AND r.votes_funny > 0
-            AND c.recommendation_id IS NULL
+            AND (r.app_id, r.recommendation_id) NOT IN (
+                SELECT
+                    c.app_id,
+                    c.recommendation_id
+                FROM crude AS c
+            )
     ) AS f
     WHERE funny_rank <= {{ var('top_funny_reviews', 10) }}
 

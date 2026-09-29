@@ -1,264 +1,219 @@
-"""Exercise the review registry and view SQL with small, in-memory relations.
+"""Modèle staging.steam_review rendu par Jinja, joué dans chDB (ClickHouse embarqué).
 
-DuckDB runs the relevant PostgreSQL SQL dialect without a warehouse or dbt run.
-Only dbt's relation names and compilation-time values are supplied by the test.
+Même moteur que la prod : ReplacingMergeTree, type JSON et regex RE2 sont
+exercés tels quels, sans serveur ni run dbt.
 """
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
-import duckdb
 import pytest
+from chdb import session
 from jinja2 import Environment, StrictUndefined
 
+from tests.conftest import raw_ddl
 
-MODELS = Path(__file__).resolve().parents[2] / "dbt" / "models" / "staging"
-MACROS = Path(__file__).resolve().parents[2] / "dbt" / "macros" / "steam_review.sql"
-PARSE_MACRO = MACROS.with_name("steam_review_parse.sql")
-ENV = Environment(undefined=StrictUndefined)
+DBT = Path(__file__).resolve().parents[2] / "dbt"
+MACROS = ["steam_review_parse.sql", "has_profanity.sql"]
+ENV = Environment(undefined=StrictUndefined, extensions=["jinja2.ext.do"])
+
+
+def render_model(*, incremental: bool) -> tuple[str, dict]:
+    """SQL du modèle et sa config dbt."""
+    config: dict = {}
+    source = "".join((DBT / "macros" / m).read_text() for m in MACROS)
+    source += (DBT / "models" / "staging" / "steam_review.sql").read_text()
+    sql = ENV.from_string(source).render(
+        config=lambda **kwargs: config.update(kwargs) or "",
+        source=lambda schema, table: f"{schema}.{table}",
+        this="staging.steam_review",
+        is_incremental=lambda: incremental,
+    )
+    return sql, config
 
 
 @pytest.fixture
 def warehouse():
-    with duckdb.connect(":memory:") as conn:
-        # Les dates des fixtures sont en UTC, comme epoch() ; sinon DuckDB prend le fuseau local.
-        conn.execute("SET TimeZone = 'UTC'")
-        conn.execute("CREATE SCHEMA raw")
-        conn.execute("CREATE SCHEMA staging")
-        conn.execute(
-            "CREATE TABLE raw.steam_reviews ("
-            "app_id INTEGER, recommendation_id INTEGER, loaded_at TIMESTAMPTZ, "
-            "payload JSON, timestamp_created BIGINT, timestamp_updated BIGINT)"
-        )
-        conn.execute(
-            "CREATE TABLE staging.steam_review_versions ("
-            "app_id INTEGER, recommendation_id INTEGER, updated_at TIMESTAMPTZ, "
-            "loaded_at TIMESTAMPTZ, votes_up INTEGER)"
-        )
-        conn.execute(
-            "CREATE TABLE staging.steam_review_outdated ("
-            "app_id INTEGER, recommendation_id INTEGER, updated_at TIMESTAMPTZ, "
-            "detected_at TIMESTAMPTZ)"
-        )
-        yield conn
+    sess = session.Session()
+    for stmt in raw_ddl("raw"):
+        sess.query(stmt)
+    sess.query("CREATE DATABASE staging")
+    try:
+        yield sess
+    finally:
+        sess.close()
 
 
-def add_versions(warehouse, *rows):
-    warehouse.executemany(
-        "INSERT INTO staging.steam_review_versions VALUES (?, ?, ?, ?, ?)", rows
-    )
-
-
-def add_raw_reviews(warehouse, *rows):
-    """Rows: app, recommendation, updated epoch, loaded date, votes up."""
-    warehouse.executemany(
-        "INSERT INTO raw.steam_reviews VALUES (?, ?, ?, ?, ?, ?)",
-        [
-            (
-                app_id,
-                recommendation_id,
-                loaded_at,
-                json.dumps(
-                    {
-                        "review": "A useful review",
-                        "voted_up": True,
-                        "votes_up": votes_up,
-                        "votes_funny": 4294967295,
-                    }
-                ),
-                updated_at,
-                updated_at,
-            )
-            for app_id, recommendation_id, updated_at, loaded_at, votes_up in rows
-        ],
-    )
-
-
-def epoch(day):
-    return int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
-
-
-def render_model(
-    warehouse, name, *, incremental=False, full_rebuild=False, watermark=None
-):
-    def run_query(query):
-        value = warehouse.execute(query).fetchone()[0]
-        return SimpleNamespace(columns=[SimpleNamespace(values=lambda: [value])])
-
-    context = {
-        "config": lambda **_kwargs: "",
-        "ref": lambda model: f"staging.{model}",
-        "source": lambda schema, table: f"{schema}.{table}",
-        "this": f"staging.{name}",
-        "execute": True,
-        "is_incremental": lambda: incremental,
-        "steam_review_outdated_full_rebuild": lambda: full_rebuild,
-        "steam_review_watermark": lambda _relation, _days: watermark,
-        "run_query": run_query,
-        # PostgreSQL-only regexes; covered by the dbt tests on the warehouse.
-        "has_profanity": lambda _text, _language: "FALSE",
-    }
-    if name == "steam_review_versions":
-        # These two dbt macros generate the actual parse and first-build SQL.
-        macro_source = (
-            PARSE_MACRO.read_text()
-            + MACROS.read_text().split("{% macro steam_review_watermark", 1)[0]
-        )
-        macro_module = ENV.from_string(macro_source).make_module(context)
-        context.update(
-            {
-                "steam_review_parse": macro_module.steam_review_parse,
-                "steam_review_latest_versions": macro_module.steam_review_latest_versions,
-                "steam_review_analyze_columns": lambda: [],
-            }
-        )
-    return ENV.from_string((MODELS / f"{name}.sql").read_text()).render(context)
-
-
-def outdated_keys(warehouse, query):
-    return warehouse.execute(
-        "SELECT app_id, recommendation_id, CAST(updated_at AS DATE) "
-        f"FROM ({query}) AS result ORDER BY 1, 2, 3"
-    ).fetchall()
-
-
-def test_full_rebuild_marks_only_older_versions_per_game(warehouse):
-    add_versions(
-        warehouse,
-        (1, 10, "2026-09-01", "2026-09-02", 1),
-        (1, 10, "2026-09-05", "2026-09-06", 2),
-        (1, 10, "2026-09-10", "2026-09-11", 3),
-        (1, 11, "2026-09-03", "2026-09-04", 4),
-        (2, 10, "2026-09-01", "2026-09-02", 5),
-        (2, 10, "2026-09-08", "2026-09-09", 6),
-    )
-
-    query = render_model(warehouse, "steam_review_outdated", full_rebuild=True)
-
-    assert outdated_keys(warehouse, query) == [
-        (1, 10, date(2026, 9, 1)),
-        (1, 10, date(2026, 9, 5)),
-        (2, 10, date(2026, 9, 1)),
+def add_raw_reviews(warehouse, *rows) -> None:
+    """Lignes : jeu, review, jour de mise à jour, jour de chargement, payload."""
+    values = [
+        {
+            "recommendation_id": recommendation_id,
+            "app_id": app_id,
+            "payload": payload,
+            "timestamp_created": epoch(updated_on),
+            "timestamp_updated": epoch(updated_on),
+            "loaded_at": f"{loaded_on} 00:00:00",
+        }
+        for app_id, recommendation_id, updated_on, loaded_on, payload in rows
     ]
-
-
-def test_incremental_registry_adds_only_newly_outdated_touched_versions(warehouse):
-    add_versions(
-        warehouse,
-        (1, 10, "2026-09-01", "2026-09-02", 1),
-        (1, 10, "2026-09-05", "2026-09-06", 2),
-        (1, 10, "2026-09-10", "2026-09-23", 3),
-        (1, 20, "2026-09-01", "2026-09-02", 4),
-        (1, 20, "2026-09-10", "2026-09-11", 5),
-    )
-    warehouse.execute(
-        "INSERT INTO staging.steam_review_outdated VALUES "
-        "(1, 10, '2026-09-01', '2026-09-24')"
-    )
-    warehouse.executemany(
-        "INSERT INTO raw.steam_reviews "
-        "(app_id, recommendation_id, loaded_at) VALUES (?, ?, ?)",
-        [(1, 10, "2026-09-22"), (1, 20, "2026-09-21")],
+    warehouse.query(
+        "INSERT INTO raw.steam_reviews FORMAT JSONEachRow\n"
+        + "\n".join(json.dumps(v) for v in values)
     )
 
-    query = render_model(warehouse, "steam_review_outdated", incremental=True)
 
-    assert outdated_keys(warehouse, query) == [(1, 10, date(2026, 9, 5))]
+def epoch(day: str) -> int:
+    return int(datetime.fromisoformat(day).replace(tzinfo=UTC).timestamp())
 
 
-def test_rebuild_after_compaction_catches_versions_reinserted_by_the_append(warehouse):
-    """Cas de prod du 27/09 : la compaction ne garde que la version du 23/09, puis le
-    recouvrement de l'append réinsère celle du 22/09, chargée avant la fenêtre du registre."""
-    add_versions(
-        warehouse,
-        (1, 10, "2026-09-23", "2026-09-23", 2),
-        (1, 10, "2026-09-22", "2026-09-22", 1),
-        (1, 20, "2026-09-27", "2026-09-27", 3),
+def build(warehouse, *, incremental: bool) -> None:
+    """Premier build (CREATE + INSERT) ou passage incrémental (INSERT), comme dbt."""
+    sql, config = render_model(incremental=incremental)
+    if not incremental:
+        warehouse.query(
+            f"CREATE TABLE staging.steam_review ENGINE = {config['engine']} "
+            f"ORDER BY {config['order_by']} EMPTY AS {sql}"
+        )
+    warehouse.query(f"INSERT INTO staging.steam_review {sql} SETTINGS final = 0")
+
+
+def reviews(warehouse, columns: str) -> list[dict]:
+    result = warehouse.query(
+        f"SELECT {columns} FROM staging.steam_review FINAL "
+        "ORDER BY app_id, recommendation_id",
+        "JSONEachRow",
     )
-    warehouse.executemany(
-        "INSERT INTO raw.steam_reviews "
-        "(app_id, recommendation_id, loaded_at) VALUES (?, ?, ?)",
-        [(1, 10, "2026-09-22"), (1, 10, "2026-09-23"), (1, 20, "2026-09-27")],
-    )
-
-    query = render_model(
-        warehouse, "steam_review_outdated", incremental=True, full_rebuild=True
-    )
-
-    assert outdated_keys(warehouse, query) == [(1, 10, date(2026, 9, 22))]
+    return [json.loads(line) for line in result.data().splitlines()]
 
 
-def test_review_view_retains_the_latest_version_for_each_game(warehouse):
-    add_versions(
-        warehouse,
-        (1, 10, "2026-09-01", "2026-09-02", 1),
-        (1, 10, "2026-09-05", "2026-09-06", 8),
-        (2, 10, "2026-09-01", "2026-09-02", 4),
-        (1, 11, "2026-09-01", "2026-09-02", 6),
-    )
-    warehouse.execute(
-        "INSERT INTO staging.steam_review_outdated VALUES "
-        "(1, 10, '2026-09-01', '2026-09-24')"
-    )
-
-    query = render_model(warehouse, "steam_review")
-    rows = warehouse.execute(
-        "SELECT app_id, recommendation_id, votes_up "
-        f"FROM ({query}) AS result ORDER BY 1, 2"
-    ).fetchall()
-
-    assert rows == [(1, 10, 8), (1, 11, 6), (2, 10, 4)]
+def review(**fields) -> dict:
+    return {"review": "A useful review", "voted_up": True, **fields}
 
 
-def test_first_build_uses_latest_update_and_latest_capture_on_ties(warehouse):
+def test_first_build_keeps_latest_update_then_latest_capture(warehouse) -> None:
     add_raw_reviews(
         warehouse,
-        (1, 10, epoch("2026-09-01"), "2026-09-02", 1),
-        (1, 10, epoch("2026-09-05"), "2026-09-06", 2),
-        (1, 10, epoch("2026-09-05"), "2026-09-07", 3),
-        (2, 10, epoch("2026-09-01"), "2026-09-03", 4),
+        (1, 10, "2026-09-01", "2026-09-02", review(votes_up=1)),
+        (1, 10, "2026-09-05", "2026-09-06", review(votes_up=2)),
+        # Même version recapturée plus tard : la dernière capture gagne.
+        (1, 10, "2026-09-05", "2026-09-07", review(votes_up=3)),
+        (2, 10, "2026-09-01", "2026-09-03", review(votes_up=4, votes_funny=4294967295)),
     )
 
-    query = render_model(warehouse, "steam_review_versions")
-    rows = warehouse.execute(
-        "SELECT app_id, recommendation_id, CAST(updated_at AS DATE), "
-        f"votes_up, votes_funny FROM ({query}) AS result ORDER BY 1, 2"
-    ).fetchall()
+    build(warehouse, incremental=False)
 
-    assert rows == [
-        (1, 10, date(2026, 9, 5), 3, -1),
-        (2, 10, date(2026, 9, 1), 4, -1),
+    assert reviews(warehouse, "app_id, recommendation_id, votes_up, votes_funny") == [
+        {"app_id": 1, "recommendation_id": 10, "votes_up": 3, "votes_funny": None},
+        # uint32 de Steam ramené à sa valeur signée.
+        {"app_id": 2, "recommendation_id": 10, "votes_up": 4, "votes_funny": -1},
     ]
 
 
-def test_append_keeps_one_capture_per_new_version_and_ignores_overlap(warehouse):
-    add_versions(
-        warehouse,
-        (1, 10, "2026-09-01", "2026-09-22", 1),
-    )
+def test_incremental_rereads_the_overlap_without_duplicates(warehouse) -> None:
     add_raw_reviews(
         warehouse,
-        (1, 10, epoch("2026-09-01"), "2026-09-23", 5),
-        (1, 10, epoch("2026-09-05"), "2026-09-22", 6),
-        (1, 10, epoch("2026-09-05"), "2026-09-24", 7),
-        (1, 20, epoch("2026-09-04"), "2026-09-21", 8),
-        (2, 10, epoch("2026-09-01"), "2026-09-23", 9),
+        (1, 10, "2026-09-01", "2026-09-20", review(votes_up=1)),
+        (1, 20, "2026-09-01", "2026-09-21", review(votes_up=5)),
     )
-
-    query = render_model(
+    build(warehouse, incremental=False)
+    add_raw_reviews(
         warehouse,
-        "steam_review_versions",
-        incremental=True,
-        watermark="'2026-09-21'::timestamptz",
+        (1, 10, "2026-09-05", "2026-09-22", review(votes_up=2)),
+        (2, 10, "2026-09-01", "2026-09-22", review(votes_up=9)),
     )
-    rows = warehouse.execute(
-        "SELECT app_id, recommendation_id, CAST(updated_at AS DATE), "
-        f"votes_up FROM ({query}) AS result ORDER BY 1, 2"
-    ).fetchall()
 
-    assert rows == [
-        (1, 10, date(2026, 9, 5), 7),
-        (2, 10, date(2026, 9, 1), 9),
+    # Deux passages : le second relit la marge de 2 jours.
+    build(warehouse, incremental=True)
+    build(warehouse, incremental=True)
+
+    assert reviews(warehouse, "app_id, recommendation_id, votes_up") == [
+        {"app_id": 1, "recommendation_id": 10, "votes_up": 2},
+        {"app_id": 1, "recommendation_id": 20, "votes_up": 5},
+        {"app_id": 2, "recommendation_id": 10, "votes_up": 9},
     ]
+
+
+def test_parses_payload_types_and_absent_keys(warehouse) -> None:
+    add_raw_reviews(
+        warehouse,
+        (
+            1,
+            10,
+            "2026-09-01",
+            "2026-09-02",
+            review(
+                author={"steamid": "76561198000000001", "playtime_forever": 90},
+                weighted_vote_score="0.523809552192687988",
+                app_release_date=1700000000.5,
+                review="☐ Graphics ✅ Good",
+            ),
+        ),
+        # Clés absentes (le type JSON supprime aussi les null) : NULL.
+        (1, 11, "2026-09-01", "2026-09-02", {"language": "english"}),
+    )
+
+    build(warehouse, incremental=False)
+
+    assert reviews(
+        warehouse,
+        "recommendation_id, author_steamid, author_playtime_forever_minutes, "
+        "weighted_vote_score, app_release_date, review_text_length, is_generic, voted_up",
+    ) == [
+        {
+            "recommendation_id": 10,
+            "author_steamid": 76561198000000001,
+            "author_playtime_forever_minutes": 90,
+            "weighted_vote_score": 0.523809552192687988,
+            "app_release_date": "2023-11-14 22:13:20.500",
+            "review_text_length": 17,
+            "is_generic": True,
+            "voted_up": True,
+        },
+        {
+            "recommendation_id": 11,
+            "author_steamid": None,
+            "author_playtime_forever_minutes": None,
+            "weighted_vote_score": None,
+            "app_release_date": None,
+            "review_text_length": None,
+            "is_generic": False,
+            "voted_up": None,
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("english", "This game is shit.", True),
+        ("english", "SHIT!", True),
+        # Pluriel accepté, mot plus long refusé : frontières de mot.
+        ("english", "total bastards", True),
+        ("english", "a classic shitake recipe", False),
+        ("english", "Scunthorpe", False),
+        ("english", "♥♥♥♥ this", True),
+        # Accents perdus en capitales.
+        ("french", "ENCULES", True),
+        # Turc : RE2 ne rapproche pas İ de i sans la classe dédiée.
+        ("turkish", "ZENCİ", True),
+        # Faux ami : « hell » est un mot ordinaire en allemand.
+        ("german", "Das Spiel ist hell", False),
+        ("german", "Scheiße", True),
+        # Langue sans liste : les gros mots anglais servent de repli.
+        ("unknownlang", "fuck", True),
+        # Langue collée : pas de frontière de mot.
+        ("schinese", "这游戏是垃圾啊", True),
+        ("english", None, False),
+    ],
+)
+def test_has_profanity(warehouse, language, text, expected) -> None:
+    add_raw_reviews(
+        warehouse,
+        (1, 10, "2026-09-01", "2026-09-02", {"language": language, "review": text}),
+    )
+
+    build(warehouse, incremental=False)
+
+    assert reviews(warehouse, "has_profanity") == [{"has_profanity": expected}]

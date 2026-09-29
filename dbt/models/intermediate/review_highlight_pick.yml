@@ -4,8 +4,8 @@ models:
   - name: review_highlight_pick
     description: >
       Reviews retenues pour review_highlight, sans leur texte : une ligne par
-      review. Table à part pour que le planner ait des statistiques sur ce top
-      et le hache, plutôt que les 183 M lignes de steam_review_versions.
+      review. Table à part : la jointure de review_highlight hache ce top,
+      plutôt que les 183 M lignes de steam_review.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -26,7 +26,7 @@ models:
       - name: updated_at
         description: >
           Date de la dernière version de la review, qui complète la clé de
-          jointure avec steam_review_versions.
+          jointure avec steam_review.
         data_tests:
           - not_null
 

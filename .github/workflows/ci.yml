@@ -40,27 +40,26 @@ jobs:
     name: Run SQLFluff Lint
     runs-on: ubuntu-latest
 
+    # Le templater dbt se connecte pour compiler les modèles incrémentaux.
     services:
-      postgres:
-        image: postgres:16
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.8.14.3
         env:
-          POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: ci
+          CLICKHOUSE_USER: ci
+          CLICKHOUSE_PASSWORD: ci
         ports:
-          - 5432:5432
+          - 8123:8123
         options: >-
-          --health-cmd "pg_isready -U ci -d ci"
+          --health-cmd "wget --spider -q http://127.0.0.1:8123/ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: ci
-      POSTGRES_PASSWORD: ci
-      POSTGRES_DB: ci
+      CLICKHOUSE_HOST: localhost
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: ci
+      CLICKHOUSE_PASSWORD: ci
 
     steps:
     - uses: actions/checkout@v4
@@ -91,11 +90,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: ci
-      POSTGRES_PASSWORD: ci
-      POSTGRES_DB: ci
+      CLICKHOUSE_HOST: localhost
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: ci
+      CLICKHOUSE_PASSWORD: ci
       IGDB_CLIENT_ID: ci
       IGDB_CLIENT_SECRET: ci
 

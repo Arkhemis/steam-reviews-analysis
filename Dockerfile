@@ -22,7 +22,7 @@ RUN uv sync --frozen --no-dev
 
 # Creds bidon : `dbt parse` rend le profile mais n'ouvre pas de connexion.
 RUN dbt deps --project-dir dbt --profiles-dir dbt \
- && POSTGRES_USER=build POSTGRES_PASSWORD=build POSTGRES_DB=build \
+ && CLICKHOUSE_USER=build CLICKHOUSE_PASSWORD=build \
     dbt parse --project-dir dbt --profiles-dir dbt
 
 EXPOSE 4000

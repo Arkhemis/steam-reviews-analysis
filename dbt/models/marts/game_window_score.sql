@@ -1,18 +1,11 @@
-{{
-    config(
-        indexes=[
-            {'columns': ['window_name', 'pct_positive'], 'type': 'btree'},
-            {'columns': ['app_id'], 'type': 'btree'},
-        ]
-    )
-}}
+{{ config(order_by='(window_name, app_id)') }}
 
 -- Les fenêtres sont ancrées sur la dernière date présente dans le modèle
 -- source, jamais sur CURRENT_DATE : l'ingestion peut avoir plusieurs jours de
 -- retard, et une fenêtre calée sur « aujourd'hui » serait alors vide.
 WITH bounds AS (
 
-    SELECT MAX(review_date) AS latest
+    SELECT max(review_date) AS latest
     FROM {{ ref('game_review_trend_daily') }}
 
 ),
@@ -21,7 +14,7 @@ windows AS (
 
     SELECT
         'week' AS window_name,
-        (latest - INTERVAL '6 days')::DATE AS starts_on,
+        latest - 6 AS starts_on,
         latest AS ends_on
     FROM bounds
 
@@ -32,15 +25,15 @@ windows AS (
     -- chute d'une semaine sur l'autre.
     SELECT
         'previous_week' AS window_name,
-        (latest - INTERVAL '13 days')::DATE AS starts_on,
-        (latest - INTERVAL '7 days')::DATE AS ends_on
+        latest - 13 AS starts_on,
+        latest - 7 AS ends_on
     FROM bounds
 
     UNION ALL
 
     SELECT
         'month' AS window_name,
-        (latest - INTERVAL '29 days')::DATE AS starts_on,
+        latest - 29 AS starts_on,
         latest AS ends_on
     FROM bounds
 
@@ -52,15 +45,15 @@ windows AS (
     -- 460 000 lignes de (jeu, jour) pour la moindre vignette du catalogue.
     SELECT
         'previous_month' AS window_name,
-        (latest - INTERVAL '59 days')::DATE AS starts_on,
-        (latest - INTERVAL '30 days')::DATE AS ends_on
+        latest - 59 AS starts_on,
+        latest - 30 AS ends_on
     FROM bounds
 
     UNION ALL
 
     SELECT
         'year_to_date' AS window_name,
-        DATE_TRUNC('year', latest)::DATE AS starts_on,
+        toStartOfYear(latest) AS starts_on,
         latest AS ends_on
     FROM bounds
 
@@ -71,13 +64,14 @@ SELECT
     t.app_id,
     w.starts_on,
     w.ends_on,
-    SUM(t.total_reviews) AS total_reviews,
-    SUM(t.total_positive) AS total_positive,
-    ROUND(
-        SUM(t.total_positive)::NUMERIC / NULLIF(SUM(t.total_reviews), 0),
+    sum(t.total_reviews) AS total_reviews,
+    sum(t.total_positive) AS total_positive,
+    round(
+        sum(t.total_positive) / nullIf(sum(t.total_reviews), 0),
         4
     ) AS pct_positive
+-- Cinq fenêtres : un produit filtré, faute de jointure sur une inégalité seule.
 FROM {{ ref('game_review_trend_daily') }} AS t
-INNER JOIN windows AS w
-    ON t.review_date BETWEEN w.starts_on AND w.ends_on
+CROSS JOIN windows AS w
+WHERE t.review_date BETWEEN w.starts_on AND w.ends_on
 GROUP BY w.window_name, t.app_id, w.starts_on, w.ends_on

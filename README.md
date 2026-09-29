@@ -3,14 +3,14 @@
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 ![Dagster](https://img.shields.io/badge/Dagster-4F43DD?logo=dagster&logoColor=white)
 ![dbt](https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![ClickHouse](https://img.shields.io/badge/ClickHouse-FFCC01?logo=clickhouse&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 ![SQLFluff](https://img.shields.io/badge/SQLFluff-71a9c0?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAoJJREFUeJztmj9rFEEcht/RmFYwYFA0goW9EqIBsfQTGPxTWGonKEEbRcFCP4AIdoqokEoRFYJYnCAqiLUIFpHYBS4oYgK5x2LuIHfunbt7M/vLXeZp93b2fd6dHW7nTtpkAIeA18AO6yyV05RfwvNpU5UATAF12pm3zlUJHXe+RR04bJ0tOkk+ySf5JJ/kk/yQk+STfJJP8kk+yQ85ST7JJ/kkn+ST/JCT5JN8kq9c3sUcHNgvaVrSHkkNSd8l1ZxzP5rHpyTNS9q+7rRlScedcx9jZosKcBSokc0a8Ao4y7+/1dWbpQwmgAOuAI0u8r0Y7Ge+KX+nhLip/JZQAznnkPSz5OkXnHMfQmUxBbhVYga8tM5dCGAc/6x/AY5lHL9ZsIA1YLeFSyHw/7J4BKysC78MTGd8tuhMOGnh9F+AbcBp4H2P8CFKuGzh1xVgJ3AVWMwp0G8JG6MA4CBwD/hd4O61+EX5NeGUhW8r4AgwA7wtId1JmZnQACYs3AXMAgsBxPsp4Y2FeyvUXGD5oiU0sj5XGcCRSAXkLeG6hXdnoGdGJdwFor6S5wLYh1/Bqy7BXr4FcCliAV1L2DDgX2efRi4h83uCJW1TEBiT9FnS3ojX/OqcOxBx/EK07Qc455YknZC0GvGajyOOHQbgfKRHYAXYZe2XC+B2hAIeWnvlBr8oPghcwGDt+AJbgSeB5N9Z+5QCGAWeByjgjLVLafC7Qv28NC0Co9YefYF/HMquCdes8wcBvzDeKCj/Bxi3zh4U4BywmrOA+9Z5owBMAt9yFDBpnTUawBjwood8zTpjdPDrwkWy9xNmrPNVBjBB++v0AjBinaty8HuMc8CsdZY8/AXawSgA4YAIrgAAAABJRU5ErkJggg==&logoColor=white)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
 # Steam Reviews Analysis
 
-End-to-end data pipeline that ingests Steam games, reviews and store announcements to derive statistics from them (sentiment over time, review trends, distinctive vocabulary per game, comparisons between games). A personal project, meant to work both as a practical tool and as a technical showcase of a modern pipeline: API ingestion → Postgres warehouse → dbt transformation, all orchestrated, scheduled and tested by Dagster.
+End-to-end data pipeline that ingests Steam games, reviews and store announcements to derive statistics from them (sentiment over time, review trends, distinctive vocabulary per game, comparisons between games). A personal project, meant to work both as a practical tool and as a technical showcase of a modern pipeline: API ingestion → ClickHouse warehouse → dbt transformation, all orchestrated, scheduled and tested by Dagster.
 
 ## Repo structure
 
@@ -22,7 +22,8 @@ orchestration/      # Dagster code location
   jobs.py           #   daily_pipeline, the cross-domain job
   schedules.py      #   its schedule (midnight Europe/Paris)
 dbt/                # dbt project: sources, staging, intermediate, marts, macros, analyses
-db/init.sql         # DDL for the raw schema, run on Postgres' first startup
+db/clickhouse/      # DDL of the raw database, run on ClickHouse's first startup
+deploy/clickhouse/  # ClickHouse server and user settings (memory caps, spill to disk)
 deploy/             # Dagster config (dagster.yaml, workspace.yaml), Caddyfile, VPS cloud-init
 tools/infra_map/    # local interactive map of the infra, lineage, orchestration and CI/CD
 .github/workflows/  # CI (ruff, sqlfluff, dg check defs) and CD (SSH deploy to the VPS)
@@ -49,7 +50,7 @@ flowchart LR
 
 ### Ingestion (Dagster assets)
 
-1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`, `genres`, `companies`, `involved_companies`, `covers`), keeps only games linked to a `steam_app_id`, and upserts them into `raw.igdb_games` with resolved genres, studios, publishers and cover URL.
+1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`, `genres`, `companies`, `involved_companies`, `covers`), keeps only games linked to a `steam_app_id`, and inserts them into `raw.igdb_games` with resolved genres, studios, publishers and cover URL.
 2. **`steam_review_counts`** — reads the review count of every game from `IStoreBrowseService/GetItems`, 200 games per request, throttled to one request every 1.3 s (~26 minutes for the whole catalogue). That count only covers Steam purchases, so it is a "has this game moved?" signal, not the total: since 24/09/2026 `appreviews` is rate-limited per IP (~0.96 req/s sustained), too slow to probe every game.
 3. **`steam_reviews_backfill`** — first load of a game: paginates `appreviews` by cursor and writes the full payload of every review into `raw.steam_reviews`, stopping within a tolerance of the total read on page 1 (Steam never serves some of the reviews it counts). Page 1 also refreshes the game's totals and score.
 4. **`steam_reviews_incremental`** — nightly catch-up for games already backfilled whose GetItems count moved since their last sync, plus one weekday per game above 1 000 reviews: walks the `updated`-sorted pages until it reaches the last seen `timestamp_updated`, so both new reviews and edits of old ones land as new versions.
@@ -57,7 +58,7 @@ flowchart LR
 
 ### Transformation (dbt)
 
-- **staging** — `steam_review`, `steam_event`, `igdb_game`, `game_review_count`: flatten and type the raw JSON, and deduplicate reviews down to their latest version. Materialized as **columnar** tables — the raw review table alone is ~180 M rows.
+- **staging** — `steam_review`, `steam_event`, `igdb_game`, `game_review_count`: flatten and type the raw JSON, and deduplicate reviews down to their latest version. `steam_review` is an append-only `ReplacingMergeTree` table: each night inserts the new versions, and merges keep the latest one — the raw review table alone is ~180 M rows.
 - **intermediate** — `steam_review_agg` (playtime medians, Steam Deck and refund shares), `language_review_score`, `steam_event_categorized`, and `review_lexeme_count` (the single NLP tokenization pass, tagged `nlp`).
 - **marts** — `game_stats`, `game_review_trend_daily`, its two rollups `catalogue_review_trend_daily` (one row per day, all games) and `game_window_score` (one row per game and window: week, previous week, 30 days, year to date), which spare a consumer from re-aggregating a year of `(game, day)`, `review_highlight` (per game, side and language: the 30 most helpful reviews, plus up to 10 crude and 10 funny ones for the duel), `review_window_highlight` (the five funniest and five most helpful recent reviews per window and language, one per game), `game_event_highlight`, `language_review_score_global`, and `game_distinctive_term` (log-odds with an informative Dirichlet prior, Monroe et al. 2008 — the vocabulary that sets a game apart from the corpus, positive and negative reviews separately; tagged `nlp`).
 
@@ -77,8 +78,8 @@ The NLP models are excluded from the nightly run through their `nlp` tag: they c
 
 - **Dagster** for orchestration (assets, resources, jobs, schedules), with `DockerRunLauncher`: one container per run, built from the `user-code` image.
 - **dbt** for SQL transformations (staging → intermediate → marts), linted with SQLFluff.
-- **PostgreSQL 16 + Citus columnar** as the warehouse — the review table is columnar, which is what keeps ~180 M full JSON payloads on a single VPS disk.
-- **Docker Compose** to run the whole stack (Postgres, user-code gRPC server, webserver, daemon), **Caddy** in front of the deployed webserver.
+- **ClickHouse** as the warehouse (raw, staging, intermediate, marts): columnar storage keeps ~180 M full JSON payloads on a single VPS disk, and tables sorted by game serve the website's per-game reads in milliseconds. **PostgreSQL** only holds Dagster's instance storage.
+- **Docker Compose** to run the whole stack (ClickHouse, Postgres for Dagster, user-code gRPC server, webserver, daemon), **Caddy** in front of the deployed webserver.
 - **uv** for Python dependency management, **ruff** + **pre-commit** for linting.
 
 ## Running the project
@@ -90,7 +91,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The Dagster webserver is served on `http://localhost:3001`. The `raw` schema is created on Postgres' first startup (`db/init.sql`).
+The Dagster webserver is served on `http://localhost:3001`. The `raw` database is created on ClickHouse's first startup (`db/clickhouse/init.sql`).
 
 The stack ships no bind mount for the application code: each run executes in its own container built from the `user-code` image, so a code change needs `docker compose up -d --build` to be picked up.
 
@@ -105,7 +106,7 @@ uv run dbt build --project-dir dbt --profiles-dir dbt
 
 ## Infra map
 
-`tools/infra_map` renders the whole project as interactive diagrams: production infra, data lineage (APIs → raw → dbt → website), Dagster orchestration and CI/CD. Clicking a node shows its logic: description, Python or SQL code, module constants, columns, tests and jobs. Everything is read from the code (Dagster definitions, dbt manifest, `db/init.sql`, compose, Caddyfile, workflows), so the map follows the repo:
+`tools/infra_map` renders the whole project as interactive diagrams: production infra, data lineage (APIs → raw → dbt → website), Dagster orchestration and CI/CD. Clicking a node shows its logic: description, Python or SQL code, module constants, columns, tests and jobs. Everything is read from the code (Dagster definitions, dbt manifest, `db/clickhouse/init.sql`, compose, Caddyfile, workflows), so the map follows the repo:
 
 ```bash
 uv run python tools/infra_map/serve.py --open   # http://127.0.0.1:8765

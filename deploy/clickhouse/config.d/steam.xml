@@ -1,0 +1,42 @@
+<!-- Réglages serveur pour le CX33 (8 Go partagés avec Dagster, le site, Postgres). -->
+<clickhouse>
+    <max_server_memory_usage>3758096384</max_server_memory_usage>
+    <timezone>UTC</timezone>
+
+    <!-- Caches réduits (défauts dimensionnés pour des serveurs dédiés). -->
+    <mark_cache_size>268435456</mark_cache_size>
+    <index_mark_cache_size>67108864</index_mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <primary_index_cache_size>134217728</primary_index_cache_size>
+
+    <!-- BACKUP ... TO File('...') écrit sous ce dossier (disque local du VPS). -->
+    <backups>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+
+    <logger>
+        <level>warning</level>
+    </logger>
+
+    <!-- Journaux système bornés : sans TTL, ils grossissent sans fin. -->
+    <query_log replace="1">
+        <database>system</database>
+        <table>query_log</table>
+        <engine>ENGINE = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 14 DAY</engine>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+    <part_log replace="1">
+        <database>system</database>
+        <table>part_log</table>
+        <engine>ENGINE = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 7 DAY</engine>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </part_log>
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <latency_log remove="1"/>
+    <error_log remove="1"/>
+    <query_metric_log remove="1"/>
+    <processors_profile_log remove="1"/>
+</clickhouse>

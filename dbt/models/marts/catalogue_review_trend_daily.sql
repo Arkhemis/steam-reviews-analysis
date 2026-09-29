@@ -1,20 +1,16 @@
-{{
-    config(
-        indexes=[
-            {'columns': ['review_date'], 'type': 'btree', 'unique': True},
-        ]
-    )
-}}
+{{ config(order_by='review_date') }}
 
+-- Colonnes qualifiées : en ClickHouse, total_reviews désignerait l'alias
+-- sum(total_reviews) et non la colonne.
 SELECT
-    review_date,
-    COUNT(*) AS games_reviewed,
-    SUM(total_reviews) AS total_reviews,
-    SUM(total_positive) AS total_positive,
-    SUM(total_negative) AS total_negative,
-    ROUND(
-        SUM(total_positive)::numeric / NULLIF(SUM(total_reviews), 0),
+    t.review_date AS review_date,
+    count() AS games_reviewed,
+    sum(t.total_reviews) AS total_reviews,
+    sum(t.total_positive) AS total_positive,
+    sum(t.total_negative) AS total_negative,
+    round(
+        sum(t.total_positive) / nullIf(sum(t.total_reviews), 0),
         4
     ) AS pct_positive
-FROM {{ ref('game_review_trend_daily') }}
-GROUP BY review_date
+FROM {{ ref('game_review_trend_daily') }} AS t
+GROUP BY t.review_date

@@ -1,20 +1,12 @@
--- (app_id, review_date) : sans lui, MAX(review_date) WHERE app_id = $1 remonte
--- à rebours l'index review_date, plusieurs minutes pour un petit jeu.
-{{
-    config(
-        indexes=[
-            {'columns': ['review_date'], 'type': 'btree'},
-            {'columns': ['app_id', 'review_date'], 'type': 'btree'},
-        ]
-    )
-}}
+-- Trié par (app_id, review_date) : le site lit un jeu à la fois.
+{{ config(order_by='(app_id, review_date)') }}
 
 SELECT
     app_id,
-    DATE(created_at) AS review_date,
-    COUNT(*) AS total_reviews,
-    SUM(CASE WHEN voted_up THEN 1 ELSE 0 END) AS total_positive,
-    SUM(CASE WHEN NOT voted_up THEN 1 ELSE 0 END) AS total_negative,
-    ROUND(SUM(CASE WHEN voted_up THEN 1 ELSE 0 END)::numeric / COUNT(*), 4) AS pct_positive
+    toDate(created_at) AS review_date,
+    count() AS total_reviews,
+    countIf(voted_up) AS total_positive,
+    countIf(NOT voted_up) AS total_negative,
+    round(countIf(voted_up) / count(), 4) AS pct_positive
 FROM {{ ref('steam_review') }}
 GROUP BY 1, 2
