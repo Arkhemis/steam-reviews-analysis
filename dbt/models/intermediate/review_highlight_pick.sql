@@ -1,4 +1,9 @@
-{{ config(order_by='(app_id, recommendation_id)') }}
+-- ranked est calculé à chaque lecture, soit quatre tris en parallèle : chacun
+-- déborde sur disque dès 256 Mo, sinon ils dépassent ensemble les 3,5 Go du serveur.
+{{ config(
+    order_by='(app_id, recommendation_id)',
+    query_settings={'max_bytes_before_external_sort': 268435456},
+) }}
 
 -- Sélection de review_highlight, en table à part : sa jointure avec la staging
 -- hache ce top (~9 M lignes), pas les 183 M reviews.
