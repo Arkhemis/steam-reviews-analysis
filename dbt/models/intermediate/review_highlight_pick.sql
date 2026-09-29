@@ -1,5 +1,4 @@
--- ranked est calculé à chaque lecture, soit quatre tris en parallèle : chacun
--- déborde sur disque dès 256 Mo, sinon ils dépassent ensemble les 3,5 Go du serveur.
+-- Les tris des fenêtres débordent dès 256 Mo : pic à 1,7 Go au lieu de 2,3.
 {{ config(
     order_by='(app_id, recommendation_id)',
     query_settings={'max_bytes_before_external_sort': 268435456},
@@ -12,6 +11,8 @@
 -- jusqu'à top_crude_reviews reviews grossières et top_funny_reviews parmi les
 -- plus drôles, prises hors de ce top. Le duel du site en tire ses répliques :
 -- les plus utiles seules sont rarement drôles, et presque jamais grossières.
+-- Fenêtres enchaînées sur une seule lecture de la staging : ClickHouse recalcule
+-- une CTE à chaque référence, et quatre tris en parallèle dépassaient la mémoire.
 WITH eligible_reviews AS (
 
     SELECT
@@ -50,28 +51,26 @@ ranked AS (
 
 ),
 
--- Les grossières d'abord, les plus drôles en tête.
+-- Les grossières hors du top, les plus drôles en tête : le rang ne compte que
+-- parmi les candidates, isolées dans leur propre partition.
 crude AS (
 
     SELECT
         recommendation_id,
         app_id,
         updated_at,
-        rank_in_game
-    FROM (
-        SELECT
-            recommendation_id,
-            app_id,
-            updated_at,
-            rank_in_game,
-            row_number() OVER (
-                PARTITION BY app_id, voted_up, language
-                ORDER BY votes_funny DESC, rank_in_game ASC
-            ) AS crude_rank
-        FROM ranked
-        WHERE rank_in_game > {{ var('top_n_reviews', 30) }} AND has_profanity
-    ) AS c
-    WHERE crude_rank <= {{ var('top_crude_reviews', 10) }}
+        language,
+        voted_up,
+        votes_funny,
+        rank_in_game,
+        rank_in_game > {{ var('top_n_reviews', 30) }} AND has_profanity AS is_crude_candidate,
+        row_number() OVER (
+            PARTITION BY app_id, voted_up, language, is_crude_candidate
+            ORDER BY votes_funny DESC, rank_in_game ASC
+        ) AS crude_rank,
+        is_crude_candidate AND crude_rank <= {{ var('top_crude_reviews', 10) }} AS is_crude
+    FROM ranked
+    WHERE rank_in_game <= {{ var('top_n_reviews', 30) }} OR has_profanity OR votes_funny > 0
 
 ),
 
@@ -82,71 +81,30 @@ funny AS (
         recommendation_id,
         app_id,
         updated_at,
-        rank_in_game
-    FROM (
-        SELECT
-            r.recommendation_id,
-            r.app_id,
-            r.updated_at,
-            r.rank_in_game,
-            row_number() OVER (
-                PARTITION BY r.app_id, r.voted_up, r.language
-                ORDER BY r.votes_funny DESC, r.rank_in_game ASC
-            ) AS funny_rank
-        FROM ranked AS r
-        WHERE
-            r.rank_in_game > {{ var('top_n_reviews', 30) }}
-            AND r.votes_funny > 0
-            AND (r.app_id, r.recommendation_id) NOT IN (
-                SELECT
-                    c.app_id,
-                    c.recommendation_id
-                FROM crude AS c
-            )
-    ) AS f
-    WHERE funny_rank <= {{ var('top_funny_reviews', 10) }}
-
-),
-
--- rank_in_game reste le rang d'utilité : les ajouts passent après le top
--- (rang > top_n_reviews) et `pick` dit pourquoi une review est là.
-top_reviews AS (
-
-    SELECT
-        recommendation_id,
-        app_id,
-        updated_at,
         rank_in_game,
-        'useful' AS pick
-    FROM ranked
-    WHERE rank_in_game <= {{ var('top_n_reviews', 30) }}
-
-    UNION ALL
-
-    SELECT
-        recommendation_id,
-        app_id,
-        updated_at,
-        rank_in_game,
-        'crude' AS pick
+        is_crude,
+        rank_in_game > {{ var('top_n_reviews', 30) }} AND votes_funny > 0 AND NOT is_crude
+            AS is_funny_candidate,
+        row_number() OVER (
+            PARTITION BY app_id, voted_up, language, is_funny_candidate
+            ORDER BY votes_funny DESC, rank_in_game ASC
+        ) AS funny_rank,
+        is_funny_candidate AND funny_rank <= {{ var('top_funny_reviews', 10) }} AS is_funny
     FROM crude
-
-    UNION ALL
-
-    SELECT
-        recommendation_id,
-        app_id,
-        updated_at,
-        rank_in_game,
-        'funny' AS pick
-    FROM funny
 
 )
 
+-- rank_in_game reste le rang d'utilité : les ajouts passent après le top
+-- (rang > top_n_reviews) et `pick` dit pourquoi une review est là.
 SELECT
     recommendation_id,
     app_id,
     updated_at,
     rank_in_game,
-    pick
-FROM top_reviews
+    multiIf(
+        rank_in_game <= {{ var('top_n_reviews', 30) }}, 'useful',
+        is_crude, 'crude',
+        'funny'
+    ) AS pick
+FROM funny
+WHERE rank_in_game <= {{ var('top_n_reviews', 30) }} OR is_crude OR is_funny
