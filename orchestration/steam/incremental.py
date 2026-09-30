@@ -37,9 +37,14 @@ PROGRESS_EVERY = 500
 # Un jeu sans compteur GetItems (retiré du store) tourne aussi, quelle que soit sa taille.
 ROTATION_STEAM_COUNT = 1000
 
+# Écart minimal du compteur GetItems pour resynchroniser un jeu : sous ce seuil,
+# l'écart s'accumule et le checkpoint rattrape tout au passage suivant.
+MIN_STEAM_COUNT_DELTA = 5
 
-# Un jeu a bougé quand son compteur GetItems diffère de celui de sa dernière
-# synchronisation, réussie ou non (un échec laisse l'écart, donc le jeu revient).
+
+# Un jeu a bougé quand son compteur GetItems s'écarte d'au moins
+# MIN_STEAM_COUNT_DELTA de celui de sa dernière synchronisation réussie (un
+# échec laisse l'écart, donc le jeu revient), ou n'est NULL que d'un côté.
 # Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
 # pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
 # toDayOfWeek(...) % 7 : dimanche = 0, comme le dow de Postgres.
@@ -50,7 +55,10 @@ SELECT app_id,
 FROM steam_review_counts
 WHERE last_backfill_at IS NOT NULL
   AND (
-      steam_count IS DISTINCT FROM synced_steam_count
+      ifNull(
+          abs(steam_count - synced_steam_count) >= {min_steam_count_delta:Int64},
+          steam_count IS DISTINCT FROM synced_steam_count
+      )
       OR (app_id % 7 = toDayOfWeek(now()) % 7
           AND (steam_count >= {rotation_steam_count:Int64} OR steam_count IS NULL))
   )
@@ -115,7 +123,11 @@ def steam_reviews_incremental(
     clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
     relevant_apps = clickhouse.query(
-        RELEVANT_APP_IDS, {"rotation_steam_count": ROTATION_STEAM_COUNT}
+        RELEVANT_APP_IDS,
+        {
+            "rotation_steam_count": ROTATION_STEAM_COUNT,
+            "min_steam_count_delta": MIN_STEAM_COUNT_DELTA,
+        },
     )
     total = len(relevant_apps)
     context.log.info(
@@ -175,10 +187,6 @@ def steam_reviews_incremental(
                     f"— {review_versions_inserted} versions insérées"
                 )
 
-    context.log.info(
-        f"Intervalle /appreviews en fin de run : {steam.reviews_interval_seconds():.2f}s"
-    )
-
     apps_recounted = recount_backfilled(clickhouse)
     context.log.info(
         f"total_reviews_backfilled recalculé depuis raw.steam_reviews "
@@ -199,9 +207,6 @@ def steam_reviews_incremental(
             "apps_incomplete": MetadataValue.int(apps_incomplete),
             "apps_failed": MetadataValue.int(apps_failed),
             "apps_recounted": MetadataValue.int(apps_recounted),
-            "reviews_interval_seconds": MetadataValue.float(
-                steam.reviews_interval_seconds()
-            ),
         }
     )
 

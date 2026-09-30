@@ -5,9 +5,9 @@ Endpoints :
 - annonces  : https://store.steampowered.com/events/ajaxgetpartnereventspageable/
 - fiches    : https://api.steampowered.com/IStoreBrowseService/GetItems/v1/
 
-Depuis le 24/09, /appreviews a sa propre limite par IP (réserve de ~270
-requêtes rechargée à ~0,96/s, blocage de ~4 min 30) : il a son propre throttle,
-plus lent et adaptatif. GetItems a une limite distincte (réserve de ~125 lots,
+/appreviews a sa propre limite par IP : 150 requêtes, puis un blocage de ~5 min.
+Son throttle reprend celui de woctezuma/steamreviews (150 requêtes puis 310 s
+de pause). GetItems a une limite distincte (réserve de ~125 lots,
 ~0,78 lot/s soutenu) dont le 429 ne bloque pas l'IP : quelques secondes suffisent.
 Les annonces gardent le throttle rapide.
 """
@@ -26,11 +26,6 @@ BASE_URL = "https://store.steampowered.com"
 # Endpoint non documenté, sans clé ; au-delà de ~250 ids l'URL devient trop longue (400).
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 
-# Après autant de succès d'affilée, l'intervalle /appreviews redescend de 5 %.
-REVIEWS_SPEEDUP_AFTER = 500
-REVIEWS_SPEEDUP_FACTOR = 0.95
-REVIEWS_SLOWDOWN_FACTOR = 1.5
-
 Lane = Literal["default", "items", "reviews"]
 
 
@@ -39,9 +34,12 @@ class _LaneState:
     """Créneaux d'un endpoint : partagés par tous les threads de la resource."""
 
     interval: float
+    # Requêtes permises avant une pause de `cooldown` secondes (0 : pas de quota).
+    quota: int = 0
+    cooldown: float = 0.0
+    used: int = 0
     next_slot_ts: float = 0.0
     paused_until: float = 0.0
-    ok_streak: int = 0
 
 
 class SteamApiError(Exception):
@@ -76,10 +74,10 @@ class SteamResource(ConfigurableResource):
     """Client Steam (reviews, annonces, fiches store) avec rate limit + retries."""
 
     min_interval_seconds: float = 0.1
-    # Plancher /appreviews : 0,8 req/s, sous la recharge mesurée (~0,96/s).
-    reviews_min_interval_seconds: float = 1.25
-    reviews_max_interval_seconds: float = 5.0
-    # Couvre le blocage mesuré (~4 min 30) d'une seule attente.
+    # Quota /appreviews mesuré le 30/09 ; la pause couvre la fenêtre de 5 min plus une marge.
+    reviews_quota: int = 150
+    reviews_cooldown_seconds: float = 310.0
+    # Couvre le blocage mesuré (~5 min) d'une seule attente.
     rate_limit_pause_seconds: float = 300.0
     # GetItems : 1,3 s entre deux lots tient le débit soutenu mesuré (~0,78/s).
     items_min_interval_seconds: float = 1.3
@@ -101,7 +99,11 @@ class SteamResource(ConfigurableResource):
         self._lanes = {
             "default": _LaneState(self.min_interval_seconds),
             "items": _LaneState(self.items_min_interval_seconds),
-            "reviews": _LaneState(self.reviews_min_interval_seconds),
+            "reviews": _LaneState(
+                self.min_interval_seconds,
+                quota=self.reviews_quota,
+                cooldown=self.reviews_cooldown_seconds,
+            ),
         }
 
     def _throttle(self, lane: Lane) -> None:
@@ -112,6 +114,11 @@ class SteamResource(ConfigurableResource):
                 now = time.monotonic()
                 start_at = max(now, state.next_slot_ts)
                 state.next_slot_ts = start_at + state.interval
+                if state.quota:
+                    state.used += 1
+                    if state.used >= state.quota:
+                        state.next_slot_ts = start_at + state.cooldown
+                        state.used = 0
             wait = start_at - now
             if wait > 0:
                 time.sleep(wait)
@@ -119,22 +126,6 @@ class SteamResource(ConfigurableResource):
             with self._lock:
                 if time.monotonic() >= self._lanes[lane].paused_until:
                     return
-
-    def _on_success(self, lane: Lane) -> None:
-        if lane != "reviews":
-            return
-        with self._lock:
-            state = self._lanes[lane]
-            state.ok_streak += 1
-            if (
-                state.ok_streak >= REVIEWS_SPEEDUP_AFTER
-                and state.interval > self.reviews_min_interval_seconds
-            ):
-                state.interval = max(
-                    self.reviews_min_interval_seconds,
-                    state.interval * REVIEWS_SPEEDUP_FACTOR,
-                )
-                state.ok_streak = 0
 
     def _on_rate_limited(self, lane: Lane, app_id: int) -> None:
         """Le 429 vaut pour toute l'IP : on gèle l'endpoint pour tous les threads."""
@@ -146,27 +137,16 @@ class SteamResource(ConfigurableResource):
         with self._lock:
             state = self._lanes[lane]
             now = time.monotonic()
-            state.ok_streak = 0
-            # Les requêtes déjà en vol pendant la pause ne ralentissent pas une 2e fois.
+            # Les requêtes déjà en vol pendant la pause ne la relancent pas.
             if now < state.paused_until:
                 return
             state.paused_until = now + pause
             state.next_slot_ts = max(state.next_slot_ts, state.paused_until)
-            if lane == "reviews":
-                state.interval = min(
-                    self.reviews_max_interval_seconds,
-                    state.interval * REVIEWS_SLOWDOWN_FACTOR,
-                )
-            interval = state.interval
+            # Le blocage écoulé, le quota est de nouveau entier.
+            state.used = 0
         get_dagster_logger().warning(
-            f"app_id={app_id}: 429 sur {lane}, pause de "
-            f"{pause:.0f}s puis une requête toutes les {interval:.2f}s"
+            f"app_id={app_id}: 429 sur {lane}, pause de {pause:.0f}s"
         )
-
-    def reviews_interval_seconds(self) -> float:
-        """Intervalle /appreviews atteint, pour les métadonnées des assets."""
-        with self._lock:
-            return self._lanes["reviews"].interval
 
     def _get(
         self,
@@ -191,9 +171,7 @@ class SteamResource(ConfigurableResource):
                 if 400 <= resp.status_code < 500:
                     raise SteamApiError.from_response(app_id, resp)
                 resp.raise_for_status()
-                data = resp.json()
-                self._on_success(lane)
-                return data
+                return resp.json()
             except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
                 attempt += 1
                 if attempt > self.max_retries:

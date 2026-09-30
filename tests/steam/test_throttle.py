@@ -37,13 +37,17 @@ def ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"success": 1, "query_summary": {}})
 
 
-def test_reviews_are_spaced_by_their_own_interval(clock):
+def test_reviews_pause_after_their_quota(clock):
     steam = steam_with_transport(ok)
     start = clock.now
-    for _ in range(3):
+    for _ in range(150):
         steam.get_summary(730)
-    # Trois créneaux réservés : le troisième part 2 × 1,25 s après le premier.
-    assert clock.now - start == pytest.approx(2.5)
+    # 150 créneaux à 0,1 s : le dernier part 149 × 0,1 s après le premier.
+    assert clock.now - start == pytest.approx(14.9)
+
+    steam.get_summary(730)
+    # Le 151e attend 310 s après le 150e.
+    assert clock.now - start == pytest.approx(14.9 + 310)
 
 
 def test_other_endpoints_keep_the_fast_interval(clock):
@@ -54,7 +58,7 @@ def test_other_endpoints_keep_the_fast_interval(clock):
     assert clock.now - start == pytest.approx(0.2)
 
 
-def test_429_pauses_reviews_once_and_slows_down(clock):
+def test_429_pauses_reviews_and_restores_the_quota(clock):
     responses = iter([429, 200])
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -65,14 +69,15 @@ def test_429_pauses_reviews_once_and_slows_down(clock):
     steam.get_summary(730)
 
     assert clock.now - start == pytest.approx(300)
-    assert steam.reviews_interval_seconds() == pytest.approx(1.875)
+    assert steam._lanes["reviews"].used == 1
 
 
-def test_429s_in_flight_during_a_pause_slow_down_only_once(clock):
+def test_429s_in_flight_during_a_pause_do_not_extend_it(clock):
     steam = steam_with_transport(ok)
     steam._on_rate_limited("reviews", 730)
+    clock.sleep(100)
     steam._on_rate_limited("reviews", 570)
-    assert steam.reviews_interval_seconds() == pytest.approx(1.875)
+    assert steam._lanes["reviews"].paused_until == pytest.approx(1300)
 
 
 def test_429_on_reviews_leaves_other_endpoints_running(clock):
@@ -81,14 +86,6 @@ def test_429_on_reviews_leaves_other_endpoints_running(clock):
     start = clock.now
     steam.get_events(730)
     assert clock.now - start < 1
-
-
-def test_reviews_speed_up_after_a_success_streak_but_not_below_the_floor(clock):
-    steam = steam_with_transport(ok)
-    steam._lanes["reviews"].interval = 1.3
-    for _ in range(resources.REVIEWS_SPEEDUP_AFTER):
-        steam.get_summary(730)
-    assert steam.reviews_interval_seconds() == pytest.approx(1.25)
 
 
 def test_store_items_have_their_own_interval(clock):
@@ -112,7 +109,7 @@ def test_429_on_store_items_pauses_seconds_not_minutes(clock):
     steam.get_store_items([730])
 
     assert clock.now - start == pytest.approx(5)
-    assert steam.reviews_interval_seconds() == pytest.approx(1.25)
+    assert steam._lanes["reviews"].paused_until == 0.0
 
 
 def test_429_on_store_items_leaves_reviews_running(clock):
@@ -136,4 +133,4 @@ def test_a_slot_reserved_before_a_429_waits_for_the_pause(clock, monkeypatch):
 
     monkeypatch.setattr(resources.time, "sleep", sleep_then_429)
     steam._throttle("reviews")
-    assert clock.now - start == pytest.approx(1.25 + 300)
+    assert clock.now - start == pytest.approx(0.1 + 300)

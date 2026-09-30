@@ -7,7 +7,11 @@ ne peut être vérifiée qu'en base. Le test écrit dans une base jetable (cf. c
 from datetime import UTC, datetime
 
 from orchestration.clickhouse import ClickHouseResource
-from orchestration.steam.incremental import RELEVANT_APP_IDS, ROTATION_STEAM_COUNT
+from orchestration.steam.incremental import (
+    MIN_STEAM_COUNT_DELTA,
+    RELEVANT_APP_IDS,
+    ROTATION_STEAM_COUNT,
+)
 
 # app_id hors de l'espace Steam réel (> 10^9) : aucune collision avec les données
 # locales. Multiple de 7 et positif, pour que BASE_APP_ID + d tombe le jour d.
@@ -49,7 +53,11 @@ def insert_census_row(
 
 def selected_rows(clickhouse: ClickHouseResource) -> dict[int, dict]:
     rows = clickhouse.query(
-        RELEVANT_APP_IDS, {"rotation_steam_count": ROTATION_STEAM_COUNT}
+        RELEVANT_APP_IDS,
+        {
+            "rotation_steam_count": ROTATION_STEAM_COUNT,
+            "min_steam_count_delta": MIN_STEAM_COUNT_DELTA,
+        },
     )
     return {row["app_id"]: row for row in rows}
 
@@ -73,6 +81,30 @@ def test_ignores_game_that_did_not_move(clickhouse: ClickHouseResource) -> None:
     insert_census_row(clickhouse, app_id, steam_count=100, synced_steam_count=100)
 
     assert app_id not in selected_rows(clickhouse)
+
+
+def test_ignores_game_that_moved_less_than_the_threshold(
+    clickhouse: ClickHouseResource,
+) -> None:
+    moved_up = app_id_for_rotation(clickhouse, today=False)
+    moved_down = moved_up + 7
+    insert_census_row(
+        clickhouse,
+        moved_up,
+        steam_count=100 + MIN_STEAM_COUNT_DELTA - 1,
+        synced_steam_count=100,
+    )
+    insert_census_row(
+        clickhouse,
+        moved_down,
+        steam_count=100 - MIN_STEAM_COUNT_DELTA,
+        synced_steam_count=100,
+    )
+
+    selected = selected_rows(clickhouse)
+
+    assert moved_up not in selected
+    assert moved_down in selected
 
 
 def test_selects_first_count_of_a_game_never_synced(
