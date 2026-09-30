@@ -151,7 +151,7 @@
             "vãi lồn", "đéo gì",
             "bê đê", "pê đê", "thằng mọi", "mọi rợ", "thiểu năng", "tàu khựa", "khựa", "mọi đen"]
     } -%}
-    {#- Mots anglais qui ont un sens ordinaire dans une autre langue : pas cherchés dans celle-ci. -#}
+    {#- Mots anglais ordinaires dans une autre langue. -#}
     {%- set english_false_friends = {
         "german": ["dick", "ass", "hell"],
         "swedish": ["slut", "prick"],
@@ -161,9 +161,7 @@
         "dutch": ["douche"],
         "romanian": ["cum"]
     } -%}
-    {#- Une review en capitales perd souvent ses accents : « ENCULES » pour « enculé ».
-        Texte et mots sont ramenés à la lettre de base ; İ l'est avant lowerUTF8,
-        qui en ferait « i » + point combinant. -#}
+    {#- Les capitales perdent souvent leurs accents ; İ est replié avant lowerUTF8, qui en ferait « i » + point. -#}
     {%- set latin_variants = ["aàáâãäå", "cç", "eéèêë", "iíìîïı", "nñ", "oóòôõö", "uúùûü", "yýÿ"] -%}
     {%- set fold = {} -%}
     {%- for variants in latin_variants -%}
@@ -171,9 +169,7 @@
     {%- endfor -%}
     {%- set folded_text = "translateUTF8(lowerUTF8(translateUTF8(" ~ text_column ~ ", 'İ', 'i')), '"
         ~ fold.keys() | join ~ "', '" ~ fold.values() | join ~ "')" -%}
-    {#- Pas de grande regex : les listes de mots sont deux fois plus rapides. Un mot est une
-        suite de lettres, chiffres et _, comme avant ; tokens() colle « … » ou « » »
-        au mot, et unicodeWord coupe tout caractère non ASCII. -#}
+    {#- Listes de mots plutôt qu'une grande regex : deux fois plus rapide. -#}
     {%- set text_words = "extractAll(" ~ folded_text ~ ", '[\\\\p{L}\\\\p{N}_]+')" -%}
     {%- set glued_languages = ["schinese", "tchinese", "japanese", "koreana", "thai"] -%}
     {%- set review_language = "if(" ~ language_column ~ " IN ('" ~ swears.keys() | join("', '")
@@ -188,7 +184,6 @@
         {%- set phrases = [] -%}
         {%- for word in (swears["english"] if glued else swears[language] + swears["english"]) | unique -%}
             {%- set english = word in swears["english"] and (language == "english" or word not in swears[language]) -%}
-            {#- Découpé comme le texte. -#}
             {%- set folded = [] -%}
             {%- set parts = [""] -%}
             {%- for char in word | lower -%}

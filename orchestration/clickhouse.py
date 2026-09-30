@@ -7,22 +7,15 @@ from clickhouse_connect.driver.client import Client
 from dagster import ConfigurableResource
 from pydantic import PrivateAttr
 
-# Les tables ReplacingMergeTree ne dédupliquent qu'à la fusion : sans FINAL, un
-# comptage ou une jointure verrait les doublons en attente.
+# ReplacingMergeTree ne déduplique qu'à la fusion.
 SESSION_SETTINGS = {"final": 1}
 
-# Au-delà de 4 Kio, les paramètres liés partent en formulaire, dont le serveur
-# borne chaque champ à 128 Kio (http_max_field_value_size) : les longues listes
-# s'envoient par tranches. 5000 entiers tiennent, pas 5000 chaînes.
+# Un paramètre lié est borné à 128 Kio (http_max_field_value_size) : 5000 entiers tiennent, pas 5000 chaînes.
 PARAM_BATCH_SIZE = 5000
 
 
 class ClickHouseResource(ConfigurableResource):
-    """Clients clickhouse-connect vers ClickHouse, un par thread.
-
-    Les requêtes n'écrivent pas le nom de la base : `database` (raw par défaut)
-    permet aux tests de jouer le même SQL dans une base jetable.
-    """
+    """Un client par thread ; le SQL ne nomme pas la base, pour que les tests en changent."""
 
     host: str
     port: int
@@ -34,7 +27,6 @@ class ClickHouseResource(ConfigurableResource):
 
     @property
     def client(self) -> Client:
-        """Client du thread courant : un client ne supporte pas deux requêtes à la fois."""
         client = getattr(self._local, "client", None)
         if client is None:
             client = clickhouse_connect.get_client(
@@ -52,7 +44,6 @@ class ClickHouseResource(ConfigurableResource):
     def query(
         self, sql: str, parameters: Mapping[str, Any] | None = None
     ) -> list[dict[str, Any]]:
-        """Lignes du résultat, en dictionnaires."""
         result = self.client.query(sql, parameters=parameters)
         return list(result.named_results())
 

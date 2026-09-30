@@ -1,10 +1,4 @@
-"""Arrêt de la pagination incrémentale d'un jeu sans checkpoint.
-
-Le budget de relances existe pour survivre aux faux signaux de fin de Steam.
-Sans checkpoint à rejoindre, seul le total recensé peut dire si la fin annoncée
-est vraie : ces tests vérifient qu'on ne dort pas quand elle l'est, et qu'on
-relance toujours quand elle ne l'est pas.
-"""
+"""Arrêt de la pagination incrémentale d'un jeu sans checkpoint."""
 
 from typing import Any
 
@@ -47,7 +41,6 @@ class FakeSteam:
 
 @pytest.fixture
 def slept(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Capture les attentes du backoff au lieu de les subir."""
     delays: list[float] = []
     monkeypatch.setattr(incremental.time, "sleep", delays.append)
     return delays
@@ -120,8 +113,6 @@ def test_replays_page_one_when_the_summary_is_missing(slept: list[float]) -> Non
 
 
 class FakeClickHouse:
-    """Enregistre les insertions et les UPDATE au lieu de les jouer."""
-
     def __init__(self) -> None:
         self.inserted: list[tuple] = []
         self.checkpoints: list[dict] = []

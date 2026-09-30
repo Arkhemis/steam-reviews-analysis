@@ -5,7 +5,6 @@ from orchestration.steam.jobs import (
     steam_events_full_refresh_job,
 )
 
-# Recensement, backfill, incrémental, annonces et fiches restent séparés dans le même domaine.
 defs = Definitions(
     assets=load_assets_from_modules(
         [census, backfill, incremental, events, game_details]

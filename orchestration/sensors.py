@@ -6,7 +6,6 @@ import time
 import httpx
 from dagster import DefaultSensorStatus, RunFailureSensorContext, run_failure_sensor
 
-# Hôte servi par Caddy (cf. deploy/Caddyfile) ; surchargeable hors prod.
 DEFAULT_DAGSTER_BASE_URL = "https://dagster.steam.reviews"
 # Discord tronque la description d'un embed à 4096 caractères.
 MAX_DESCRIPTION_CHARS = 3500
@@ -22,10 +21,8 @@ def _post_alert(context: RunFailureSensorContext, url: str, payload: dict) -> No
         try:
             response = httpx.post(url, json=payload, timeout=WEBHOOK_TIMEOUT_SECONDS)
             if response.status_code != 429 and response.status_code < 500:
-                # 4xx hors 429 : webhook supprimé ou payload invalide, inutile de retenter.
                 response.raise_for_status()
                 return
-            # Sur 429, Discord dicte lui-même l'attente.
             delay = float(response.headers.get("retry-after", delay))
             reason = f"HTTP {response.status_code}"
         except httpx.TransportError as exc:
@@ -44,13 +41,11 @@ def _post_alert(context: RunFailureSensorContext, url: str, payload: dict) -> No
 @run_failure_sensor(
     name="discord_run_failure_sensor",
     description="Poste une alerte Discord à chaque run en échec du code location.",
-    # Actif dès le déploiement, comme daily_pipeline_schedule.
     default_status=DefaultSensorStatus.RUNNING,
 )
 def discord_run_failure_sensor(context: RunFailureSensorContext) -> None:
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        # Variable optionnelle : `dg dev` en local doit tourner sans webhook.
         context.log.warning("DISCORD_WEBHOOK_URL absent : alerte Discord ignorée.")
         return
 
@@ -66,15 +61,12 @@ def discord_run_failure_sensor(context: RunFailureSensorContext) -> None:
     lines.append(f"```\n{context.failure_event.message}\n```")
 
     mention_user_id = os.environ.get("DISCORD_MENTION_USER_ID")
-    # Le daemon persiste le curseur même quand le tick échoue (un run status
-    # sensor a des effets de bord non rejouables) : une alerte non postée ici
-    # est définitivement perdue, d'où les retries plutôt qu'un simple raise.
+    # Le curseur avance même si le tick échoue : sans retries, l'alerte est perdue.
     _post_alert(
         context,
         webhook_url,
         {
-            # Seul le `content` déclenche une notification Discord ; un embed seul
-            # passe inaperçu, or un échec de nuit doit réveiller.
+            # Un embed seul ne notifie pas.
             "content": f"<@{mention_user_id}>" if mention_user_id else "",
             "embeds": [
                 {

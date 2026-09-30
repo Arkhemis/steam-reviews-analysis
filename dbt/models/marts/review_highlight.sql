@@ -1,7 +1,6 @@
 {{ config(order_by='(app_id, rank_in_game)') }}
 
--- Texte et auteur des reviews de review_highlight_pick, par la clé complète de
--- leur version. Le top (~9 M lignes) est la table hachée : la staging défile.
+-- Le top est la table hachée : la staging défile.
 SELECT
     t.rank_in_game,
     t.pick,

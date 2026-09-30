@@ -4,11 +4,9 @@ CREATE EXTENSION IF NOT EXISTS citus_columnar;
 -- ---------------------------------------------------------------------------
 -- Liste des jeux (source IGDB)
 -- ---------------------------------------------------------------------------
--- Enrichissement issu des dumps genres / involved_companies / companies /
--- covers, en colonnes dédiées (cf. orchestration/assets/igdb.py).
 CREATE TABLE IF NOT EXISTS raw.igdb_games (
     igdb_id            BIGINT PRIMARY KEY,
-    steam_app_id       BIGINT,         -- peut être NULL si pas de lien Steam
+    steam_app_id       BIGINT,
     name               TEXT,
     first_release_date DATE,
     genres             TEXT [],
@@ -38,15 +36,10 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     last_seen_timestamp_updated BIGINT
 );
 
--- Migration idempotente : peut être rejouée sur une base déjà initialisée
--- (ce script n'est exécuté automatiquement par Postgres qu'au premier
--- démarrage sur un volume vide, cf. docker-entrypoint-initdb.d).
+-- Idempotent : rejouable sur une base déjà initialisée.
 ALTER TABLE raw.steam_review_counts
     ADD COLUMN IF NOT EXISTS total_reviews_backfilled BIGINT;
 
--- Recensement GetItems (achats Steam seuls, sans les clés activées ailleurs) :
--- steam_count est le compteur du jour, synced_steam_count sa valeur à la
--- dernière synchronisation des reviews. Tant qu'ils diffèrent, le jeu a bougé.
 ALTER TABLE raw.steam_review_counts
     ADD COLUMN IF NOT EXISTS steam_count BIGINT,
     ADD COLUMN IF NOT EXISTS synced_steam_count BIGINT,
@@ -70,7 +63,6 @@ CREATE TABLE IF NOT EXISTS raw.steam_events (
     gid                TEXT   NOT NULL, 
     app_id             BIGINT NOT NULL,
     payload            JSONB  NOT NULL,
-    -- Date de publication : la borne du croisement avec la courbe de reviews.
     rtime32_start_time BIGINT,
     loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (app_id, gid)
@@ -81,7 +73,6 @@ CREATE TABLE IF NOT EXISTS raw.steam_events (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS raw.steam_game_details (
     app_id    BIGINT PRIMARY KEY,
-    -- Item brut de IStoreBrowseService/GetItems, apps retirées comprises.
     payload   JSONB  NOT NULL,
     loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

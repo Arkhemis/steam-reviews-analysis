@@ -17,7 +17,6 @@ def _dbt_selection(dbt_select: str) -> dg.AssetSelection:
     )
 
 
-# Les couches sont déjà taguées par dossier dans dbt/dbt_project.yml.
 dbt_all = _dbt_selection("fqn:*")
 
 

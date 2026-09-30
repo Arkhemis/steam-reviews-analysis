@@ -12,7 +12,6 @@ from dagster import (
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.resources import SteamResource
 
-# GetItems plafonne à ~250 ids par requête (URL trop longue au-delà).
 CENSUS_BATCH_SIZE = 200
 
 
@@ -25,11 +24,7 @@ ORDER BY steam_app_id
 
 KNOWN_APP_IDS_SQL = "SELECT DISTINCT app_id FROM steam_review_counts"
 
-# Les totaux (dont les clés activées ailleurs) restent écrits par le backfill et
-# l'incrémental depuis la page 1 de /appreviews. Un jeu backfillé avant ce
-# recensement prend le compteur du jour comme point de départ, faute de mieux :
-# ses reviews ne sont pas perdues, le checkpoint les rattrapera à son prochain mouvement.
-# Les SET lisent les valeurs d'avant l'UPDATE, comme l'ancien ON CONFLICT.
+# Un jeu backfillé sans synced_steam_count part du compteur du jour ; le checkpoint rattrape le reste.
 UPDATE_STEAM_COUNT_SQL = """
 UPDATE steam_review_counts
 SET steam_count            = transform(app_id, {ids:Array(UInt32)}, {counts:Array(Int64)}, toInt64(0)),
@@ -49,7 +44,6 @@ WHERE app_id IN {ids:Array(UInt32)}
 def write_steam_counts(
     clickhouse: ClickHouseResource, counts: list[tuple[int, int]], known: set[int]
 ) -> None:
-    """Insère les jeux absents de la table, met à jour les autres ; complète `known`."""
     new = [(app_id, count) for app_id, count in counts if app_id not in known]
     existing = [(app_id, count) for app_id, count in counts if app_id in known]
     clickhouse.insert(
@@ -66,7 +60,6 @@ def write_steam_counts(
 
 
 def steam_review_count(item: dict) -> int | None:
-    """Compteur de reviews d'une fiche GetItems, None si Steam n'en donne pas."""
     if item.get("success") != 1:
         return None
     return ((item.get("reviews") or {}).get("summary_filtered") or {}).get(
@@ -110,7 +103,7 @@ def steam_review_counts(
             batches_failed += 1
             continue
 
-        # Un id en double dans la réponse créerait deux lignes pour le même jeu.
+        # Dédoublonne les ids que GetItems renvoie deux fois.
         counts = {
             item["id"]: count
             for item in items

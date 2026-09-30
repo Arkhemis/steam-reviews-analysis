@@ -1,8 +1,4 @@
-"""Validation de fin de pagination du backfill.
-
-Un jeu n'est marqué backfillé que si la fin est confirmée par un total connu :
-sans total, une page vide peut être une fausse fin de Steam.
-"""
+"""Fin de pagination du backfill : sans total connu, une page vide peut être une fausse fin."""
 
 import pytest
 

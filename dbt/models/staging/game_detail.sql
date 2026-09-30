@@ -23,7 +23,6 @@ SELECT
     ifNull(JSONExtract(payload, 'is_early_access', 'Nullable(Bool)'), false) AS is_early_access,
     ifNull(JSONExtract(payload, 'is_coming_soon', 'Nullable(Bool)'), false) AS is_coming_soon,
 
-    -- GetItems sérialise les prix en chaînes : JSONExtract les lit quand même.
     toDecimal64(
         coalesce(
             JSONExtract(payload, 'best_purchase_option', 'original_price_in_cents', 'Nullable(Int64)'),

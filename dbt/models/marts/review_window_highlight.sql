@@ -1,8 +1,6 @@
 {{ config(order_by='(window_name, category, language, rank)') }}
 
--- Mêmes bornes que game_window_score : ancrées sur la dernière date ingérée,
--- jamais sur CURRENT_DATE, pour que la fenêtre ne soit pas vide quand
--- l'ingestion a plusieurs jours de retard.
+-- Ancrées sur la dernière date ingérée, comme game_window_score.
 WITH bounds AS (
 
     SELECT max(review_date) AS latest
@@ -28,9 +26,7 @@ windows AS (
 
 ),
 
--- Une seule lecture de steam_review sert les deux fenêtres : la plus large
--- (trente jours) contient l'autre. Le texte n'est pas lu ici : les lauréats le
--- récupèrent à la fin, par leur clé de tri.
+-- Une seule lecture pour les deux fenêtres ; le texte n'est lu que pour les lauréats.
 recent_reviews AS (
 
     SELECT
@@ -48,15 +44,11 @@ recent_reviews AS (
         AND NOT is_generic
         AND language IS NOT NULL
 
-        -- votes_funny peut être négatif en staging (sérialisation uint32 de
-        -- l'API) : la comparaison stricte l'écarte d'office.
+        -- Écarte aussi les votes_funny négatifs (uint32 de l'API).
         AND (votes_funny > 0 OR votes_up > 0)
 
 ),
 
--- Une ligne par (fenêtre, catégorie, review) éligible. Le texte et l'auteur
--- ne sont pas portés ici : les deux tris qui suivent n'ont besoin que des
--- compteurs, et trimballer review_text dans chaque tri coûterait cher.
 candidates AS (
 
     SELECT
@@ -67,8 +59,6 @@ candidates AS (
         r.recommendation_id AS recommendation_id,
         r.votes_up AS votes_up,
 
-        -- Clé de tri principale propre à chaque catégorie : les votes « drôle »
-        -- pour funny, le score pondéré de Steam pour helpful.
         if(
             r.category = 'funny',
             toDecimal128(r.votes_funny, 20),
@@ -91,8 +81,7 @@ candidates AS (
 
 ),
 
--- Un jeu très commenté placerait sinon ses cinq meilleures reviews sur le
--- podium : on ne garde que la meilleure de chaque jeu avant de classer.
+-- Une review par jeu, sinon un jeu très commenté prend tout le podium.
 best_per_game AS (
 
     SELECT
@@ -148,8 +137,7 @@ ranked AS (
 
 ),
 
--- Texte et auteur des lauréats. Le filtre IN porte sur la clé de tri de
--- steam_review : seules les granules des lauréats sont lues.
+-- IN sur la clé de tri : seules les granules des lauréats sont lues.
 winners AS (
 
     SELECT

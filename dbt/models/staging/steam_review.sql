@@ -1,9 +1,6 @@
--- Dernière version de chaque review. ReplacingMergeTree(review_version) ne
--- garde, à la fusion, que la version la plus récente, puis la dernière capture.
 -- full_refresh=false : reconstruire doublerait le disque le temps du build.
--- final = 0 : la déduplication de raw est inutile, celle de cette table suffit.
--- max_memory_usage = 0 : le compteur de la requête dérive (3,5 Go comptés pour
--- 300 Mo réels sur 10 % de raw) ; max_server_memory_usage reste le garde-fou.
+-- final = 0 : la déduplication de cette table suffit.
+-- max_memory_usage = 0 : le compteur de la requête surestime ; max_server_memory_usage reste le garde-fou.
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
@@ -18,8 +15,7 @@
 
 {% if is_incremental() %}
 
--- Les lignes de raw chargées depuis le dernier passage, moins 2 jours de marge.
--- Les versions relues reviennent avec la même review_version et fusionnent.
+-- 2 jours de marge : les versions relues fusionnent.
 {{ steam_review_parse(
     "(SELECT * FROM " ~ source('raw', 'steam_reviews')
     ~ " WHERE loaded_at > (SELECT max(loaded_at) FROM " ~ this ~ ") - INTERVAL 2 DAY)"

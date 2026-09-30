@@ -1,8 +1,4 @@
-"""Génère data.json : infra, lignage, orchestration et logique, lus depuis le code.
-
-Rien n'est codé en dur sauf ce que le code ne dit pas (hôte, APIs externes, notes).
-Lancé par serve.py à chaque démarrage ; utilisable seul : `uv run python tools/infra_map/build.py`.
-"""
+"""Génère data.json (infra, lignage, orchestration) depuis le code."""
 
 import ast
 import inspect
@@ -19,7 +15,7 @@ REPO = HERE.parents[1]
 WEBSITE = REPO.parent / "steam-reviews-website"
 sys.path.insert(0, str(REPO))
 
-# Valeurs factices : le chargement des définitions exige ces variables, aucune connexion n'est ouverte.
+# Factices : exigées au chargement des définitions, jamais utilisées.
 for var in (
     "CLICKHOUSE_HOST",
     "CLICKHOUSE_USER",
@@ -32,7 +28,6 @@ os.environ.setdefault("CLICKHOUSE_PORT", "8123")
 
 SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.I)
 
-# Ce que le code ne porte pas : endpoints externes et leurs contraintes connues.
 EXTERNAL_APIS = {
     "api:appreviews": {
         "label": "Steam /appreviews",

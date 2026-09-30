@@ -12,19 +12,15 @@ from orchestration.sensors import discord_run_failure_sensor
 from orchestration.steam import definitions as steam
 from orchestration.steam.resources import SteamResource
 
-# Toutes les resources vivent ici ; les domaines ne portent que assets/jobs/schedules.
 defs = Definitions.merge(
     igdb.defs,
     steam.defs,
     dbt_steam_reviews.defs,
     Definitions(
-        # Job transverse : il ne peut vivre dans aucun domaine puisqu'il les couvre tous.
         jobs=[daily_pipeline_job],
         schedules=[daily_pipeline_schedule],
-        # Surveille tous les jobs du code location, pas seulement les transverses.
         sensors=[discord_run_failure_sensor],
         resources={
-            # Postgres ne sert plus qu'au stockage de Dagster (deploy/dagster.yaml).
             "clickhouse": ClickHouseResource(
                 host=EnvVar("CLICKHOUSE_HOST").get_value(),
                 port=EnvVar.int("CLICKHOUSE_PORT").get_value(),

@@ -1,8 +1,4 @@
-"""Modèle staging.steam_review rendu par Jinja, joué dans chDB (ClickHouse embarqué).
-
-Même moteur que la prod : ReplacingMergeTree, type JSON et regex RE2 sont
-exercés tels quels, sans serveur ni run dbt.
-"""
+"""Modèle staging.steam_review rendu par Jinja, joué dans chDB (ClickHouse embarqué)."""
 
 import json
 from datetime import UTC, datetime
@@ -20,7 +16,6 @@ ENV = Environment(undefined=StrictUndefined, extensions=["jinja2.ext.do"])
 
 
 def render_model(*, incremental: bool) -> tuple[str, dict]:
-    """SQL du modèle et sa config dbt."""
     config: dict = {}
     source = "".join((DBT / "macros" / m).read_text() for m in MACROS)
     source += (DBT / "models" / "staging" / "steam_review.sql").read_text()
@@ -69,7 +64,6 @@ def epoch(day: str) -> int:
 
 
 def build(warehouse, *, incremental: bool) -> None:
-    """Premier build (CREATE + INSERT) ou passage incrémental (INSERT), comme dbt."""
     sql, config = render_model(incremental=incremental)
     if not incremental:
         warehouse.query(

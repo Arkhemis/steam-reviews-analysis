@@ -13,7 +13,6 @@ services:
       - /var/backups/clickhouse:/backups
       - ./deploy/clickhouse/config.d/steam.xml:/etc/clickhouse-server/config.d/steam.xml:ro
       - ./deploy/clickhouse/users.d/steam.xml:/etc/clickhouse-server/users.d/steam.xml:ro
-      # Compte de clickhouse.steam.reviews, en prod seulement.
       - ./deploy/clickhouse/users.d/play.xml:/etc/clickhouse-server/users.d/play.xml:ro
       - ./db/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     environment:

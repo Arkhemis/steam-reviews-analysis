@@ -19,8 +19,7 @@ WITH cell_term AS (
 
 corpus_term AS (
 
-    -- Référence de même polarité : comparer les négatives aux négatives
-    -- retire le vocabulaire de la déception en général.
+    -- Même polarité : retire le vocabulaire de la déception en général.
     SELECT
         voted_up,
         lexeme,
@@ -65,8 +64,7 @@ confronted AS (
         toFloat64(cs.tokens) AS n_game,
         toFloat64(ks.tokens - cs.tokens) AS n_rest,
 
-        -- Prior de Dirichlet informatif : la fréquence du terme dans tout le
-        -- corpus, ce qui régularise les termes rares.
+        -- Prior de Dirichlet sur la fréquence du corpus : régularise les termes rares.
         toFloat64(k.occurrences) AS alpha_term,
         toFloat64(ks.tokens) AS alpha_total
 
@@ -131,7 +129,6 @@ controlled AS (
     -- Benjamini-Hochberg : plus grand rang k tel que p(k) <= k*q/m.
     SELECT
         *,
-        -- Aucun rang retenu : 0, que p_rank (>= 1) ne franchit jamais.
         maxIf(
             p_rank, p_value <= p_rank * {{ var('fdr_q', 0.05) }} / tested
         ) OVER (PARTITION BY app_id, voted_up) AS bh_cutoff
@@ -144,7 +141,6 @@ retained AS (
     SELECT *
     FROM controlled
     WHERE
-        -- Test bilatéral, affichage unilatéral : on ne dessine pas une absence.
         z_score >= {{ var('min_z_score', 1.96) }}
         AND p_rank <= bh_cutoff
 

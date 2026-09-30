@@ -1,11 +1,9 @@
-{#- Parse du payload JSON d'une review. `source_relation` est une table ou une
-    sous-requête entre parenthèses ; le résultat est un SELECT complet. -#}
+{#- `source_relation` : table ou sous-requête entre parenthèses. -#}
 {% macro steam_review_parse(source_relation) %}
 SELECT
     *,
 
-    -- attributs dérivés de review_text, calculés une fois ici
-    -- afin d'éviter de relire le texte en aval
+    -- Calculés ici pour ne pas relire le texte en aval.
     toNullable(toUInt32(lengthUTF8(review_text))) AS review_text_length,
     toBool(ifNull(match(review_text, '[✅☐]'), false)) AS is_generic,
     toBool({{ has_profanity('review_text', 'language') }}) AS has_profanity
@@ -24,7 +22,6 @@ FROM (
         payload.author.num_games_owned::Nullable(Int32) AS author_num_games_owned,
         payload.author.num_reviews::Nullable(Int32) AS author_num_reviews,
 
-        -- playtimes Steam sont exprimés en minutes
         payload.author.playtime_forever::Nullable(Int32) AS author_playtime_forever_minutes,
         payload.author.playtime_at_review::Nullable(Int32) AS author_playtime_at_review_minutes,
         payload.author.playtime_last_two_weeks::Nullable(Int32) AS author_playtime_last_two_weeks_minutes,
@@ -35,8 +32,7 @@ FROM (
         payload.voted_up::Nullable(Bool) AS voted_up,
         payload.votes_up::Nullable(Int32) AS votes_up,
 
-        -- l'API Steam sérialise parfois votes_funny comme un uint32 :
-        -- une valeur négative comme -1 devient 4294967295
+        -- Steam sérialise parfois votes_funny en uint32 : -1 devient 4294967295.
         toInt32(
             payload.votes_funny::Nullable(Int64)
             - if(payload.votes_funny::Nullable(Int64) > 2147483647, 4294967296, 0)
@@ -58,8 +54,7 @@ FROM (
         toDateTime(timestamp_updated, 'UTC') AS updated_at,
         loaded_at,
 
-        -- Version gardée par ReplacingMergeTree : la plus récente, puis la
-        -- dernière capture (secondes de loaded_at dans les 32 bits bas).
+        -- La plus récente, puis la dernière capture (loaded_at dans les 32 bits bas).
         bitShiftLeft(toUInt64(timestamp_updated), 32)
         + toUInt32(toUnixTimestamp(loaded_at)) AS review_version
 

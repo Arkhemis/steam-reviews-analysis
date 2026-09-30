@@ -1,8 +1,4 @@
-"""Base ClickHouse jetable pour les tests qui ont besoin d'un vrai serveur.
-
-Le DDL de raw (db/clickhouse/init.sql) est rejoué dans une base `test_…`,
-supprimée en sortie : les données locales ne sont jamais touchées.
-"""
+"""Base ClickHouse jetable : le DDL de raw rejoué dans une base `test_…`, supprimée en sortie."""
 
 import os
 import uuid
@@ -17,7 +13,6 @@ INIT_SQL = ROOT / "db" / "clickhouse" / "init.sql"
 
 
 def clickhouse_settings() -> dict[str, str]:
-    """Variables CLICKHOUSE_* de l'environnement, complétées par le .env du projet."""
     settings = {k: v for k, v in os.environ.items() if k.startswith("CLICKHOUSE_")}
     env_file = ROOT / ".env"
     if env_file.exists():
@@ -32,7 +27,6 @@ def clickhouse_settings() -> dict[str, str]:
 
 
 def raw_ddl(database: str) -> list[str]:
-    """Instructions de init.sql, la base raw remplacée par `database`."""
     sql = INIT_SQL.read_text().replace("raw.", f"{database}.")
     sql = sql.replace("DATABASE IF NOT EXISTS raw", f"DATABASE {database}")
     lines = [line for line in sql.splitlines() if not line.lstrip().startswith("--")]

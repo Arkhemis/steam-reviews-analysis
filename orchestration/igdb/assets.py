@@ -11,8 +11,6 @@ from orchestration.clickhouse import ClickHouseResource
 
 BATCH_SIZE = 1000
 
-# `t_cover_big` n'est qu'une taille parmi d'autres : on stocke aussi l'image_id
-# brut pour que le front puisse composer t_thumb, t_720p, etc.
 COVER_URL_TEMPLATE = "https://images.igdb.com/igdb/image/upload/t_720p/{image_id}.jpg"
 
 COLUMNS = [
@@ -26,12 +24,11 @@ COLUMNS = [
     "cover_url",
 ]
 
-# Relève la limite de taille de champ CSV pour ne pas planter.
+# Certains champs des dumps dépassent la limite CSV par défaut.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 
 def _steam_app_ids_from_external_dump(path: Path) -> dict[str, int]:
-    """Parcourt le dump `external_games` → { igdb_id: steam_app_id }."""
     STEAM_CATEGORY = 1  # enum ExternalGameCategory : steam = 1
     mapping: dict[str, int] = {}
     with open(path, newline="", encoding="utf-8", errors="replace") as f:
@@ -66,25 +63,21 @@ def igdb_games(
     with tempfile.TemporaryDirectory(prefix="igdb_dumps_") as tmp:
         tmp_dir = Path(tmp)
 
-        # 1) external_games -> map igdb_id -> steam_app_id
         external_path = igdb.download_dump("external_games", tmp_dir)
         steam_by_game = _steam_app_ids_from_external_dump(external_path)
         external_path.unlink()
         context.log.info(f"IGDB : {len(steam_by_game)} jeux avec un app_id Steam")
 
-        # 2) genres -> { id: nom }
         genres_path = igdb.download_dump("genres", tmp_dir)
         with open(genres_path, newline="", encoding="utf-8", errors="replace") as f:
             genre_names = {row["id"]: row["name"] for row in csv.DictReader(f)}
         genres_path.unlink()
 
-        # 3) companies -> { id: nom }
         companies_path = igdb.download_dump("companies", tmp_dir)
         with open(companies_path, newline="", encoding="utf-8", errors="replace") as f:
             company_names = {row["id"]: row["name"] for row in csv.DictReader(f)}
         companies_path.unlink()
 
-        # 4) involved_companies -> { id: (company_id, est_dev, est_publisher) }.
         involved_path = igdb.download_dump("involved_companies", tmp_dir)
         with open(involved_path, newline="", encoding="utf-8", errors="replace") as f:
             involved_companies = {
@@ -97,7 +90,6 @@ def igdb_games(
             }
         involved_path.unlink()
 
-        # 5) covers -> { covers.id: image_id }.
         covers_path = igdb.download_dump("covers", tmp_dir)
         with open(covers_path, newline="", encoding="utf-8", errors="replace") as f:
             cover_image_ids = {
@@ -113,7 +105,6 @@ def igdb_games(
             f"{len(cover_image_ids)} covers"
         )
 
-        # 6) games -> nom + enrichissement + upsert (jeux liés à Steam seulement)
         games_path = igdb.download_dump("games", tmp_dir)
 
         total_games = 0

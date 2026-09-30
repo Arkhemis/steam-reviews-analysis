@@ -44,7 +44,7 @@ monthly_baseline AS (
         reviews,
         positive_reviews / nullIf(reviews, 0) AS pct_positive,
 
-        -- Premier mois : fenêtre vide, somme à 0, baseline NULL comme en Postgres.
+        -- Premier mois : fenêtre vide, baseline NULL.
         sum(positive_reviews) OVER w
         / nullIf(sum(reviews) OVER w, 0) AS baseline_positive
 
@@ -57,9 +57,6 @@ monthly_baseline AS (
 
 ),
 
--- Les mois où la courbe décroche, dans un sens ou dans l'autre. Le plancher de
--- volume écarte les mois trop maigres pour qu'un écart de score veuille dire
--- quelque chose.
 shock_months AS (
 
     SELECT
@@ -73,10 +70,7 @@ shock_months AS (
 
 ),
 
--- Les annonces qui ont le plus fait réagir dans l'année, quel qu'en soit le
--- sens : ce sont les jalons du jeu (une sortie, un crossover, une refonte), et
--- l'année est la bonne maille pour eux — on veut les trois qui comptent, pas
--- un par mois.
+-- Les jalons du jeu : les annonces qui ont le plus fait réagir dans l'année.
 most_discussed AS (
 
     SELECT
@@ -119,9 +113,7 @@ controversial AS (
 
 ),
 
--- On retient donc, pour chaque mois qui décroche, l'annonce dont l'accueil va
--- dans le sens du décrochage : la plus rejetée quand le score tombe, la mieux
--- reçue quand il remonte.
+-- Par mois qui décroche, l'annonce dont l'accueil va dans le même sens.
 shock_rescue AS (
 
     SELECT
@@ -187,7 +179,7 @@ SELECT
         ORDER BY e.total_votes DESC, e.comment_count DESC, e.gid ASC
     ) AS rank_in_year,
 
-    -- Un tableau vide renvoie '' en ClickHouse : NULL, comme Postgres.
+    -- Un tableau vide renvoie ''.
     if(empty(e.image_urls), NULL, e.image_urls[1]) AS image_url,
 
     round(e.pct_negative, 4) AS pct_negative,

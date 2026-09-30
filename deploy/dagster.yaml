@@ -1,6 +1,3 @@
-# Configuration de l'instance Dagster (montée en DAGSTER_HOME dans les
-# conteneurs webserver + daemon). Storage sur Postgres pour persister runs,
-# events et schedules entre redémarrages.
 storage:
   postgres:
     postgres_db:
@@ -15,9 +12,7 @@ storage:
       port:
         env: POSTGRES_PORT
 
-# Un conteneur par run, à partir de l'image de user-code. Le DefaultRunLauncher
-# exécutait les runs dans le conteneur user-code, donc chaque `compose up
-# --build` tuait les runs en vol.
+# Un conteneur par run : un `compose up --build` ne tue plus les runs en vol.
 run_launcher:
   module: dagster_docker
   class: DockerRunLauncher
@@ -40,28 +35,24 @@ run_launcher:
       # Partagé avec le webserver, sinon les stdout/stderr des runs sont perdus.
       volumes:
         - steam-reviews-analysis_dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
-      # Même raison que pour webserver/daemon dans le compose.
       healthcheck:
         test: ["NONE"]
-      # Conteneur conservé : run_monitoring lit son code de sortie et il reste
-      # inspectable. Purge (l'hôte porte d'autres stacks, d'où le filtre) :
+      # Conservé pour run_monitoring. Purge :
       # docker container prune --filter label=dagster/run_id --filter until=336h
       auto_remove: false
 
-# File d'attente : borne la concurrence pour respecter le rate limit Steam.
+# Borne la concurrence pour le rate limit Steam.
 run_coordinator:
   module: dagster._core.run_coordinator
   class: QueuedRunCoordinator
   config:
     max_concurrent_runs: 4
 
-# Marque en échec les runs dont le conteneur a disparu. Sans ça ils restent
-# STARTED indéfiniment et retiennent un slot de max_concurrent_runs.
+# Sans ça, un run au conteneur disparu reste STARTED et garde son slot.
 run_monitoring:
   enabled: true
   max_resume_run_attempts: 0
 
-# Rétention des logs de calcul.
 compute_logs:
   module: dagster._core.storage.local_compute_log_manager
   class: LocalComputeLogManager
