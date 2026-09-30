@@ -1,7 +1,6 @@
 {{ config(order_by='review_date') }}
 
--- Colonnes qualifiées : en ClickHouse, total_reviews désignerait l'alias
--- sum(total_reviews) et non la colonne.
+-- Qualifiées, sinon ClickHouse lit l'alias sum(total_reviews).
 SELECT
     t.review_date AS review_date,
     count() AS games_reviewed,

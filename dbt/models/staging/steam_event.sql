@@ -23,8 +23,7 @@ SELECT
     toDateTime(JSONExtract(payload, 'announcement_body', 'updatetime', 'Nullable(Int64)'), 'UTC') AS updated_at,
     toDateTime(JSONExtract(payload, 'rtime32_last_modified', 'Nullable(Int64)'), 'UTC') AS last_modified_at,
 
-    -- Steam met 0 pour « absent » sur ces cinq champs, d'un tiers des annonces
-    -- (end_time) à la quasi-totalité (visibility_end).
+    -- Steam met 0 pour « absent ».
     toDateTime(nullIf(JSONExtract(payload, 'rtime32_end_time', 'Nullable(Int64)'), 0), 'UTC') AS ended_at,
     toDateTime(nullIf(JSONExtract(payload, 'rtime32_visibility_start', 'Nullable(Int64)'), 0), 'UTC')
         AS visible_from,

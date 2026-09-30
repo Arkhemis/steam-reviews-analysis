@@ -1,8 +1,4 @@
-"""Sélection des jeux de l'incrémental, jouée sur un vrai ClickHouse.
-
-La requête repose sur des sémantiques NULL et sur le jour de la semaine : elle
-ne peut être vérifiée qu'en base. Le test écrit dans une base jetable (cf. conftest).
-"""
+"""Sélection des jeux de l'incrémental, jouée sur un vrai ClickHouse."""
 
 from datetime import UTC, datetime
 
@@ -13,8 +9,7 @@ from orchestration.steam.incremental import (
     ROTATION_STEAM_COUNT,
 )
 
-# app_id hors de l'espace Steam réel (> 10^9) : aucune collision avec les données
-# locales. Multiple de 7 et positif, pour que BASE_APP_ID + d tombe le jour d.
+# Multiple de 7 : BASE_APP_ID + d tombe le jour d.
 BASE_APP_ID = 7 * 150_000_000
 
 

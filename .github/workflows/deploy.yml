@@ -51,8 +51,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --no-dev
 
-      # state:modified couvre aussi les changements de config, de yml et de macros.
-      # Aval inclus, sauf les modèles nlp non modifiés : même règle que daily_pipeline.
+      # Aval inclus, sauf les modèles nlp non modifiés, comme daily_pipeline.
       - name: List modified models
         id: models
         env:
@@ -69,7 +68,6 @@ jobs:
           cat "$RUNNER_TEMP/models.txt"
           echo "count=$(grep -c . "$RUNNER_TEMP/models.txt" || true)" >> "$GITHUB_OUTPUT"
 
-      # Passe par la file de Dagster : visible dans l'UI et couvert par l'alerte Discord.
       - name: Launch Dagster run
         if: steps.models.outputs.count != '0'
         env:
@@ -82,8 +80,7 @@ jobs:
           ssh -fN -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/deploy_key" \
             -L 3001:127.0.0.1:3001 deploy@167.235.145.180
 
-          # Le webserver vient d'être recréé par le deploy : les lectures réessaient.
-          # launchRun, lui, ne réessaie jamais : une 500 peut suivre un run déjà créé.
+          # launchRun ne réessaie jamais : une 500 peut suivre un run déjà créé.
           gql() {
             curl -sS --fail -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:3001/graphql "$@"
           }

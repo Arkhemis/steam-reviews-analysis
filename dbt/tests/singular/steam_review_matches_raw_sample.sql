@@ -1,5 +1,4 @@
--- Chaque dimanche : sur 20 jeux tirés au sort, la staging garde exactement la
--- dernière version de chaque review de raw. Recalcul direct depuis raw.
+-- Sur 20 jeux tirés au sort, la staging garde la dernière version de chaque review de raw.
 -- depends_on: {{ ref('steam_review') }}, {{ source('raw', 'steam_reviews') }}, {{ source('raw', 'steam_review_counts') }}
 {{ config(
     tags=['weekly'],

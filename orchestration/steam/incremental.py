@@ -24,30 +24,21 @@ from orchestration.steam.backfill import (
 )
 from orchestration.steam.resources import SteamResource
 
-# Un thread par jeu en cours de traitement. Au-delà de 3, les threads
-# attendent le throttle /appreviews.
+# Au-delà de 3, les threads attendent le throttle /appreviews.
 INCREMENTAL_WORKERS = 3
 
-# Reviews gardées en mémoire par jeu avant envoi au serveur (afin d'éviter un OOM)
+# Reviews gardées en mémoire par jeu avant insertion.
 FLUSH_REVIEWS = 5000
 PROGRESS_EVERY = 500
 
-# Au-dessus, un jeu est resynchronisé une nuit par semaine même sans mouvement :
-# GetItems ne voit ni les éditions de reviews ni les clés activées ailleurs.
-# Un jeu sans compteur GetItems (retiré du store) tourne aussi, quelle que soit sa taille.
+# Resynchro hebdomadaire au-delà : GetItems ne voit ni les éditions ni les clés activées ailleurs.
 ROTATION_STEAM_COUNT = 1000
 
-# Écart minimal du compteur GetItems pour resynchroniser un jeu : sous ce seuil,
-# l'écart s'accumule et le checkpoint rattrape tout au passage suivant.
+# En dessous, l'écart s'accumule jusqu'à un passage suivant.
 MIN_STEAM_COUNT_DELTA = 5
 
 
-# Un jeu a bougé quand son compteur GetItems s'écarte d'au moins
-# MIN_STEAM_COUNT_DELTA de celui de sa dernière synchronisation réussie (un
-# échec laisse l'écart, donc le jeu revient), ou n'est NULL que d'un côté.
-# Le checkpoint manque aux jeux backfillés avant qu'il existe : à 0 la
-# pagination balaie tout le jeu, ce qu'il leur faut de toute façon.
-# toDayOfWeek(...) % 7 : dimanche = 0, comme le dow de Postgres.
+# Checkpoint absent (backfill antérieur à sa création) : 0 = pagination complète.
 RELEVANT_APP_IDS = """
 SELECT app_id,
        total_reviews,
@@ -74,11 +65,7 @@ SET last_seen_timestamp_updated = greatest(
 WHERE app_id = {app_id:UInt32}
 """
 
-# Un scan par run au lieu d'un par jeu, et le compteur redevient exact quoi
-# qu'il ait dérivé. LEFT JOIN pour que les jeux backfillés dont plus aucune
-# review n'est stockée retombent à 0 au lieu de garder leur ancien compteur.
-# Agrégation dans l'ordre de la clé : un jeu à la fois en mémoire. Sans FINAL :
-# les doublons en attente de fusion ne changent pas un compte distinct.
+# Sans FINAL : les doublons en attente de fusion ne changent pas un uniqExact.
 STORED_COUNTS_SQL = """
 SELECT c.app_id AS app_id,
        c.total_reviews_backfilled AS total_reviews_backfilled,
@@ -103,7 +90,7 @@ WHERE app_id IN {ids:Array(UInt32)}
 
 
 class AppSync(NamedTuple):
-    """Bilan de la synchronisation d'un jeu (des compteurs, jamais de reviews)."""
+    """Bilan de la synchronisation d'un jeu."""
 
     reviews_fetched: int
     versions_inserted: int
@@ -112,8 +99,7 @@ class AppSync(NamedTuple):
 
 @asset(
     group_name="load",
-    # Un jeu n'entre dans l'incrémental qu'une fois backfillé, sans quoi les deux
-    # loaders pagineraient le même jeu en parallèle.
+    # Sinon backfill et incrémental paginent le même jeu en parallèle.
     deps=["steam_review_counts", "steam_reviews_backfill"],
     description="Incremental backfill des reviews Steam (payload complet) -> raw.steam_reviews.",
 )
@@ -161,8 +147,6 @@ def steam_reviews_incremental(
             try:
                 result = future.result()
             except Exception:
-                # Un échec isolé ne coûte que ce jeu : son checkpoint n'a pas
-                # bougé, il est repris au prochain run.
                 apps_failed += 1
                 context.log.exception(
                     f"app_id={app_id}: échec de la synchronisation, "
@@ -212,16 +196,7 @@ def steam_reviews_incremental(
 
 
 class NewReviewPages:
-    """Pages de reviews d'un jeu postérieures à son checkpoint.
-
-    Les pages sont servies une par une : un jeu dont le checkpoint est ancien
-    peut demander des milliers de pages, qui ne doivent jamais coexister en
-    mémoire. `filter=updated` garantit un ordre décroissant sur
-    `timestamp_updated`, la pagination s'arrête donc dès la première review
-    antérieure au checkpoint. Un signal de fin reçu avant le checkpoint est
-    traité comme un incident transitoire : le même curseur est rejoué, comme
-    dans le backfill.
-    """
+    """Pages postérieures au checkpoint, servies une à une (`filter=updated` : tri décroissant)."""
 
     def __init__(
         self,
@@ -241,7 +216,6 @@ class NewReviewPages:
         self.summary: dict[str, Any] | None = None
 
     def census_total_reached(self) -> bool:
-        """Vrai si les reviews ramenées couvrent le total recensé, à la tolérance près."""
         if self.total_reviews is None:
             return False
         return self.total_reviews - self.fetched <= stop_tolerance(self.total_reviews)
@@ -267,9 +241,7 @@ class NewReviewPages:
             page: list[dict[str, Any]] = []
             passed_checkpoint = False
             for review in reviews:
-                # On inclut les égalités afin de ne pas perdre une review publiée
-                # dans la même seconde que le checkpoint. Elles seront dédupliquées
-                # par (recommendation_id, timestamp_updated) avant insertion.
+                # Égalités gardées : même seconde que le checkpoint, dédupliquées ensuite.
                 if review["timestamp_updated"] < self.last_seen_timestamp_updated:
                     logger.info(
                         f"app_id={self.app_id}: pagination arrêtée au checkpoint "
@@ -282,18 +254,14 @@ class NewReviewPages:
                     self.reached_checkpoint = True
                 page.append(review)
 
-            # Une page rejouée ne rapproche pas du total recensé : on ne compte
-            # qu'une fois par curseur. Compté avant l'examen du signal de fin,
-            # sinon une dernière page non vide ne compterait jamais.
+            # Une page rejouée ne compte qu'une fois.
             if reviews and cursor != self.counted_cursor:
                 self.fetched += len(reviews)
                 self.counted_cursor = cursor
 
             stalled = not reviews or not next_cursor or next_cursor == cursor
             give_up = stalled and stop_retries >= STOP_MAX_RETRIES
-            # Sans checkpoint à rejoindre, c'est le recensement qui fait preuve
-            # d'arrêt : la fin annoncée est vraie dès que l'écart au total
-            # recensé tient dans la tolérance (cf. backfill).
+            # Sans checkpoint, le total recensé fait preuve d'arrêt.
             if stalled and not self.has_checkpoint and self.census_total_reached():
                 self.reached_checkpoint = True
 
@@ -305,13 +273,9 @@ class NewReviewPages:
             if stalled:
                 if self.reached_checkpoint:
                     return
-                # Steam annonce régulièrement une fin de pagination qui n'en est
-                # pas une : tant que le checkpoint n'est pas rejoint, on rejoue le
-                # même curseur plutôt que d'abandonner le jeu (cf. backfill).
+                # Steam annonce souvent de fausses fins : on rejoue le même curseur.
                 if give_up:
                     if not self.has_checkpoint:
-                        # Rien à rejoindre : après les relances, la fin annoncée
-                        # par Steam est le seul signal de fin exploitable.
                         self.reached_checkpoint = True
                         return
                     logger.warning(
@@ -354,12 +318,7 @@ def sync_app_reviews(
     last_seen_timestamp_updated: int,
     total_reviews: int | None = None,
 ) -> AppSync:
-    """Pagine un jeu depuis son checkpoint et insère les nouvelles versions au fil de l'eau.
-
-    Le checkpoint n'avance qu'après les insertions. S'il n'est pas rejoint, les
-    versions déjà insérées restent : la relance repart du même checkpoint, et
-    raw déduplique celles qu'elle réinsère.
-    """
+    """Le checkpoint n'avance qu'après les insertions ; raw déduplique ce qu'une relance réinsère."""
     logger = get_dagster_logger()
     pages = NewReviewPages(steam, app_id, last_seen_timestamp_updated, total_reviews)
     fetched = 0
@@ -393,13 +352,7 @@ def sync_app_reviews(
 def insert_versions(
     clickhouse: ClickHouseResource, app_id: int, reviews: list[dict[str, Any]]
 ) -> int:
-    """Insère les versions du lot sans vérifier ce qui est déjà en base.
-
-    `last_seen_timestamp_updated` est le max des `timestamp_updated` stockés
-    pour ce jeu : une review plus récente que le checkpoint ne peut pas y être.
-    Seule la seconde-frontière peut donc produire un doublon, que raw
-    déduplique (même clé de tri).
-    """
+    """Sans lecture préalable : seule la seconde du checkpoint peut doublonner, et raw déduplique."""
     if not reviews:
         return 0
 
@@ -414,10 +367,7 @@ def insert_versions(
 
 
 def recount_backfilled(clickhouse: ClickHouseResource) -> int:
-    """Réaligne total_reviews_backfilled sur ce que contient raw.steam_reviews.
-
-    Renvoie le nombre de jeux corrigés.
-    """
+    """Réaligne total_reviews_backfilled sur raw.steam_reviews ; renvoie le nombre de jeux corrigés."""
     drifted = [
         (row["app_id"], row["reviews_stored"])
         for row in clickhouse.query(STORED_COUNTS_SQL)

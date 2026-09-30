@@ -23,17 +23,14 @@ WITH eligible AS (
 
 ranked AS (
 
-    -- Classer sur les seuls identifiants : porter review_text ici ferait
-    -- trier une quinzaine de Go.
+    -- Sans review_text : il ferait trier une quinzaine de Go.
     SELECT
         recommendation_id,
         app_id,
         voted_up,
         count() OVER (PARTITION BY app_id, voted_up) AS reviews_in_cell,
 
-        -- recommendation_id croît avec le temps : trier dessus ne
-        -- retiendrait que les reviews de lancement. Hash en hexadécimal
-        -- minuscule, comme MD5() de Postgres : même ordre, même échantillon.
+        -- recommendation_id croît avec le temps : ne retiendrait que les reviews de lancement.
         row_number() OVER (
             PARTITION BY app_id, voted_up
             ORDER BY lower(hex(MD5(toString(recommendation_id))))
@@ -45,8 +42,6 @@ ranked AS (
 
 selected AS (
 
-    -- Le plafond par cellule fait passer la tokenisation de 49,6 M de
-    -- reviews à moins de 6 M, sans perte utile pour un log-odds.
     SELECT
         recommendation_id,
         app_id,

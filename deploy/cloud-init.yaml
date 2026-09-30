@@ -1,31 +1,12 @@
 #cloud-config
-# Paste this into Hetzner Cloud Console -> Create Server -> "Cloud config" field.
+# Hetzner Cloud Console -> Create Server -> "Cloud config".
 #
-# Provisions the VPS baseline for steam-reviews-prod: non-root `deploy` user,
-# root/password SSH login disabled, ufw, Docker, and the systemd drop-in that
-# stops Docker from starting before the /mnt/pgdata volume is mounted (see the
-# 2026-08-01 incident: without it, Docker silently created a Postgres data dir
-# on the root disk and 22GB got written there for ~10h before anyone noticed).
-#
-# SSH key: pulled from GitHub at boot (ssh_import_id below) instead of
-# hardcoded here — one less thing to edit per server, and a public key isn't
-# sensitive anyway (GitHub already publishes it at github.com/<user>.keys).
-#
-# Manual step still required after first boot (NOT automated here, since the
-# volume already holds the production database and blind automation here is
-# too risky):
-#   1. Attach the existing Hetzner Volume to the server (Hetzner console).
-#   2. SSH in, find the stable device path: ls -l /dev/disk/by-id/ | grep scsi
-#   3. Mount it once: sudo mount /dev/disk/by-id/scsi-0HC_Volume_<id> /mnt/pgdata
-#   4. Add it to /etc/fstab (use the by-id path, not /dev/sdb — device names
-#      aren't guaranteed stable across reboots) with `nofail` so a missing
-#      volume degrades to a failed mount instead of a boot hang, e.g.:
+# Manual steps after first boot (the volume holds the production data):
+#   1. Attach the Hetzner Volume, then find it: ls -l /dev/disk/by-id/ | grep scsi
+#   2. Add to /etc/fstab by id, with nofail:
 #        /dev/disk/by-id/scsi-0HC_Volume_<id> /mnt/pgdata ext4 defaults,nofail 0 0
-#   5. sudo systemctl daemon-reload && sudo mount -a
-#   6. Verify: df -h /mnt/pgdata should show the real volume, not the root disk.
-#   7. As `deploy`, clone steam-reviews-analysis and steam-reviews-website
-#      into ~/apps (the /usr/local/bin/deploy launcher expects both).
-#   8. Only then, as `deploy`: run `deploy`.
+#   3. sudo systemctl daemon-reload && sudo mount -a ; check df -h /mnt/pgdata
+#   4. As `deploy`, clone steam-reviews-analysis and steam-reviews-website into ~/apps, then run `deploy`.
 
 users:
   - name: deploy
@@ -57,7 +38,7 @@ write_files:
     content: |
       [Unit]
       RequiresMountsFor=/mnt/pgdata
-  # Frozen launcher: the logic lives in deploy/deploy.sh, read after the pull.
+  # Frozen: the logic lives in deploy/deploy.sh, read after the pull.
   - path: /usr/local/bin/deploy
     permissions: '0755'
     content: |

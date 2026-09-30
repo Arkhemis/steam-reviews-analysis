@@ -24,17 +24,13 @@ EVENTS_PAGE_SIZE = 100
 
 MIN_TOTAL_REVIEWS = 100
 
-# `success = 42` : Steam n'a pas su résoudre le groupe officiel de cet appid.
 NO_ANNOUNCEMENT_HUB = 42
 
-# has_events distingue les jeux déjà ingérés, qui n'ont plus besoin que de leur
-# page récente, de ceux dont l'historique reste à charger.
 SELECT_APPS_SQL = """
 SELECT
     app_id,
     app_id IN (SELECT DISTINCT app_id FROM steam_events) AS has_events
 FROM steam_review_counts
--- Un jeu tout juste recensé n'a pas encore de total : son compteur GetItems le remplace.
 WHERE coalesce(total_reviews, steam_count) >= {min_total_reviews:Int64}
 ORDER BY coalesce(total_reviews, steam_count) DESC
 """
@@ -47,9 +43,7 @@ WHERE app_id = {app_id:UInt32} AND gid IN {gids:Array(String)}
 LIMIT 1
 """
 
-# Empreinte des annonces déjà en base, pour n'écrire que les nouvelles ou modifiées.
-# Filtrée par jeu : une liste de couples (app_id, gid) dépasse vite les 128 Kio
-# d'un champ de formulaire HTTP (http_max_field_value_size).
+# Par jeu : une liste de (app_id, gid) dépasse les 128 Kio de http_max_field_value_size.
 KNOWN_HASHES_SQL = """
 SELECT app_id, gid, payload_hash
 FROM steam_events
@@ -60,14 +54,10 @@ EVENT_COLUMNS = ["gid", "app_id", "payload", "payload_hash", "rtime32_start_time
 
 
 class SteamEventsConfig(Config):
-    """Exposé dans le Launchpad : rescanne l'historique complet de tous les jeux."""
-
     full_refresh: bool = False
 
 
 class AppEvents(NamedTuple):
-    """Annonces d'un jeu, ou la raison de leur absence."""
-
     app_id: int
     events: list[dict[str, Any]]
     missing_hub: bool = False
@@ -157,12 +147,7 @@ def steam_events(
 
 
 def write_events(clickhouse: ClickHouseResource, rows: list[tuple]) -> int:
-    """Insère les annonces nouvelles ou modifiées, et renvoie leur nombre.
-
-    Chaque page récente revient en entier : sans ce filtre, on réécrirait
-    chaque nuit des annonces inchangées et loaded_at ne dirait plus rien.
-    """
-    # Une même clé peut revenir deux fois dans le lot : la dernière gagne.
+    """N'insère que les annonces nouvelles ou modifiées, pour que loaded_at garde un sens."""
     latest = {(row[1], row[0]): row for row in rows}
     if not latest:
         return 0
@@ -179,7 +164,6 @@ def write_events(clickhouse: ClickHouseResource, rows: list[tuple]) -> int:
 def has_known_event(
     clickhouse: ClickHouseResource, app_id: int, events: list[dict[str, Any]]
 ) -> bool:
-    """Dit si l'une des annonces de la page est déjà en base."""
     gids = [event_gid(event) for event in events]
     return bool(clickhouse.query(KNOWN_EVENT_SQL, {"app_id": app_id, "gids": gids}))
 
@@ -190,7 +174,6 @@ def iter_app_events(
     app_id: int,
     whole_history: bool,
 ) -> Iterator[dict[str, Any]]:
-    """Pagine les annonces d'un jeu jusqu'à retomber sur une annonce déjà connue."""
     offset = 0
     while True:
         page = steam.get_events(app_id, count=EVENTS_PAGE_SIZE, offset=offset)
@@ -198,8 +181,7 @@ def iter_app_events(
         if not events:
             return
         yield from events
-        # Steam trie par rtime32_start_time décroissant : un gid déjà en base
-        # signifie que le retard est rattrapé, quel qu'il soit.
+        # Tri décroissant : un gid connu signifie que le retard est rattrapé.
         if not whole_history and has_known_event(clickhouse, app_id, events):
             return
         offset += len(events)
@@ -211,7 +193,6 @@ def fetch_app_events(
     app_id: int,
     whole_history: bool,
 ) -> AppEvents:
-    """Récupère les annonces d'un jeu sans jamais faire tomber le run."""
     logger = get_dagster_logger()
     try:
         return AppEvents(
@@ -228,8 +209,7 @@ def fetch_app_events(
 
 
 def event_gid(event: dict[str, Any]) -> str:
-    """Clé de l'annonce : le gid du post relaie celui de l'événement quand Steam
-    le laisse à 0, sinon elles s'écrasent entre elles sur la clé (app_id, gid)."""
+    # Steam laisse parfois gid à 0 : sans relais, les annonces s'écrasent sur (app_id, gid).
     gid = str(event["gid"])
     if gid == "0":
         return str(event.get("announcement_body", {}).get("gid") or gid)
@@ -237,7 +217,6 @@ def event_gid(event: dict[str, Any]) -> str:
 
 
 def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
-    """Ligne à insérer pour une annonce, empreinte du payload comprise."""
     payload = json.dumps(event)
     return (
         event_gid(event),
@@ -249,6 +228,6 @@ def event_to_row(app_id: int, event: dict[str, Any]) -> tuple:
 
 
 def payload_hash(payload: str) -> int:
-    """Empreinte stable sur 64 bits (hash() de Python change à chaque processus)."""
+    # hash() de Python change à chaque processus.
     digest = hashlib.blake2b(payload.encode(), digest_size=8).digest()
     return int.from_bytes(digest, "little")

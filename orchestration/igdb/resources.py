@@ -12,8 +12,6 @@ API_BASE_URL = "https://api.igdb.com/v4"
 
 
 class IGDBResource(ConfigurableResource):
-    """Accès à l'API IGDB."""
-
     client_id: str
     client_secret: str
     request_timeout_seconds: float = 20.0
@@ -23,7 +21,6 @@ class IGDBResource(ConfigurableResource):
     _token_expires_at: float = PrivateAttr(default=0.0)
 
     def _ensure_token(self) -> str:
-        # Marge de 60s pour ne pas utiliser un token qui expire à l'instant.
         if self._access_token and time.time() < self._token_expires_at - 60:
             return self._access_token
 
@@ -51,11 +48,7 @@ class IGDBResource(ConfigurableResource):
             "Accept": "application/json",
         }
 
-    # ------------------------------------------------------------------
-    # Data dumps (https://api-docs.igdb.com/#dumps)
-    # ------------------------------------------------------------------
     def get_dump_url(self, endpoint: str) -> str:
-        """Obtient l'URL S3 (signée, éphémère) de téléchargement d'un dump."""
         resp = httpx.get(
             f"{API_BASE_URL}/dumps/{endpoint}",
             headers=self._headers(),
@@ -68,7 +61,6 @@ class IGDBResource(ConfigurableResource):
         return s3_url
 
     def download_dump(self, endpoint: str, dest_dir: Path) -> Path:
-        """Télécharge le dump CSV d'un endpoint dans `dest_dir`, renvoie le chemin."""
         logger = get_dagster_logger()
         s3_url = self.get_dump_url(endpoint)
         dest_dir.mkdir(parents=True, exist_ok=True)

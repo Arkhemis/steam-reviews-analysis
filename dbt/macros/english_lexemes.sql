@@ -1,7 +1,4 @@
-{#- Lexèmes anglais d'un texte, répétitions comprises : minuscules, découpe sur
-    les non-lettres, mots vides de Postgres (english.stop), racine Snowball.
-    Remplace to_tsvector('english', …) ; les requêtes qui l'appellent doivent
-    activer allow_experimental_nlp_functions. -#}
+{#- Exige allow_experimental_nlp_functions. -#}
 {% macro english_lexemes(text_column) -%}
     arrayFilter(
         lexeme -> lengthUTF8(lexeme) BETWEEN 3 AND 40 AND match(lexeme, '^[[:alpha:]]'),

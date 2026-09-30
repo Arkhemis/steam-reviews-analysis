@@ -31,7 +31,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
 
 handler = functools.partial(NoCache, directory=str(HERE))
-# 127.0.0.1 seulement : la page embarque le code et la config du déploiement.
+# La page embarque le code et la config du déploiement.
 with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
     url = f"http://127.0.0.1:{args.port}/"
     print(f"Carte servie sur {url} (Ctrl+C pour arrêter)")

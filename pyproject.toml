@@ -33,12 +33,10 @@ dev = [
     "chdb>=4.4",
 ]
 
-# Dagster code location (cf. CLAUDE.md : package `orchestration`).
 [tool.dagster]
 module_name = "orchestration.definitions"
 code_location_name = "steam_reviews"
 
-# dg CLI (`dg dev`, `dg check defs`) : projet basé sur le module `orchestration`.
 [tool.dg]
 directory_type = "project"
 

@@ -34,9 +34,7 @@ db.steam.reviews {
 	}
 }
 
-# Interface /play de ClickHouse, protégée par le login ClickHouse : un basicauth
-# bloquerait /play, qui envoie « Authorization: never » et met le login dans l'URL.
-# Seul le compte play (lecture seule) passe : user forcé, autres identifiants retirés.
+# Pas de basicauth : /play envoie « Authorization: never ». Seul le compte play (lecture seule) passe.
 clickhouse.steam.reviews {
 	uri query user play
 

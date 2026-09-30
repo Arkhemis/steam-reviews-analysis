@@ -1,6 +1,4 @@
-# Stack pipeline (PLAN §8), périmètre : IGDB -> ClickHouse -> reviews -> dbt.
-# Postgres ne sert que de stockage d'instance à Dagster.
-# Tous les services lisent le .env (non commité). Voir .env.example.
+# Tous les services lisent le .env (cf. .env.example).
 
 x-dagster-env: &dagster-env
   DAGSTER_HOME: /opt/dagster/dagster_home
@@ -17,11 +15,9 @@ x-dagster-env: &dagster-env
   IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
   DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
   DISCORD_MENTION_USER_ID: ${DISCORD_MENTION_USER_ID:-}
-  # Vide : le lien de l'alerte pointe sur https://dagster.steam.reviews.
   DAGSTER_BASE_URL: ${DAGSTER_BASE_URL:-}
 
-# Cité en dur dans deploy/dagster.yaml. Valeur identique au nom implicite de
-# Compose, donc aucun service existant n'est recréé.
+# Cité en dur dans deploy/dagster.yaml.
 networks:
   default:
     name: steam-reviews-analysis_default
@@ -43,20 +39,18 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     volumes:
       - chdata:/var/lib/clickhouse
-      # Fichiers montés un à un : l'image écrit ses propres fichiers dans users.d.
+      # Un à un : l'image écrit ses propres fichiers dans users.d.
       - ./deploy/clickhouse/config.d/steam.xml:/etc/clickhouse-server/config.d/steam.xml:ro
       - ./deploy/clickhouse/users.d/steam.xml:/etc/clickhouse-server/users.d/steam.xml:ro
-      # DDL de raw : joué au premier démarrage (volume vide).
       - ./db/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      # /ping ne demande pas d'identifiants : le mot de passe reste hors de la config.
+      # /ping ne demande pas d'identifiants.
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Stockage d'instance de Dagster. Encore en image Citus : c'est la source de
-  # la copie de raw vers ClickHouse (docs/migration_clickhouse.md).
+  # Stockage d'instance de Dagster.
   postgres:
     image: citusdata/citus:14.1-pg16
     command: postgres -c shared_preload_libraries=citus -c temp_file_limit=30GB
@@ -70,7 +64,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # DDL des schémas raw : joué au premier démarrage (base vide).
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -78,9 +71,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Code Dagster + dbt, servi en gRPC. webserver/daemon s'y connectent.
-  # Pas de bind mount du code : les conteneurs de run ne le verraient pas et
-  # exécuteraient donc un autre code que celui servi ici.
+  # Pas de bind mount : les conteneurs de run exécuteraient un autre code.
   user-code:
     build:
       context: .
@@ -90,7 +81,6 @@ services:
     restart: unless-stopped
     environment:
       <<: *dagster-env
-      # Image que le run launcher utilisera pour les conteneurs de run.
       DAGSTER_CURRENT_IMAGE: steam-reviews-analysis-user-code:latest
     depends_on:
       postgres:
@@ -123,7 +113,6 @@ services:
       - ./deploy/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
       - ./deploy/workspace.yaml:/opt/dagster/dagster_home/workspace.yaml:ro
       - dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
-      # Terminer un run = arrêter son conteneur.
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
@@ -166,7 +155,6 @@ services:
 volumes:
   pgdata:
   chdata:
-  # Nom explicite pour la même raison que le réseau : DockerRunLauncher le cite
-  # en dur, or le préfixe de projet dépend du dossier ou de `-p`.
+  # Cité en dur par DockerRunLauncher.
   dagster_compute_logs:
     name: steam-reviews-analysis_dagster_compute_logs

@@ -1,18 +1,11 @@
--- Les tris des fenêtres débordent dès 256 Mo : pic à 1,7 Go au lieu de 2,3.
+-- Les tris débordent dès 256 Mo.
 {{ config(
     order_by='(app_id, recommendation_id)',
     query_settings={'max_bytes_before_external_sort': 268435456},
 ) }}
 
--- Sélection de review_highlight, en table à part : sa jointure avec la staging
--- hache ce top (~9 M lignes), pas les 183 M reviews.
-
--- Par (jeu, avis, langue) : les top_n_reviews reviews les plus utiles, puis
--- jusqu'à top_crude_reviews reviews grossières et top_funny_reviews parmi les
--- plus drôles, prises hors de ce top. Le duel du site en tire ses répliques :
--- les plus utiles seules sont rarement drôles, et presque jamais grossières.
--- Fenêtres enchaînées sur une seule lecture de la staging : ClickHouse recalcule
--- une CTE à chaque référence, et quatre tris en parallèle dépassaient la mémoire.
+-- En table à part : review_highlight hache ce top, pas toute la staging.
+-- Une seule lecture de la staging : ClickHouse recalcule une CTE à chaque référence.
 WITH eligible_reviews AS (
 
     SELECT
@@ -51,8 +44,7 @@ ranked AS (
 
 ),
 
--- Les grossières hors du top, les plus drôles en tête : le rang ne compte que
--- parmi les candidates, isolées dans leur propre partition.
+-- Les grossières hors du top, les plus drôles en tête.
 crude AS (
 
     SELECT
@@ -94,8 +86,7 @@ funny AS (
 
 )
 
--- rank_in_game reste le rang d'utilité : les ajouts passent après le top
--- (rang > top_n_reviews) et `pick` dit pourquoi une review est là.
+-- rank_in_game reste le rang d'utilité ; `pick` dit pourquoi une review est là.
 SELECT
     recommendation_id,
     app_id,

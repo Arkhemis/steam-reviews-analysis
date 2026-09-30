@@ -1,6 +1,4 @@
--- DDL de raw, joué par l'image au premier démarrage (volume vide).
--- Les tables ReplacingMergeTree ne dédupliquent qu'à la fusion : lire avec
--- final = 1 (réglage de session de dbt et du site).
+-- ReplacingMergeTree ne déduplique qu'à la fusion : lire avec final = 1.
 CREATE DATABASE IF NOT EXISTS raw;
 
 -- ---------------------------------------------------------------------------
@@ -23,10 +21,7 @@ ORDER BY igdb_id;
 -- ---------------------------------------------------------------------------
 -- Recensement : reviews count par jeu
 -- ---------------------------------------------------------------------------
--- Table d'état, modifiée par UPDATE légers. Une ligne par app_id : le
--- recensement n'insère que les absents, un test dbt vérifie l'unicité.
--- steam_count est le compteur GetItems du jour, synced_steam_count sa valeur à
--- la dernière synchronisation des reviews. Tant qu'ils diffèrent, le jeu a bougé.
+-- synced_steam_count : steam_count à la dernière synchronisation des reviews.
 CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     app_id                      UInt32,
     total_reviews               Nullable(Int64),
@@ -49,8 +44,6 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 -- ---------------------------------------------------------------------------
 -- Reviews, toutes versions
 -- ---------------------------------------------------------------------------
--- Une même version capturée deux fois le même mois fusionne. La partition par
--- mois de chargement borne la lecture incrémentale aux partitions récentes.
 CREATE TABLE IF NOT EXISTS raw.steam_reviews (
     recommendation_id UInt64,
     app_id            UInt32,
@@ -67,13 +60,11 @@ ORDER BY (app_id, recommendation_id, timestamp_updated);
 -- Annonces Steam par jeu (patch notes, MAJ, actus)
 -- ---------------------------------------------------------------------------
 -- payload en String : le corps des annonces domine, JSON n'y gagnerait rien.
--- payload_hash (calculé par le chargeur) repère les annonces modifiées.
 CREATE TABLE IF NOT EXISTS raw.steam_events (
     gid                String,
     app_id             UInt32,
     payload            String CODEC(ZSTD(3)),
     payload_hash       UInt64,
-    -- Date de publication : la borne du croisement avec la courbe de reviews.
     rtime32_start_time Nullable(Int64),
     loaded_at          DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
@@ -84,7 +75,6 @@ ORDER BY (app_id, gid);
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS raw.steam_game_details (
     app_id    UInt32,
-    -- Item brut de IStoreBrowseService/GetItems, apps retirées comprises.
     payload   String CODEC(ZSTD(3)),
     loaded_at DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)

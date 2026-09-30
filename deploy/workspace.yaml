@@ -1,5 +1,3 @@
-# Le webserver et le daemon se connectent au code server gRPC du conteneur
-# user-code (nom de service Docker Compose : user-code, port 4000).
 load_from:
   - grpc_server:
       host: user-code

@@ -15,16 +15,11 @@ from dagster import (
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.resources import SteamResource
 
-# Au-delà de ce volume, un jeu est considéré comme "big"
 HEAVY_REVIEW_THRESHOLD = 10000
-
-# Pour les jeux volumineux, on insère tous les N pages Steam
 HEAVY_PAGE_FLUSH_INTERVAL = 1000
 
 
-# Le recensement compte des reviews que l'endpoint de listing ne sert jamais
-# (jusqu'à ~11% sur les jeux à reviews majoritairement chinoises) : tolérance
-# relative, avec plancher pour les petits jeux.
+# Le total recensé inclut des reviews que le listing ne sert jamais (~11 % sur les jeux chinois).
 STOP_TOLERANCE_RATIO = 0.15
 STOP_TOLERANCE_MIN = 50
 STOP_MAX_RETRIES = 6
@@ -37,8 +32,7 @@ def stop_tolerance(total_reviews: int | None) -> int:
     return max(STOP_TOLERANCE_MIN, int((total_reviews or 0) * STOP_TOLERANCE_RATIO))
 
 
-# Un jeu apparu au recensement GetItems n'a pas encore de total : son compteur
-# Steam (sans les clés) sert d'ordre de grandeur pour le classer.
+# Sans total, le compteur GetItems sert d'ordre de grandeur.
 ABSENT_STEAM_IDS = """
 SELECT app_id, total_reviews, steam_count FROM steam_review_counts
 WHERE last_backfill_at IS NULL
@@ -53,7 +47,6 @@ REVIEW_COLUMNS = [
     "timestamp_updated",
 ]
 
-# Les UPDATE sont groupés par lot : transform() associe à chaque app_id sa valeur.
 # Les SET lisent tous les valeurs d'avant l'UPDATE.
 MARK_BACKFILLED_SQL = """
 UPDATE steam_review_counts
@@ -69,8 +62,7 @@ SET last_backfill_at = now64(6),
 WHERE app_id IN {ids:Array(UInt32)}
 """
 
-# Totaux de la page 1 de /appreviews, écrits même si la pagination échoue :
-# ils restent vrais, et servent de garde-fou d'arrêt au run suivant.
+# Écrits même si la pagination échoue : garde-fou d'arrêt du run suivant.
 UPDATE_SUMMARY_SQL = """
 UPDATE steam_review_counts
 SET prev_total_reviews = total_reviews,
@@ -95,7 +87,6 @@ SUMMARY_FIELDS = [
 def write_summaries(
     clickhouse: ClickHouseResource, summaries: dict[int, dict[str, Any]]
 ) -> None:
-    """Écrit les totaux de la page 1 de chaque jeu, en un seul UPDATE."""
     if not summaries:
         return
     parameters: dict[str, list] = {"ids": list(summaries)}
@@ -124,11 +115,7 @@ def insert_reviews(clickhouse: ClickHouseResource, rows: list[tuple]) -> None:
 def fetch_first_page(
     steam: SteamResource, app_id: int
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Page 1 et son query_summary (mêmes champs que l'ancien recensement).
-
-    Steam omet parfois le résumé : la page est rejouée, puisque sans total le
-    garde-fou contre les fausses fins de pagination est désactivé.
-    """
+    """Rejoue la page 1 quand Steam omet le query_summary, sans quoi pas de garde-fou d'arrêt."""
     for _ in range(SUMMARY_RETRIES + 1):
         review_page = steam.get_all_reviews(app_id, cursor="*", language="all")
         summary = review_page.get("query_summary") or {}
@@ -145,12 +132,7 @@ CENSUS_BATCH_SIZE = 100
 
 
 class ReviewPages:
-    """Pagine les reviews d'un jeu en résistant aux faux signaux de fin de Steam.
-
-    Tant que l'écart au total de la page 1 (à défaut, au dernier connu) dépasse
-    `stop_tolerance`, un signal de fin est considéré comme un incident
-    transitoire : on rejoue le même curseur après un backoff exponentiel.
-    """
+    """Rejoue le même curseur tant qu'un signal de fin laisse un écart au total > `stop_tolerance`."""
 
     def __init__(
         self, steam: SteamResource, app_id: int, total_reviews: int | None
@@ -159,7 +141,6 @@ class ReviewPages:
         self.app_id = app_id
         self.total_reviews = total_reviews
         self.summary: dict[str, Any] | None = None
-        # Vrai seulement si la fin est confirmée par un total connu.
         self.complete = False
 
     def __iter__(self) -> Iterator[list[dict[str, Any]]]:
@@ -237,13 +218,7 @@ def backfill_heavy_app_id(
     app_id: int,
     total_reviews: int | None,
 ) -> tuple[int, bool]:
-    """Pagine un jeu volumineux et insère ses reviews tous les
-    HEAVY_PAGE_FLUSH_INTERVAL pages, pour ne jamais garder tout le jeu en mémoire.
-
-    Renvoie (reviews chargées, backfill complet). Sans transaction, une
-    pagination incomplète garde les reviews déjà insérées : last_backfill_at
-    reste NULL et la relance les réinsère, ce que raw déduplique.
-    """
+    """Renvoie (reviews chargées, backfill complet)."""
     fetched = 0
     max_ts = 0
     pending_rows: list[tuple] = []
@@ -271,7 +246,7 @@ def backfill_heavy_app_id(
         )
         return fetched, False
 
-    # En dernier : un arrêt avant ce marquage fait rejouer le jeu.
+    # En dernier : un arrêt avant fait rejouer le jeu, et raw déduplique.
     mark_backfilled(clickhouse, [(app_id, fetched, max_ts)])
     context.log.info(f"[volumineux] app_id={app_id}: {fetched} reviews chargées")
     return fetched, True
@@ -289,8 +264,6 @@ def steam_reviews_backfill(
 ) -> MaterializeResult:
     rows = clickhouse.query(ABSENT_STEAM_IDS)
     zero_ids: list[int] = []
-    # (app_id, total_reviews) : le total recensé sert de garde-fou contre les
-    # faux signaux de fin de pagination (cf. iter_review_pages).
     light_apps: list[tuple[int, int | None]] = []
     heavy_apps: list[tuple[int, int | None]] = []
     for row in rows:
@@ -314,8 +287,6 @@ def steam_reviews_backfill(
 
     loaded = 0
     backfilled = 0
-    # Jeux dont la pagination s'est arrêtée trop tôt malgré les relances : non
-    # marqués, ils repasseront au prochain run.
     incomplete = 0
     start = time.monotonic()
 
@@ -356,8 +327,7 @@ def steam_reviews_backfill(
                     (r["timestamp_updated"] for r in app_reviews), default=0
                 )
                 marks.append((app_id, len(app_reviews), app_max_ts))
-            # Reviews d'abord, marquage ensuite : un arrêt entre les deux fait
-            # rejouer le lot, et raw déduplique.
+            # Marquage en dernier : un arrêt fait rejouer le lot.
             insert_reviews(clickhouse, batch_rows)
             write_summaries(clickhouse, summaries)
             mark_backfilled(clickhouse, marks)

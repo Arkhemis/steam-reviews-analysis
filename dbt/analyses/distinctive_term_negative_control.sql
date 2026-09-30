@@ -40,8 +40,7 @@ eligible AS (
 
 halved AS (
 
-    -- L'ordre étant celui d'un hachage, la parité du rang est un tirage
-    -- à pile ou face à moitiés égales.
+    -- Ordre de hachage : la parité du rang est un pile ou face.
     SELECT
         recommendation_id,
         app_id,

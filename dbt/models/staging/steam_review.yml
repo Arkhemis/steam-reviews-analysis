@@ -7,8 +7,7 @@ models:
       JSON de raw. Table ReplacingMergeTree(review_version), alimentée en append :
       les versions dépassées disparaissent à la fusion, et final = 1 les masque
       avant. Une correction de parse se fait par UPDATE, sans reconstruction.
-    # Tests de la table entière le dimanche seulement (183 M lignes) ;
-    # chaque nuit, les tests de colonnes ne lisent que les 3 derniers jours.
+    # Table entière le dimanche seulement ; sinon les 3 derniers jours.
     data_tests:
       - weekly_unique_combination_of_columns:
           arguments:

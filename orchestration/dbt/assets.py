@@ -16,22 +16,14 @@ from orchestration.project import dbt_steam_reviews_project
 
 
 class DbtRunConfig(dg.Config):
-    """Exposé dans le Launchpad : permet un full refresh sans job dédié."""
-
     full_refresh: bool = False
 
 
 class LayerGroupedDbtTranslator(DagsterDbtTranslator):
-    """Groupe les assets dbt par sous-dossier de models/ : staging, intermediate, marts.
-
-    Pas de préfixe de clé d'asset (contrairement à BaseDbtTranslator côté picta) :
-    le préfixe s'appliquerait aussi aux sources et casserait leur rattachement aux
-    assets d'ingestion déclaré dans dbt/models/sources.yml.
-    """
+    """Sans préfixe de clé : il casserait le rattachement des sources aux assets d'ingestion."""
 
     def __init__(self) -> None:
-        # Sans ce réglage, les tests déclarés sur les sources remontent en
-        # observations plutôt qu'en asset checks.
+        # Sinon les tests de sources remontent en observations, pas en asset checks.
         super().__init__(
             DagsterDbtTranslatorSettings(enable_source_tests_as_checks=True)
         )
@@ -40,20 +32,13 @@ class LayerGroupedDbtTranslator(DagsterDbtTranslator):
         return group_from_dbt_resource_props_fallback_to_directory(dbt_resource_props)
 
 
-# Modèles qui joignent deux branches d'ingestion. Dagster découpe une définition
-# en steps par profondeur d'ingestion amont : dans la définition principale, ils
-# feraient attendre steam_events au step de steam_review (+1 h 30 par nuit).
+# Joignent deux branches d'ingestion : dans la définition principale, tout leur step les attendrait.
 BRIDGE_MODELS = "game_detail game_event_highlight"
 
 
 def _dbt_build(
     context: dg.AssetExecutionContext, dbt: DbtCliResource, config: DbtRunConfig
 ):
-    """`dbt build` (modèles + tests dans l'ordre du DAG) sur les assets sélectionnés.
-
-    Passer `context` fait injecter --select par dagster-dbt à partir de la
-    sélection Dagster : un modèle, une couche ou tout le projet selon le run.
-    """
     args = ["build", "--full-refresh"] if config.full_refresh else ["build"]
     yield from dbt.cli(args, context=context).stream()
 
@@ -61,8 +46,7 @@ def _dbt_build(
 @dbt_assets(
     manifest=dbt_steam_reviews_project.manifest_path,
     dagster_dbt_translator=LayerGroupedDbtTranslator(),
-    # Un nœud dbt ne peut être produit que par une AssetsDefinition, sinon les
-    # clés se dupliquent : les deux sélections sont disjointes.
+    # Sélections disjointes : un nœud dbt ne peut appartenir qu'à une définition.
     select="fqn:*",
     exclude=f"resource_type:seed {BRIDGE_MODELS}",
 )
