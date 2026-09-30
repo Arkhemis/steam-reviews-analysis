@@ -31,6 +31,9 @@ dev = [
     "ipykernel",
     "ipython",
     "chdb>=4.4",
+    "stopwordsiso>=0.7.1",
+    "scikit-learn>=1.9.1",
+    "duckdb>=1.5.6",
 ]
 
 [tool.dagster]
