@@ -1,4 +1,8 @@
-{{ config(order_by='(app_id, rank_in_game)') }}
+-- Deux threads : chaque bloc inséré porte les textes des reviews.
+{{ config(
+    order_by='(app_id, rank_in_game)',
+    query_settings={'max_threads': 2},
+) }}
 
 -- Le top est la table hachée : la staging défile.
 SELECT
