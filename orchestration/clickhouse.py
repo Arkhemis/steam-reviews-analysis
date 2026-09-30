@@ -11,8 +11,9 @@ from pydantic import PrivateAttr
 # comptage ou une jointure verrait les doublons en attente.
 SESSION_SETTINGS = {"final": 1}
 
-# Les paramètres liés partent dans l'URL, que le serveur borne à 1 Mio
-# (http_max_uri_size) : les longues listes s'envoient par tranches.
+# Au-delà de 4 Kio, les paramètres liés partent en formulaire, dont le serveur
+# borne chaque champ à 128 Kio (http_max_field_value_size) : les longues listes
+# s'envoient par tranches. 5000 entiers tiennent, pas 5000 chaînes.
 PARAM_BATCH_SIZE = 5000
 
 

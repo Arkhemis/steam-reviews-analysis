@@ -1,5 +1,4 @@
 import hashlib
-import itertools
 import json
 import time
 from collections.abc import Iterator
@@ -15,7 +14,7 @@ from dagster import (
     get_dagster_logger,
 )
 
-from orchestration.clickhouse import PARAM_BATCH_SIZE, ClickHouseResource
+from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.resources import SteamApiError, SteamResource
 
 EVENTS_WORKERS = 8
@@ -49,10 +48,12 @@ LIMIT 1
 """
 
 # Empreinte des annonces déjà en base, pour n'écrire que les nouvelles ou modifiées.
+# Filtrée par jeu : une liste de couples (app_id, gid) dépasse vite les 128 Kio
+# d'un champ de formulaire HTTP (http_max_field_value_size).
 KNOWN_HASHES_SQL = """
 SELECT app_id, gid, payload_hash
 FROM steam_events
-WHERE (app_id, gid) IN {keys:Array(Tuple(UInt32, String))}
+WHERE app_id IN {app_ids:Array(UInt32)}
 """
 
 EVENT_COLUMNS = ["gid", "app_id", "payload", "payload_hash", "rtime32_start_time"]
@@ -165,10 +166,10 @@ def write_events(clickhouse: ClickHouseResource, rows: list[tuple]) -> int:
     latest = {(row[1], row[0]): row for row in rows}
     if not latest:
         return 0
+    app_ids = sorted({app_id for app_id, _ in latest})
     known = {
         (row["app_id"], row["gid"]): row["payload_hash"]
-        for keys in itertools.batched(latest, PARAM_BATCH_SIZE)
-        for row in clickhouse.query(KNOWN_HASHES_SQL, {"keys": list(keys)})
+        for row in clickhouse.query(KNOWN_HASHES_SQL, {"app_ids": app_ids})
     }
     changed = [row for key, row in latest.items() if known.get(key) != row[3]]
     clickhouse.insert("steam_events", changed, EVENT_COLUMNS)

@@ -1,7 +1,5 @@
 """Écriture des annonces, jouée sur un vrai ClickHouse."""
 
-import pytest
-
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.events import (
     MIN_TOTAL_REVIEWS,
@@ -16,11 +14,7 @@ def event(gid: str, title: str) -> dict:
     return {"gid": gid, "event_name": title, "rtime32_start_time": 1_700_000_000}
 
 
-def test_writes_only_new_or_changed_events(
-    clickhouse: ClickHouseResource, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Une clé par requête : les hashes connus se lisent par tranches.
-    monkeypatch.setattr("orchestration.steam.events.PARAM_BATCH_SIZE", 1)
+def test_writes_only_new_or_changed_events(clickhouse: ClickHouseResource) -> None:
     first = [event_to_row(10, event("1", "a")), event_to_row(10, event("2", "b"))]
     assert write_events(clickhouse, first) == 2
 
@@ -32,6 +26,20 @@ def test_writes_only_new_or_changed_events(
         "FROM steam_events ORDER BY gid"
     )
     assert rows == [{"gid": "1", "name": "a"}, {"gid": "2", "name": "b2"}]
+
+
+def test_large_batch_fits_in_one_request(clickhouse: ClickHouseResource) -> None:
+    # 5000 couples (app_id, gid) dépassaient les 128 Kio d'un champ de formulaire.
+    rows = [event_to_row(10, event(f"{gid:019d}", "a")) for gid in range(5000)]
+    assert write_events(clickhouse, rows) == 5000
+    assert write_events(clickhouse, rows) == 0
+
+
+def test_same_gid_in_another_game_is_new(clickhouse: ClickHouseResource) -> None:
+    write_events(clickhouse, [event_to_row(10, event("1", "a"))])
+
+    batch = [event_to_row(10, event("1", "a")), event_to_row(20, event("1", "a"))]
+    assert write_events(clickhouse, batch) == 1
 
 
 def test_known_event_is_scoped_to_its_game(clickhouse: ClickHouseResource) -> None:
