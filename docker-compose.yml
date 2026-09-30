@@ -25,7 +25,7 @@ networks:
 services:
   clickhouse:
     # Version LTS figée : les réglages de config.d en dépendent.
-    image: clickhouse/clickhouse-server:26.8.14.3
+    image: clickhouse/clickhouse-server:26.9.3.38
     restart: unless-stopped
     ulimits:
       nofile:
