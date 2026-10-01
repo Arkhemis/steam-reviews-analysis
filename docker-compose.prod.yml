@@ -21,11 +21,10 @@ services:
   postgres:
     volumes:
       - type: bind
-        source: /mnt/pgdata/postgresql
+        source: /mnt/pgdata/postgresql-dagster
         target: /var/lib/postgresql/data
         bind:
           create_host_path: false
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   website:
     build:
@@ -34,18 +33,11 @@ services:
       sbom: false
     restart: unless-stopped
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "8123"
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     depends_on:
-      postgres:
-        condition: service_healthy
       clickhouse:
         condition: service_healthy
 

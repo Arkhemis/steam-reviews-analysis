@@ -1,6 +1,6 @@
 # Migration de Postgres/Citus vers ClickHouse
 
-Statut : PR A (analyse) écrite et validée en local sur un échantillon, rien n'est lancé en prod. Rédigée le 28 septembre 2026 à partir des bancs du même jour (voir [changement_db.md](changement_db.md)).
+Statut : migration faite en prod (PR A le 29 septembre 2026, PR B le 1er octobre). Rédigée le 28 septembre 2026 à partir des bancs du même jour (voir [changement_db.md](changement_db.md)).
 
 ## Décision
 
@@ -66,12 +66,12 @@ Vérifications d'exactitude sur 612 736 reviews :
 
 | Service | Aujourd'hui | Après |
 |---|---|---|
-| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:16` pour Dagster seul (~260 Mo) |
+| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:16.15` pour Dagster seul (~260 Mo) |
 | Chargeurs Dagster | psycopg | `clickhouse-connect` |
 | dbt | `dbt-postgres` | `dbt-clickhouse` (1.10.3, compatible avec dbt-core 1.11 verrouillé) |
 | Site | driver `pg` | `@clickhouse/client` |
 | dbgate | plugin postgres | plugin clickhouse, plus postgres pour Dagster si besoin |
-| Volume `/mnt/pgdata` | `postgresql/` | `clickhouse/` et `postgresql/` (Dagster). Même point de montage : le drop-in systemd et `create_host_path: false` restent valables |
+| Volume `/mnt/pgdata` | `postgresql/` | `clickhouse/` et `postgresql-dagster/` (Dagster). Même point de montage : le drop-in systemd et `create_host_path: false` restent valables |
 
 Budget mémoire sur le CX33 (8 Go) : ClickHouse plafonné à ~3,5 Go (`max_server_memory_usage`), le reste pour Dagster et ses runs, le site, dbgate et Postgres. Les réglages vont dans `deploy/clickhouse/config.d/` et `users.d/`, versionnés :
 
