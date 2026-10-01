@@ -22,7 +22,7 @@ services:
     volumes:
       - type: bind
         source: /mnt/pgdata/postgresql-dagster
-        target: /var/lib/postgresql/data
+        target: /var/lib/postgresql
         bind:
           create_host_path: false
 
