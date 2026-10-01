@@ -41,7 +41,7 @@ updates:
       timezone: "Europe/Paris"
     ignore:
       # Une majeure de base de données impose une migration manuelle des volumes.
-      - dependency-name: "citusdata/citus"
+      - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
       - dependency-name: "clickhouse/clickhouse-server"
         update-types: ["version-update:semver-major"]
