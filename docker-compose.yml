@@ -52,7 +52,7 @@ services:
 
   # Stockage d'instance de Dagster.
   postgres:
-    image: postgres:16.15
+    image: postgres:18.6
     restart: unless-stopped
     ports:
       - "127.0.0.1:5432:5432"
@@ -61,7 +61,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Depuis la 18, PGDATA est /var/lib/postgresql/<majeure>/docker.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s

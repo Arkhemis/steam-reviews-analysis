@@ -66,7 +66,7 @@ Vérifications d'exactitude sur 612 736 reviews :
 
 | Service | Aujourd'hui | Après |
 |---|---|---|
-| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:16.15` pour Dagster seul (~260 Mo) |
+| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:18.6` pour Dagster seul (~260 Mo) |
 | Chargeurs Dagster | psycopg | `clickhouse-connect` |
 | dbt | `dbt-postgres` | `dbt-clickhouse` (1.10.3, compatible avec dbt-core 1.11 verrouillé) |
 | Site | driver `pg` | `@clickhouse/client` |
