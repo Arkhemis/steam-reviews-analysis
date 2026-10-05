@@ -9,7 +9,6 @@ from orchestration.steam.backfill import (
     insert_reviews,
     mark_backfilled,
     reviews_to_rows,
-    write_summaries,
 )
 from orchestration.steam.incremental import recount_backfilled
 
@@ -25,48 +24,32 @@ def review(recommendation_id: int, timestamp_updated: int) -> dict:
 
 def counts(clickhouse: ClickHouseResource) -> dict[int, dict]:
     rows = clickhouse.query(
-        "SELECT app_id, total_reviews, prev_total_reviews, review_score_desc, "
-        "total_reviews_backfilled, last_seen_timestamp_updated, synced_steam_count, "
+        "SELECT app_id, total_reviews_backfilled, last_seen_timestamp_updated, "
         "last_backfill_at IS NOT NULL AS backfilled FROM steam_review_counts"
     )
     return {row.pop("app_id"): row for row in rows}
 
 
-def test_summary_and_mark_update_each_game_with_its_own_values(
+def test_mark_updates_each_game_with_its_own_values(
     clickhouse: ClickHouseResource,
 ) -> None:
     clickhouse.command(
-        "INSERT INTO steam_review_counts (app_id, total_reviews, steam_count, "
-        "last_seen_timestamp_updated) VALUES (10, 3, 30, 900), (20, NULL, 40, NULL)"
+        "INSERT INTO steam_review_counts (app_id, last_seen_timestamp_updated) "
+        "VALUES (10, 900), (20, NULL)"
     )
 
-    write_summaries(
-        clickhouse,
-        {
-            10: {"total_reviews": 5, "review_score_desc": "Positive"},
-            20: {"total_reviews": 7, "review_score_desc": None},
-        },
-    )
     mark_backfilled(clickhouse, [(10, 5, 800), (20, 7, 1200)])
 
     assert counts(clickhouse) == {
         10: {
-            "total_reviews": 5,
-            "prev_total_reviews": 3,
-            "review_score_desc": "Positive",
             "total_reviews_backfilled": 5,
             # Le checkpoint ne recule jamais.
             "last_seen_timestamp_updated": 900,
-            "synced_steam_count": 30,
             "backfilled": True,
         },
         20: {
-            "total_reviews": 7,
-            "prev_total_reviews": None,
-            "review_score_desc": None,
             "total_reviews_backfilled": 7,
             "last_seen_timestamp_updated": 1200,
-            "synced_steam_count": 40,
             "backfilled": True,
         },
     }

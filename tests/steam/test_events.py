@@ -53,15 +53,14 @@ def test_selects_games_above_threshold_and_flags_known_ones(
     clickhouse: ClickHouseResource,
 ) -> None:
     clickhouse.command(
-        "INSERT INTO steam_review_counts (app_id, total_reviews, steam_count) "
-        "VALUES (10, 500, NULL), (20, NULL, 200), (30, 50, 900)"
+        "INSERT INTO steam_review_counts (app_id, total_reviews) "
+        "VALUES (10, 500), (20, NULL), (30, 50), (40, 200)"
     )
     write_events(clickhouse, [event_to_row(10, event("1", "a"))])
 
     rows = clickhouse.query(SELECT_APPS_SQL, {"min_total_reviews": MIN_TOTAL_REVIEWS})
 
-    # Le total prime sur le compteur GetItems, qui ne sert qu'en son absence.
     assert rows == [
         {"app_id": 10, "has_events": True},
-        {"app_id": 20, "has_events": False},
+        {"app_id": 40, "has_events": False},
     ]

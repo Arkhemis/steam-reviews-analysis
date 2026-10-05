@@ -34,20 +34,15 @@ def steam_with_transport(handler) -> SteamResource:
 
 
 def ok(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json={"success": 1, "query_summary": {}})
+    return httpx.Response(200, json={"success": 1, "response": {"query_summary": {}}})
 
 
-def test_reviews_pause_after_their_quota(clock):
+def test_reviews_have_no_quota(clock):
     steam = steam_with_transport(ok)
     start = clock.now
-    for _ in range(150):
-        steam.get_summary(730)
-    # 150 créneaux à 0,1 s : le dernier part 149 × 0,1 s après le premier.
-    assert clock.now - start == pytest.approx(14.9)
-
-    steam.get_summary(730)
-    # Le 151e attend 310 s après le 150e.
-    assert clock.now - start == pytest.approx(14.9 + 310)
+    for _ in range(200):
+        steam.get_all_reviews(730)
+    assert clock.now - start == pytest.approx(19.9)
 
 
 def test_other_endpoints_keep_the_fast_interval(clock):
@@ -58,18 +53,17 @@ def test_other_endpoints_keep_the_fast_interval(clock):
     assert clock.now - start == pytest.approx(0.2)
 
 
-def test_429_pauses_reviews_and_restores_the_quota(clock):
+def test_429_pauses_reviews(clock):
     responses = iter([429, 200])
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(next(responses), json={"success": 1})
+        return httpx.Response(next(responses), json={"response": {}})
 
     steam = steam_with_transport(handler)
     start = clock.now
-    steam.get_summary(730)
+    steam.get_all_reviews(730)
 
     assert clock.now - start == pytest.approx(300)
-    assert steam._lanes["reviews"].used == 1
 
 
 def test_429s_in_flight_during_a_pause_do_not_extend_it(clock):
@@ -116,7 +110,7 @@ def test_429_on_store_items_leaves_reviews_running(clock):
     steam = steam_with_transport(ok)
     steam._on_rate_limited("items", 730)
     start = clock.now
-    steam.get_summary(730)
+    steam.get_all_reviews(730)
     assert clock.now - start < 1
 
 

@@ -20,39 +20,23 @@ from orchestration.steam.backfill import (
     STOP_MAX_RETRIES,
     fetch_first_page,
     stop_tolerance,
-    write_summaries,
 )
 from orchestration.steam.resources import SteamResource
 
-# Au-delà de 3, les threads attendent le throttle /appreviews.
 INCREMENTAL_WORKERS = 3
 
 # Reviews gardées en mémoire par jeu avant insertion.
 FLUSH_REVIEWS = 5000
 PROGRESS_EVERY = 500
 
-# Resynchro hebdomadaire au-delà : GetItems ne voit ni les éditions ni les clés activées ailleurs.
-ROTATION_STEAM_COUNT = 1000
-
-# En dessous, l'écart s'accumule jusqu'à un passage suivant.
-MIN_STEAM_COUNT_DELTA = 5
-
-
-# Checkpoint absent (backfill antérieur à sa création) : 0 = pagination complète.
+# Checkpoint absent (jeu backfillé sans review) : 0 = pagination complète.
 RELEVANT_APP_IDS = """
 SELECT app_id,
        total_reviews,
        coalesce(last_seen_timestamp_updated, 0) AS last_seen_timestamp_updated
 FROM steam_review_counts
 WHERE last_backfill_at IS NOT NULL
-  AND (
-      ifNull(
-          abs(steam_count - synced_steam_count) >= {min_steam_count_delta:Int64},
-          steam_count IS DISTINCT FROM synced_steam_count
-      )
-      OR (app_id % 7 = toDayOfWeek(now()) % 7
-          AND (steam_count >= {rotation_steam_count:Int64} OR steam_count IS NULL))
-  )
+  AND latest_timestamp_updated > coalesce(last_seen_timestamp_updated, 0)
 """
 
 UPDATE_CHECKPOINT_SQL = """
@@ -60,8 +44,7 @@ UPDATE steam_review_counts
 SET last_seen_timestamp_updated = greatest(
         coalesce(last_seen_timestamp_updated, 0),
         {max_timestamp_updated:Int64}
-    ),
-    synced_steam_count = steam_count
+    )
 WHERE app_id = {app_id:UInt32}
 """
 
@@ -108,13 +91,7 @@ def steam_reviews_incremental(
     steam: SteamResource,
     clickhouse: ClickHouseResource,
 ) -> MaterializeResult:
-    relevant_apps = clickhouse.query(
-        RELEVANT_APP_IDS,
-        {
-            "rotation_steam_count": ROTATION_STEAM_COUNT,
-            "min_steam_count_delta": MIN_STEAM_COUNT_DELTA,
-        },
-    )
+    relevant_apps = clickhouse.query(RELEVANT_APP_IDS)
     total = len(relevant_apps)
     context.log.info(
         f"Synchronisation incrémentale de {total} jeux Steam "
@@ -333,13 +310,8 @@ def sync_app_reviews(
         )
         versions_inserted += insert_versions(clickhouse, app_id, batch)
 
-    # Les totaux du jour restent vrais même sans le checkpoint.
-    if pages.summary is not None:
-        write_summaries(clickhouse, {app_id: pages.summary})
     if not pages.reached_checkpoint:
-        logger.warning(
-            f"app_id={app_id}: checkpoint non atteint ; seuls les totaux sont enregistrés"
-        )
+        logger.warning(f"app_id={app_id}: checkpoint non atteint")
         return AppSync(fetched, 0, False)
 
     clickhouse.command(
