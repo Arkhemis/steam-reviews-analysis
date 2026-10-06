@@ -12,6 +12,7 @@ from pydantic import PrivateAttr
 
 # Au-delà de ~250 ids, l'URL est trop longue (400).
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
+STORE_HOME_URL = "https://store.steampowered.com/"
 
 Lane = Literal["default", "items", "reviews"]
 
@@ -167,6 +168,12 @@ class SteamResource(ConfigurableResource):
             lane="reviews",
         )
         return data.get("response", {})
+
+    def is_removed_from_store(self, app_id: int) -> bool:
+        """Fiche supprimée : la page redirige vers l'accueil (bloquée dans le pays, elle reste en 200)."""
+        self._throttle("default")
+        resp = self._client.get(f"{STORE_HOME_URL}app/{app_id}/")
+        return resp.is_redirect and resp.headers.get("location") == STORE_HOME_URL
 
     def get_events(
         self,
