@@ -10,6 +10,7 @@ SELECT
     checked_at,
     prev_total_reviews,
     last_backfill_at,
-    total_reviews_backfilled
+    total_reviews_backfilled,
+    is_delisted
 
 FROM {{ source('raw', 'steam_review_counts') }}

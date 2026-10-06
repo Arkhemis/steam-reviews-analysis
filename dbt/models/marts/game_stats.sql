@@ -18,6 +18,7 @@ SELECT
     g.is_early_access,
     g.is_coming_soon,
     g.is_available,
+    ifNull(grc.is_delisted, false) AS is_delisted,
 
     grc.total_reviews,
     round(
