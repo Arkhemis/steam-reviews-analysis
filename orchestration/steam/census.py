@@ -28,7 +28,6 @@ SELECT app_id
 FROM (
     SELECT steam_app_id AS app_id, min(first_release_date) AS first_release_date
     FROM igdb_games
-    WHERE steam_app_id IS NOT NULL
     GROUP BY steam_app_id
 ) AS igdb
 LEFT JOIN (

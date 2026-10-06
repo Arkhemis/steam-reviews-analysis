@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: igdb_game
+    description: Jeux IGDB réduits à leur édition Steam la plus reviewée.
+    columns:
+      - name: igdb_id
+        data_tests:
+          - unique
+          - not_null

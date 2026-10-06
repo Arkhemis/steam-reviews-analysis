@@ -2,12 +2,11 @@
 CREATE DATABASE IF NOT EXISTS raw;
 
 -- ---------------------------------------------------------------------------
--- Liste des jeux (source IGDB)
+-- Liste des jeux (source IGDB), une ligne par édition Steam
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS raw.igdb_games (
     igdb_id            UInt64,
-    -- NULL si pas de lien Steam
-    steam_app_id       Nullable(UInt32),
+    steam_app_id       UInt32,
     name               Nullable(String),
     first_release_date Nullable(Date32),
     genres             Array(String),
@@ -16,7 +15,7 @@ CREATE TABLE IF NOT EXISTS raw.igdb_games (
     cover_url          Nullable(String),
     loaded_at          DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
-ORDER BY igdb_id;
+ORDER BY (igdb_id, steam_app_id);
 
 -- ---------------------------------------------------------------------------
 -- Recensement : reviews count par jeu
