@@ -72,8 +72,7 @@ class IGDBResource(ConfigurableResource):
         ) as resp:
             resp.raise_for_status()
             with open(dest_path, "wb") as f:
-                for chunk in resp.iter_bytes(chunk_size=1 << 20):
-                    f.write(chunk)
+                f.writelines(resp.iter_bytes(chunk_size=1 << 20))
 
         logger.info(f"IGDB : dump '{endpoint}' téléchargé → {dest_path}")
         return dest_path

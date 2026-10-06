@@ -1,9 +1,11 @@
 import json
 import time
 from collections.abc import Iterator
-from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
+import httpx
+from clickhouse_connect.driver.exceptions import ClickHouseError
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -13,7 +15,7 @@ from dagster import (
 )
 
 from orchestration.clickhouse import ClickHouseResource
-from orchestration.steam.resources import SteamResource
+from orchestration.steam.resources import SteamApiError, SteamResource
 
 HEAVY_REVIEW_THRESHOLD = 10000
 HEAVY_PAGE_FLUSH_INTERVAL = 1000
@@ -318,7 +320,7 @@ def steam_reviews_backfill(
             app_id = futures[future]
             try:
                 app_loaded, complete = future.result()
-            except Exception:
+            except (httpx.HTTPError, SteamApiError, ValueError, ClickHouseError):
                 context.log.error(
                     f"[volumineux] app_id={app_id}: échec, sera retenté au "
                     "prochain run (last_backfill_at non mis à jour)"

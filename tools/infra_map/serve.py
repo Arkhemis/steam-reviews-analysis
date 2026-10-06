@@ -9,7 +9,8 @@ import functools
 import http.server
 import webbrowser
 
-from build import HERE, main as build
+from build import HERE
+from build import main as build
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=8765)

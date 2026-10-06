@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 from jinja2 import Environment, StrictUndefined
 
-
 MACROS = Path(__file__).resolve().parents[2] / "dbt" / "macros" / "steam_review.sql"
 MACRO_SOURCE = MACROS.read_text().split("{% test", 1)[0]
 ENV = Environment(undefined=StrictUndefined, extensions=["jinja2.ext.do"])
@@ -53,7 +52,7 @@ def macro_module(*, started_at, incremental=True, variables=None, **overrides):
 )
 def test_full_review_checks_run_weekly_or_on_request(day, variables, expected):
     module = macro_module(
-        started_at=datetime_module.datetime(2026, 9, day),
+        started_at=datetime_module.datetime(2026, 9, day, tzinfo=datetime_module.UTC),
         variables=variables,
     )
 

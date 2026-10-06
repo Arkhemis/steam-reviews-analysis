@@ -15,8 +15,8 @@ from dagster import (
 
 from orchestration.clickhouse import PARAM_BATCH_SIZE, ClickHouseResource
 from orchestration.steam.backfill import (
-    STOP_BACKOFF_BASE_SECONDS,
     REVIEW_COLUMNS,
+    STOP_BACKOFF_BASE_SECONDS,
     STOP_MAX_RETRIES,
     fetch_first_page,
     stop_tolerance,

@@ -26,7 +26,7 @@ for var in (
     os.environ.setdefault(var, "infra-map")
 os.environ.setdefault("CLICKHOUSE_PORT", "8123")
 
-SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.I)
+SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.IGNORECASE)
 
 EXTERNAL_APIS = {
     "api:getappreviews": {
@@ -49,9 +49,7 @@ EXTERNAL_APIS = {
     "api:getitems": {
         "label": "Steam GetItems",
         "url": "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/",
-        "notes": (
-            "Fiches store par lot de 200 ids (URL trop longue au-delà de ~250)."
-        ),
+        "notes": "Fiches store par lot de 200 ids (URL trop longue au-delà de ~250).",
         "methods": ["get_store_items"],
     },
     "api:igdb": {
@@ -142,7 +140,9 @@ def raw_tables() -> dict[str, dict]:
     sql = read(REPO / INIT_SQL)
     tables = {}
     for m in re.finditer(
-        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\) ENGINE = (\w+)", sql, re.S
+        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\) ENGINE = (\w+)",
+        sql,
+        re.DOTALL,
     ):
         name, body, engine = m.group(1), m.group(2), m.group(3)
         cols, comment = [], []
@@ -429,7 +429,9 @@ def compose_services() -> dict[str, dict]:
 def caddy_hosts() -> list[dict]:
     src = read(REPO / "deploy/Caddyfile")
     hosts = []
-    for m in re.finditer(r"^([\w.-]+\.[\w.-]+) \{(.*?)^\}", src, re.S | re.M):
+    for m in re.finditer(
+        r"^([\w.-]+\.[\w.-]+) \{(.*?)^\}", src, re.DOTALL | re.MULTILINE
+    ):
         target = re.search(r"reverse_proxy ([\w-]+):(\d+)", m.group(2))
         hosts.append(
             {

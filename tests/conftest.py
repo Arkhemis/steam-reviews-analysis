@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from orchestration.clickhouse import ClickHouseResource
 
@@ -48,7 +49,7 @@ def clickhouse():
     admin = ClickHouseResource(**connection, database="default")
     try:
         admin.command("SELECT 1")
-    except Exception as exc:
+    except ClickHouseError as exc:
         pytest.skip(f"ClickHouse injoignable : {exc}")
     for stmt in raw_ddl(database):
         admin.command(stmt)
