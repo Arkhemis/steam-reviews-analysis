@@ -31,6 +31,9 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Paris"
+    ignore:
+      # Changer de version de Python est une migration (requires-python, lock, CI).
+      - dependency-name: "python"
 
   - package-ecosystem: "docker-compose"
     directory: "/"
@@ -43,5 +46,6 @@ updates:
       # Une majeure de base de données impose une migration manuelle des volumes.
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
+      # ClickHouse sort une version par mois : on ne suit que le changement d'année.
       - dependency-name: "clickhouse/clickhouse-server"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
