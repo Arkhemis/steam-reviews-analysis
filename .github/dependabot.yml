@@ -46,6 +46,6 @@ updates:
       # Une majeure de base de données impose une migration manuelle des volumes.
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
-      # ClickHouse sort une version par mois : on ne suit que le changement d'année.
+      # ClickHouse sort une version par mois : on reste sur la LTS (patches) jusqu'au changement d'année.
       - dependency-name: "clickhouse/clickhouse-server"
-        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+        update-types: ["version-update:semver-minor"]
