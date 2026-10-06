@@ -116,14 +116,12 @@ class FakeClickHouse:
     def __init__(self) -> None:
         self.inserted: list[tuple] = []
         self.checkpoints: list[dict] = []
-        self.summaries: list[dict] = []
 
     def insert(self, table: str, rows: list[tuple], column_names: list[str]) -> None:
         self.inserted.extend(rows)
 
     def command(self, sql: str, parameters: dict) -> None:
-        target = self.summaries if "total_positive" in sql else self.checkpoints
-        target.append(parameters)
+        self.checkpoints.append(parameters)
 
 
 def test_sync_hands_the_census_total_to_the_paginator(slept: list[float]) -> None:
@@ -144,10 +142,10 @@ def test_sync_hands_the_census_total_to_the_paginator(slept: list[float]) -> Non
     assert slept == []
 
 
-def test_sync_keeps_page_one_totals_when_the_checkpoint_is_missed(
+def test_sync_keeps_the_checkpoint_when_it_is_missed(
     slept: list[float],
 ) -> None:
-    """Pagination ratée : le checkpoint ne bouge pas, les totaux du jour sont écrits."""
+    """Pagination ratée : le checkpoint ne bouge pas."""
     steam = FakeSteam(reviews(86), total_reviews=1000)
     clickhouse = FakeClickHouse()
 
@@ -164,7 +162,23 @@ def test_sync_keeps_page_one_totals_when_the_checkpoint_is_missed(
     # Sans transaction, les versions restent : la relance repart du même checkpoint.
     assert len(clickhouse.inserted) == 86
     assert clickhouse.checkpoints == []
-    assert clickhouse.summaries[0]["total_reviews"] == [1000]
+
+
+def test_all_reviews_newer_than_the_checkpoint_close_it(slept: list[float]) -> None:
+    """Seule review du jeu éditée : le checkpoint n'est jamais rejoint, le total suffit."""
+    steam = FakeSteam(reviews(1), total_reviews=1)
+    clickhouse = FakeClickHouse()
+
+    result = sync_app_reviews(
+        steam,
+        clickhouse,
+        app_id=3544130,
+        last_seen_timestamp_updated=1_600_000_000,
+    )
+
+    assert result.reached_checkpoint
+    assert slept == []
+    assert clickhouse.checkpoints
 
 
 class FakeSteamTerminalPage:

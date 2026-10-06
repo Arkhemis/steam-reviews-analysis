@@ -26,19 +26,19 @@ for var in (
     os.environ.setdefault(var, "infra-map")
 os.environ.setdefault("CLICKHOUSE_PORT", "8123")
 
-SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.I)
+SECRET_HINT = re.compile(r"password|secret|token|key|hash", re.IGNORECASE)
 
 EXTERNAL_APIS = {
-    "api:appreviews": {
-        "label": "Steam /appreviews",
-        "url": "https://store.steampowered.com/appreviews/{app_id}",
+    "api:getappreviews": {
+        "label": "Steam GetAppReviews",
+        "url": "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/",
         "notes": (
-            "Reviews d'un jeu, paginées par curseur (100 par page).\n"
-            "Limité par IP depuis le 24/09/2026 : seau d'environ 270 requêtes, recharge "
-            "~0,96/s, blocage ~4 min 30 après un 429.\n"
-            "Appelé via la voie « reviews » du throttle (≥ 1,25 s entre deux requêtes)."
+            "Reviews d'un jeu, paginées par curseur (100 par page). Remplace /appreviews, "
+            "sans le pseudo, l'avatar, num_games_owned ni les réactions de l'auteur.\n"
+            "Sans clé, limite partagée et 429 en cas de dépassement ; aucun quota par IP observé.\n"
+            "Appelé via la voie « reviews » du throttle (0,1 s entre deux requêtes)."
         ),
-        "methods": ["get_summary", "get_all_reviews"],
+        "methods": ["get_all_reviews"],
     },
     "api:events": {
         "label": "Steam events",
@@ -49,11 +49,7 @@ EXTERNAL_APIS = {
     "api:getitems": {
         "label": "Steam GetItems",
         "url": "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/",
-        "notes": (
-            "Fiches store par lot de 200 ids (URL trop longue au-delà de ~250).\n"
-            "include_reviews → summary_filtered.review_count : achats Steam seuls, sans "
-            "les clés activées ailleurs. Sert de signal « le jeu a bougé »."
-        ),
+        "notes": "Fiches store par lot de 200 ids (URL trop longue au-delà de ~250).",
         "methods": ["get_store_items"],
     },
     "api:igdb": {
@@ -144,7 +140,9 @@ def raw_tables() -> dict[str, dict]:
     sql = read(REPO / INIT_SQL)
     tables = {}
     for m in re.finditer(
-        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\) ENGINE = (\w+)", sql, re.S
+        r"CREATE TABLE IF NOT EXISTS (raw\.\w+) \((.*?)\n\) ENGINE = (\w+)",
+        sql,
+        re.DOTALL,
     ):
         name, body, engine = m.group(1), m.group(2), m.group(3)
         cols, comment = [], []
@@ -269,7 +267,7 @@ def load_orchestration():
             reads, writes = sql_tables(module_src, raw_table_names)
             calls = set(
                 re.findall(
-                    r"\.(get_summary|get_all_reviews|get_events|get_store_items|download_dump)\(",
+                    r"\.(get_all_reviews|get_events|get_store_items|download_dump)\(",
                     module_src,
                 )
             )
@@ -431,7 +429,9 @@ def compose_services() -> dict[str, dict]:
 def caddy_hosts() -> list[dict]:
     src = read(REPO / "deploy/Caddyfile")
     hosts = []
-    for m in re.finditer(r"^([\w.-]+\.[\w.-]+) \{(.*?)^\}", src, re.S | re.M):
+    for m in re.finditer(
+        r"^([\w.-]+\.[\w.-]+) \{(.*?)^\}", src, re.DOTALL | re.MULTILINE
+    ):
         target = re.search(r"reverse_proxy ([\w-]+):(\d+)", m.group(2))
         hosts.append(
             {

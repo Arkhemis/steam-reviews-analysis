@@ -1,9 +1,11 @@
 import json
 import time
 from collections.abc import Iterator
-from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
+import httpx
+from clickhouse_connect.driver.exceptions import ClickHouseError
 from dagster import (
     AssetExecutionContext,
     MaterializeResult,
@@ -13,7 +15,7 @@ from dagster import (
 )
 
 from orchestration.clickhouse import ClickHouseResource
-from orchestration.steam.resources import SteamResource
+from orchestration.steam.resources import SteamApiError, SteamResource
 
 HEAVY_REVIEW_THRESHOLD = 10000
 HEAVY_PAGE_FLUSH_INTERVAL = 1000
@@ -32,11 +34,10 @@ def stop_tolerance(total_reviews: int | None) -> int:
     return max(STOP_TOLERANCE_MIN, int((total_reviews or 0) * STOP_TOLERANCE_RATIO))
 
 
-# Sans total, le compteur GetItems sert d'ordre de grandeur.
 ABSENT_STEAM_IDS = """
-SELECT app_id, total_reviews, steam_count FROM steam_review_counts
+SELECT app_id, total_reviews FROM steam_review_counts
 WHERE last_backfill_at IS NULL
-ORDER BY coalesce(total_reviews, steam_count) ASC NULLS FIRST
+ORDER BY total_reviews ASC NULLS FIRST
 """
 
 REVIEW_COLUMNS = [
@@ -57,42 +58,9 @@ SET last_backfill_at = now64(6),
     last_seen_timestamp_updated = greatest(
         coalesce(last_seen_timestamp_updated, 0),
         transform(app_id, {ids:Array(UInt32)}, {max_ts:Array(Int64)}, toInt64(0))
-    ),
-    synced_steam_count = steam_count
+    )
 WHERE app_id IN {ids:Array(UInt32)}
 """
-
-# Écrits même si la pagination échoue : garde-fou d'arrêt du run suivant.
-UPDATE_SUMMARY_SQL = """
-UPDATE steam_review_counts
-SET prev_total_reviews = total_reviews,
-    total_reviews      = transform(app_id, {ids:Array(UInt32)}, {total_reviews:Array(Nullable(Int64))}, total_reviews),
-    total_positive     = transform(app_id, {ids:Array(UInt32)}, {total_positive:Array(Nullable(Int64))}, total_positive),
-    total_negative     = transform(app_id, {ids:Array(UInt32)}, {total_negative:Array(Nullable(Int64))}, total_negative),
-    review_score       = transform(app_id, {ids:Array(UInt32)}, {review_score:Array(Nullable(Int32))}, review_score),
-    review_score_desc  = transform(app_id, {ids:Array(UInt32)}, {review_score_desc:Array(Nullable(String))}, review_score_desc),
-    checked_at         = now64(6)
-WHERE app_id IN {ids:Array(UInt32)}
-"""
-
-SUMMARY_FIELDS = [
-    "total_reviews",
-    "total_positive",
-    "total_negative",
-    "review_score",
-    "review_score_desc",
-]
-
-
-def write_summaries(
-    clickhouse: ClickHouseResource, summaries: dict[int, dict[str, Any]]
-) -> None:
-    if not summaries:
-        return
-    parameters: dict[str, list] = {"ids": list(summaries)}
-    for field in SUMMARY_FIELDS:
-        parameters[field] = [summary.get(field) for summary in summaries.values()]
-    clickhouse.command(UPDATE_SUMMARY_SQL, parameters)
 
 
 def mark_backfilled(
@@ -237,8 +205,6 @@ def backfill_heavy_app_id(
     insert_reviews(clickhouse, pending_rows)
 
     total_reviews = pages.total_reviews
-    if pages.summary is not None:
-        write_summaries(clickhouse, {app_id: pages.summary})
     if not pages.complete:
         context.log.warning(
             f"[volumineux] app_id={app_id}: {fetched}/{total_reviews} reviews "
@@ -268,10 +234,9 @@ def steam_reviews_backfill(
     heavy_apps: list[tuple[int, int | None]] = []
     for row in rows:
         total_reviews = row["total_reviews"]
-        size = total_reviews if total_reviews is not None else row["steam_count"]
         if total_reviews == 0:
             zero_ids.append(row["app_id"])
-        elif (size or 0) > HEAVY_REVIEW_THRESHOLD:
+        elif (total_reviews or 0) > HEAVY_REVIEW_THRESHOLD:
             heavy_apps.append((row["app_id"], total_reviews))
         else:
             light_apps.append((row["app_id"], total_reviews))
@@ -309,10 +274,7 @@ def steam_reviews_backfill(
             )
             batch_rows = []
             marks = []
-            summaries = {}
             for (app_id, _), (app_reviews, pages) in zip(batch, reviews_by_app):
-                if pages.summary is not None:
-                    summaries[app_id] = pages.summary
                 app_total = pages.total_reviews
                 if not pages.complete:
                     incomplete += 1
@@ -329,7 +291,6 @@ def steam_reviews_backfill(
                 marks.append((app_id, len(app_reviews), app_max_ts))
             # Marquage en dernier : un arrêt fait rejouer le lot.
             insert_reviews(clickhouse, batch_rows)
-            write_summaries(clickhouse, summaries)
             mark_backfilled(clickhouse, marks)
             loaded += len(batch_rows)
             backfilled += len(marks)
@@ -359,7 +320,7 @@ def steam_reviews_backfill(
             app_id = futures[future]
             try:
                 app_loaded, complete = future.result()
-            except Exception:
+            except (httpx.HTTPError, SteamApiError, ValueError, ClickHouseError):
                 context.log.error(
                     f"[volumineux] app_id={app_id}: échec, sera retenté au "
                     "prochain run (last_backfill_at non mis à jour)"

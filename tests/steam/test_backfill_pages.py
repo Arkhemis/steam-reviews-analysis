@@ -4,7 +4,6 @@ import pytest
 
 from orchestration.steam import backfill
 from orchestration.steam.backfill import SUMMARY_RETRIES, fetch_steam_reviews
-
 from tests.steam.test_incremental_pagination import FakeSteam, reviews
 
 

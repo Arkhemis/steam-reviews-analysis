@@ -31,8 +31,8 @@ SELECT
     app_id,
     app_id IN (SELECT DISTINCT app_id FROM steam_events) AS has_events
 FROM steam_review_counts
-WHERE coalesce(total_reviews, steam_count) >= {min_total_reviews:Int64}
-ORDER BY coalesce(total_reviews, steam_count) DESC
+WHERE total_reviews >= {min_total_reviews:Int64}
+ORDER BY total_reviews DESC
 """
 
 

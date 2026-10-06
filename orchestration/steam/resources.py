@@ -10,7 +10,6 @@ import httpx
 from dagster import ConfigurableResource, InitResourceContext, get_dagster_logger
 from pydantic import PrivateAttr
 
-BASE_URL = "https://store.steampowered.com"
 # Au-delà de ~250 ids, l'URL est trop longue (400).
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 
@@ -20,10 +19,6 @@ Lane = Literal["default", "items", "reviews"]
 @dataclass
 class _LaneState:
     interval: float
-    # 0 : pas de quota.
-    quota: int = 0
-    cooldown: float = 0.0
-    used: int = 0
     next_slot_ts: float = 0.0
     paused_until: float = 0.0
 
@@ -53,9 +48,6 @@ class SteamApiError(Exception):
 
 class SteamResource(ConfigurableResource):
     min_interval_seconds: float = 0.1
-    # /appreviews : 150 requêtes par IP, puis ~5 min de blocage.
-    reviews_quota: int = 150
-    reviews_cooldown_seconds: float = 310.0
     rate_limit_pause_seconds: float = 300.0
     items_min_interval_seconds: float = 1.3
     # Le 429 de GetItems ne bloque pas l'IP.
@@ -74,11 +66,7 @@ class SteamResource(ConfigurableResource):
         self._lanes = {
             "default": _LaneState(self.min_interval_seconds),
             "items": _LaneState(self.items_min_interval_seconds),
-            "reviews": _LaneState(
-                self.min_interval_seconds,
-                quota=self.reviews_quota,
-                cooldown=self.reviews_cooldown_seconds,
-            ),
+            "reviews": _LaneState(self.min_interval_seconds),
         }
 
     def _throttle(self, lane: Lane) -> None:
@@ -88,11 +76,6 @@ class SteamResource(ConfigurableResource):
                 now = time.monotonic()
                 start_at = max(now, state.next_slot_ts)
                 state.next_slot_ts = start_at + state.interval
-                if state.quota:
-                    state.used += 1
-                    if state.used >= state.quota:
-                        state.next_slot_ts = start_at + state.cooldown
-                        state.used = 0
             wait = start_at - now
             if wait > 0:
                 time.sleep(wait)
@@ -116,7 +99,6 @@ class SteamResource(ConfigurableResource):
                 return
             state.paused_until = now + pause
             state.next_slot_ts = max(state.next_slot_ts, state.paused_until)
-            state.used = 0
         get_dagster_logger().warning(
             f"app_id={app_id}: 429 sur {lane}, pause de {pause:.0f}s"
         )
@@ -163,22 +145,6 @@ class SteamResource(ConfigurableResource):
                 )
                 time.sleep(delay)
 
-    def get_summary(self, app_id: int, language: str = "all") -> dict[str, Any]:
-        data = self._get(
-            f"{BASE_URL}/appreviews/{app_id}",
-            {
-                "json": 1,
-                "num_per_page": 0,
-                "language": language,
-                "purchase_type": "all",
-                "filter": "all",
-                "filter_offtopic_activity": 0,  # inclut le review bombing
-            },
-            app_id=app_id,
-            lane="reviews",
-        )
-        return data
-
     def get_all_reviews(
         self,
         app_id: int,
@@ -186,20 +152,21 @@ class SteamResource(ConfigurableResource):
         language: str = "all",
         cursor: str = "*",
     ) -> dict[str, Any]:
-        return self._get(
-            f"{BASE_URL}/appreviews/{app_id}",
+        data = self._get(
+            "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/",
             {
-                "json": 1,
+                "appid": app_id,
                 "num_per_page": num_per_page,
-                "language": language,
-                "purchase_type": "all",
-                "filter": "updated",  # "recent" tronque le curseur au-delà de ~120k reviews
-                "filter_offtopic_activity": 0,  # inclut le review bombing
+                "languages[0]": language,
+                "purchase_type": 1,  # toutes
+                "filter": 2,  # updated
+                "filter_offtopic_activity": False,  # inclut le review bombing
                 "cursor": cursor,
             },
             app_id=app_id,
             lane="reviews",
         )
+        return data.get("response", {})
 
     def get_events(
         self,
@@ -209,7 +176,7 @@ class SteamResource(ConfigurableResource):
         language: str = "english",
     ) -> dict[str, Any]:
         data = self._get(
-            f"{BASE_URL}/events/ajaxgetpartnereventspageable/",
+            "https://store.steampowered.com/events/ajaxgetpartnereventspageable/",
             {
                 "appid": app_id,
                 "offset": offset,
@@ -226,9 +193,6 @@ class SteamResource(ConfigurableResource):
         self,
         app_ids: list[int],
         country_code: str = "US",
-        *,
-        include_release: bool = True,
-        include_reviews: bool = False,
     ) -> list[dict[str, Any]]:
         data = self._get(
             STORE_ITEMS_URL,
@@ -237,10 +201,7 @@ class SteamResource(ConfigurableResource):
                     {
                         "ids": [{"appid": app_id} for app_id in app_ids],
                         "context": {"country_code": country_code},
-                        "data_request": {
-                            "include_release": include_release,
-                            "include_reviews": include_reviews,
-                        },
+                        "data_request": {"include_release": True},
                     }
                 )
             },

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
-from orchestration.igdb.resources import IGDBResource
 from orchestration.clickhouse import ClickHouseResource
+from orchestration.igdb.resources import IGDBResource
 
 BATCH_SIZE = 1000
 

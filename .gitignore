@@ -23,3 +23,4 @@ superpowers/
 
 # Carte de l'infra : régénérée à chaque lancement de tools/infra_map/serve.py
 tools/infra_map/data.json
+perso_tests/

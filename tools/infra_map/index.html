@@ -269,7 +269,7 @@ function infraSpec() {
     { id: "svc:runs", lane: "dagster", title: "conteneurs de run", sub: `${cfg.run_launcher?.class || "RunLauncher"} · ≤ ${maxRuns}`, glyph: "run", color: "--ingest" },
     { id: "vol:pgdata", lane: "data", title: "/mnt/pgdata", sub: "volume Hetzner · bind", glyph: "vol", color: "--raw" },
     { id: "vol:logs", lane: "data", title: "dagster_compute_logs", sub: "volume Docker", glyph: "vol", color: "--raw" },
-    ...["api:appreviews", "api:getitems", "api:events", "api:igdb", "api:discord"].map(a => ({ id: a, lane: "apis", title: D.apis[a].label, sub: hostOf(D.apis[a].url), glyph: "API", color: "--api", tint: true })),
+    ...["api:getappreviews", "api:getitems", "api:events", "api:igdb", "api:discord"].map(a => ({ id: a, lane: "apis", title: D.apis[a].label, sub: hostOf(D.apis[a].url), glyph: "API", color: "--api", tint: true })),
   ];
   const edges = [];
   const edge = (source, target, kind, label, float) => edges.push({ id: `${source}>${target}>${label}`, source, target, kind, label, float });
@@ -285,7 +285,7 @@ function infraSpec() {
   edge("svc:dagster-webserver", "vol:logs", "dep", "lit les logs", true);
   edge("svc:postgres", "vol:pgdata", "dep", "bind mount");
   edge("svc:clickhouse", "vol:pgdata", "dep", "bind mount");
-  ["api:appreviews", "api:getitems", "api:events", "api:igdb"].forEach(a => edge("svc:runs", a, "call", "HTTP"));
+  ["api:getappreviews", "api:getitems", "api:events", "api:igdb"].forEach(a => edge("svc:runs", a, "call", "HTTP"));
   edge("svc:dagster-daemon", "api:discord", "call", "run en échec");
   edge("ext:github", "svc:user-code", "ci", "compose up --build");
   return { lanes, nodes, edges };

@@ -21,7 +21,7 @@ ORDER BY igdb_id;
 -- ---------------------------------------------------------------------------
 -- Recensement : reviews count par jeu
 -- ---------------------------------------------------------------------------
--- synced_steam_count : steam_count à la dernière synchronisation des reviews.
+-- latest_timestamp_updated : review la plus récemment modifiée à la dernière sonde.
 CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     app_id                      UInt32,
     total_reviews               Nullable(Int64),
@@ -34,9 +34,7 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     last_backfill_at            Nullable(DateTime64(6, 'UTC')),
     last_seen_timestamp_updated Nullable(Int64),
     total_reviews_backfilled    Nullable(Int64),
-    steam_count                 Nullable(Int64),
-    synced_steam_count          Nullable(Int64),
-    steam_count_checked_at      Nullable(DateTime64(6, 'UTC'))
+    latest_timestamp_updated    Nullable(Int64)
 ) ENGINE = MergeTree
 ORDER BY app_id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
