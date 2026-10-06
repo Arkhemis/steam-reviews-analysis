@@ -28,9 +28,9 @@ COLUMNS = [
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 
-def _steam_app_ids_from_external_dump(path: Path) -> dict[str, int]:
+def _steam_app_ids_from_external_dump(path: Path) -> dict[str, list[int]]:
     STEAM_CATEGORY = 1  # enum ExternalGameCategory : steam = 1
-    mapping: dict[str, int] = {}
+    mapping: dict[str, list[int]] = {}
     with open(path, newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -42,7 +42,7 @@ def _steam_app_ids_from_external_dump(path: Path) -> dict[str, int]:
             game_id = row.get("game")
             uid = (row.get("uid") or "").strip()
             if game_id is not None and uid.isdigit():
-                mapping[game_id] = int(uid)
+                mapping.setdefault(game_id, []).append(int(uid))
     return mapping
 
 
@@ -115,8 +115,8 @@ def igdb_games(
             for row in reader:
                 total_games += 1
                 igdb_id = row.get("id")
-                steam_app_id = steam_by_game.get(igdb_id)
-                if igdb_id is None or steam_app_id is None:
+                steam_app_ids = steam_by_game.get(igdb_id)
+                if igdb_id is None or steam_app_ids is None:
                     continue
 
                 genre_raw = row.get("genres") or ""
@@ -152,7 +152,7 @@ def igdb_games(
                     date.fromisoformat(released[:10]) if released else None
                 )
 
-                batch.append(
+                batch.extend(
                     (
                         int(igdb_id),
                         steam_app_id,
@@ -163,6 +163,7 @@ def igdb_games(
                         list(dict.fromkeys(publishers)),
                         cover_url,
                     )
+                    for steam_app_id in dict.fromkeys(steam_app_ids)
                 )
 
                 if len(batch) >= BATCH_SIZE:

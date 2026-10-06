@@ -8,19 +8,24 @@ sources:
 
     tables:
       - name: igdb_games
-        description: Liste des jeux IGDB liés à Steam, enrichie (genres, developers, publishers, cover).
+        description: Jeux IGDB liés à Steam, une ligne par édition Steam, enrichis (genres, developers, publishers, cover).
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - igdb_id
+                  - steam_app_id
         config:
           meta:
             dagster:
               asset_key: ['igdb_games']
         columns:
           - name: igdb_id
-            description: Identifiant IGDB du jeu (clé primaire).
+            description: Identifiant IGDB du jeu.
             data_tests:
-              - unique
               - not_null
           - name: steam_app_id
-            description: Identifiant de l'application Steam associée (peut être NULL si pas de lien Steam).
+            description: Identifiant d'une édition Steam du jeu.
           - name: name
             description: Nom du jeu.
           - name: first_release_date
