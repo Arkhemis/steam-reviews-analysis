@@ -66,6 +66,10 @@ sources:
             description: Horodatage du dernier backfill complet pour ce jeu.
           - name: total_reviews_backfilled
             description: Nombre de reviews chargées lors du dernier backfill complet.
+          - name: is_delisted
+            description: >
+              Fiche retirée du store : GetAppReviews ne renvoie plus rien et la page
+              du jeu redirige vers l'accueil.
 
       - name: steam_reviews
         description: >
