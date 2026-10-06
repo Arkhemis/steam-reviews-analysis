@@ -1,6 +1,6 @@
 # Migration de Postgres/Citus vers ClickHouse
 
-Statut : PR A (analyse) écrite et validée en local sur un échantillon, rien n'est lancé en prod. Rédigée le 28 septembre 2026 à partir des bancs du même jour (voir [changement_db.md](changement_db.md)).
+Statut : PR A déployée en prod le 29 septembre 2026 ; PR B (stockage de Dagster) pas encore déployée. Rédigée le 28 septembre 2026 à partir des bancs du même jour (voir [changement_db.md](changement_db.md)).
 
 ## Décision
 
@@ -66,12 +66,12 @@ Vérifications d'exactitude sur 612 736 reviews :
 
 | Service | Aujourd'hui | Après |
 |---|---|---|
-| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:16` pour Dagster seul (~260 Mo) |
+| Base de données | `citusdata/citus:14.1-pg16`, tout dedans | `clickhouse/clickhouse-server` (version LTS figée) pour les données ; `postgres:18.6` pour Dagster seul (~260 Mo) |
 | Chargeurs Dagster | psycopg | `clickhouse-connect` |
 | dbt | `dbt-postgres` | `dbt-clickhouse` (1.10.3, compatible avec dbt-core 1.11 verrouillé) |
 | Site | driver `pg` | `@clickhouse/client` |
 | dbgate | plugin postgres | plugin clickhouse, plus postgres pour Dagster si besoin |
-| Volume `/mnt/pgdata` | `postgresql/` | `clickhouse/` et `postgresql/` (Dagster). Même point de montage : le drop-in systemd et `create_host_path: false` restent valables |
+| Volume `/mnt/pgdata` | `postgresql/` | `clickhouse/` et `postgresql-dagster/` (Dagster). Même point de montage : le drop-in systemd et `create_host_path: false` restent valables |
 
 Budget mémoire sur le CX33 (8 Go) : ClickHouse plafonné à ~3,5 Go (`max_server_memory_usage`), le reste pour Dagster et ses runs, le site, dbgate et Postgres. Les réglages vont dans `deploy/clickhouse/config.d/` et `users.d/`, versionnés :
 
@@ -215,7 +215,7 @@ Docs du site à mettre à jour : `CLAUDE.md`, `README.md`, `docs/home-data.md`.
 
 | Élément | Changement |
 |---|---|
-| `docker-compose.yml` | service `clickhouse` (image figée, `ulimits nofile`, `config.d` et `users.d` montés, healthcheck `SELECT 1`, ports sur `127.0.0.1`) ; service `postgres` en `postgres:16` sans `init.sql` ni `shared_preload_libraries=citus` ; `depends_on` de user-code, webserver et daemon sur les deux |
+| `docker-compose.yml` | service `clickhouse` (image figée, `ulimits nofile`, `config.d` et `users.d` montés, healthcheck `SELECT 1`, ports sur `127.0.0.1`) ; service `postgres` en `postgres:18.6` sans `init.sql` ni `shared_preload_libraries=citus` ; `depends_on` de user-code, webserver et daemon sur les deux |
 | `docker-compose.prod.yml` | bind `/mnt/pgdata/clickhouse` et `/mnt/pgdata/postgresql-dagster` avec `create_host_path: false` ; variables `CLICKHOUSE_*` pour le site et dbgate ; dbgate en `dbgate-plugin-clickhouse` |
 | `deploy/dagster.yaml` | stockage inchangé (`POSTGRES_*`) ; `CLICKHOUSE_*` ajoutées à `env_vars` |
 | `Dockerfile`, `.github/workflows/deploy.yml` | fausses variables `CLICKHOUSE_*` pour `dbt parse` |
@@ -250,7 +250,7 @@ Disque : 148 Go, dont 40 libres. Citus occupe ~101 Go, dont 41 Go pour raw, 30 G
 Le code part en deux PR, parce que le service `postgres` du compose sert à la fois de source à la copie et de stockage à Dagster :
 
 - **PR A** : tout le code ClickHouse, service `clickhouse` ajouté, service `postgres` encore en image Citus. Dagster garde son stockage dans Citus.
-- **PR B** : service `postgres` en `postgres:16` sur `/mnt/pgdata/postgresql-dagster`, retrait de `init.sql` et de Citus.
+- **PR B** : service `postgres` en `postgres:18.6` sur `/mnt/pgdata/postgresql-dagster`, retrait de `init.sql` et de Citus.
 
 Un push sur `main` déclenche `deploy.yml`, dont le job `dbt-modified-models` lance un run dbt de tous les modèles modifiés, c'est-à-dire tous. Pendant la migration, ce run tournerait sur un ClickHouse vide. Les deux PR se fusionnent donc avec `[skip ci]` dans le message du commit de merge. Le déploiement se lance ensuite à la main par `workflow_dispatch`, qui saute ce job.
 
@@ -277,7 +277,9 @@ Un push sur `main` déclenche `deploy.yml`, dont le job `dbt-modified-models` la
 10. **Basculer Dagster.**
     - Arrêter webserver, daemon et user-code.
     - `pg_dump -n public` depuis Citus (~260 Mo), maintenant et pas plus tôt : les runs des étapes 3 à 8 doivent y figurer.
-    - Fusionner et déployer la PR B, restaurer le dump dans le `postgres:16` neuf, redémarrer Dagster.
+    - Fusionner la PR B, puis sur le VPS `git pull` et démarrer le seul service `postgres` (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres`) : Dagster ne doit pas créer son schéma dans la base vide avant la restauration.
+    - Restaurer le dump avec le `pg_restore` du `postgres:18.6`, puis vérifier les comptes de `runs` et `event_logs` contre Citus.
+    - Déployer ensuite par `workflow_dispatch`, ce qui démarre Dagster.
     - Garder le répertoire de données Citus (~20 Go restants) une semaine sans incident, puis le supprimer.
 11. **Reprise.** Réactiver les plannings. Surveiller le premier incrémental et le premier build nocturne : durées, pic mémoire, reviews/s.
 
