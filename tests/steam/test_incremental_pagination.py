@@ -164,6 +164,23 @@ def test_sync_keeps_the_checkpoint_when_it_is_missed(
     assert clickhouse.checkpoints == []
 
 
+def test_all_reviews_newer_than_the_checkpoint_close_it(slept: list[float]) -> None:
+    """Seule review du jeu éditée : le checkpoint n'est jamais rejoint, le total suffit."""
+    steam = FakeSteam(reviews(1), total_reviews=1)
+    clickhouse = FakeClickHouse()
+
+    result = sync_app_reviews(
+        steam,
+        clickhouse,
+        app_id=3544130,
+        last_seen_timestamp_updated=1_600_000_000,
+    )
+
+    assert result.reached_checkpoint
+    assert slept == []
+    assert clickhouse.checkpoints
+
+
 class FakeSteamTerminalPage:
     """Sert la même page non vide sans curseur : la réponse est finale d'emblée."""
 

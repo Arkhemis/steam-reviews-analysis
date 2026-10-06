@@ -59,7 +59,8 @@ SET prev_total_reviews       = total_reviews,
     total_negative           = transform(app_id, {ids:Array(UInt32)}, {total_negative:Array(Nullable(Int64))}, total_negative),
     review_score             = transform(app_id, {ids:Array(UInt32)}, {review_score:Array(Nullable(Int32))}, review_score),
     review_score_desc        = transform(app_id, {ids:Array(UInt32)}, {review_score_desc:Array(Nullable(String))}, review_score_desc),
-    latest_timestamp_updated = transform(app_id, {ids:Array(UInt32)}, {latest_timestamp_updated:Array(Nullable(Int64))}, latest_timestamp_updated),
+    -- Une sonde sans review ne doit pas effacer le signal de l'incrémental.
+    latest_timestamp_updated = ifNull(transform(app_id, {ids:Array(UInt32)}, {latest_timestamp_updated:Array(Nullable(Int64))}, latest_timestamp_updated), latest_timestamp_updated),
     checked_at               = now64(6)
 WHERE app_id IN {ids:Array(UInt32)}
 """

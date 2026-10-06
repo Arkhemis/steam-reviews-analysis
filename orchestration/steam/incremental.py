@@ -241,6 +241,9 @@ class NewReviewPages:
             # Sans checkpoint, le total recensé fait preuve d'arrêt.
             if stalled and not self.has_checkpoint and self.census_total_reached():
                 self.reached_checkpoint = True
+            # Avec checkpoint, seul le total complet le prouve : toutes les reviews sont plus récentes.
+            if stalled and self.fetched >= (self.total_reviews or float("inf")):
+                self.reached_checkpoint = True
 
             if page and (self.reached_checkpoint or not stalled or give_up):
                 yield page

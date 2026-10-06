@@ -147,6 +147,21 @@ def test_write_inserts_new_games_and_shifts_previous_total(
     assert known == {10, 20}
 
 
+def test_probe_without_review_keeps_the_latest_update(
+    clickhouse: ClickHouseResource,
+) -> None:
+    clickhouse.command(
+        "INSERT INTO steam_review_counts (app_id, total_reviews, latest_timestamp_updated) "
+        "VALUES (30, 3, 900)"
+    )
+
+    write_census(
+        clickhouse, {30: {"total_reviews": 3, "latest_timestamp_updated": None}}, {30}
+    )
+
+    assert census(clickhouse)[30]["latest_timestamp_updated"] == 900
+
+
 def test_second_write_does_not_duplicate_new_games(
     clickhouse: ClickHouseResource,
 ) -> None:
