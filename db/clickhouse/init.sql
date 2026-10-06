@@ -22,6 +22,7 @@ ORDER BY igdb_id;
 -- Recensement : reviews count par jeu
 -- ---------------------------------------------------------------------------
 -- latest_timestamp_updated : review la plus récemment modifiée à la dernière sonde.
+-- is_delisted : fiche retirée du store, que GetAppReviews ne sert plus.
 CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     app_id                      UInt32,
     total_reviews               Nullable(Int64),
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS raw.steam_review_counts (
     last_backfill_at            Nullable(DateTime64(6, 'UTC')),
     last_seen_timestamp_updated Nullable(Int64),
     total_reviews_backfilled    Nullable(Int64),
-    latest_timestamp_updated    Nullable(Int64)
+    latest_timestamp_updated    Nullable(Int64),
+    is_delisted                 Bool DEFAULT false
 ) ENGINE = MergeTree
 ORDER BY app_id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;

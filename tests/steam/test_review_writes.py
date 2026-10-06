@@ -6,6 +6,7 @@ import pytest
 
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.steam.backfill import (
+    ABSENT_STEAM_IDS,
     insert_reviews,
     mark_backfilled,
     reviews_to_rows,
@@ -103,3 +104,14 @@ def test_recount_fixes_only_drifted_games(
         # Jamais backfillé : le recomptage ne le touche pas.
         40: 5,
     }
+
+
+def test_backfill_skips_games_removed_from_store(
+    clickhouse: ClickHouseResource,
+) -> None:
+    clickhouse.command(
+        "INSERT INTO steam_review_counts (app_id, total_reviews, is_delisted) "
+        "VALUES (10, 5, false), (20, 5, true)"
+    )
+
+    assert [row["app_id"] for row in clickhouse.query(ABSENT_STEAM_IDS)] == [10]

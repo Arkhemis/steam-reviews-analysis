@@ -36,7 +36,7 @@ def stop_tolerance(total_reviews: int | None) -> int:
 
 ABSENT_STEAM_IDS = """
 SELECT app_id, total_reviews FROM steam_review_counts
-WHERE last_backfill_at IS NULL
+WHERE last_backfill_at IS NULL AND NOT is_delisted
 ORDER BY total_reviews ASC NULLS FIRST
 """
 

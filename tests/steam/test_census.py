@@ -7,6 +7,7 @@ from orchestration.steam.census import (
     CENSUS_HOT_TOTAL_REVIEWS,
     DUE_APP_IDS_SQL,
     probe,
+    probe_or_delisted,
     write_census,
 )
 
@@ -15,11 +16,17 @@ BASE_APP_ID = 7 * 150_000_000
 
 
 class FakeSteam:
-    def __init__(self, page: dict) -> None:
+    def __init__(self, page: dict, *, removed_from_store: bool = False) -> None:
         self.page = page
+        self.removed_from_store = removed_from_store
+        self.store_pages_checked: list[int] = []
 
     def get_all_reviews(self, app_id: int, *, num_per_page: int) -> dict:
         return self.page
+
+    def is_removed_from_store(self, app_id: int) -> bool:
+        self.store_pages_checked.append(app_id)
+        return self.removed_from_store
 
 
 def census(clickhouse: ClickHouseResource) -> dict[int, dict]:
@@ -46,6 +53,7 @@ def insert_game(
     checked_days_ago: int = 1,
     release: date | None = None,
     in_census: bool = True,
+    delisted: bool = False,
 ) -> None:
     clickhouse.insert(
         "igdb_games",
@@ -64,6 +72,7 @@ def insert_game(
                 prev_total_reviews,
                 now if backfilled else None,
                 now - timedelta(days=checked_days_ago),
+                delisted,
             )
         ],
         [
@@ -72,6 +81,7 @@ def insert_game(
             "prev_total_reviews",
             "last_backfill_at",
             "checked_at",
+            "is_delisted",
         ],
     )
 
@@ -106,6 +116,36 @@ def test_probe_of_a_game_without_review_has_no_latest_update() -> None:
 
 def test_probe_without_summary_keeps_the_previous_census() -> None:
     assert probe(FakeSteam({}), 10) is None
+
+
+def test_empty_probe_of_a_game_removed_from_store_is_delisted() -> None:
+    steam = FakeSteam({}, removed_from_store=True)
+
+    assert probe_or_delisted(steam, 10, delisted=set()) == "delisted"
+
+
+def test_empty_probe_of_a_game_still_on_store_keeps_the_previous_census() -> None:
+    """Jeu bloqué dans le pays du VPS ou incident Steam : la page reste en 200."""
+    steam = FakeSteam({}, removed_from_store=False)
+
+    assert probe_or_delisted(steam, 10, delisted=set()) is None
+
+
+def test_store_page_is_checked_once_per_delisting() -> None:
+    steam = FakeSteam({}, removed_from_store=True)
+
+    assert probe_or_delisted(steam, 10, delisted={10}) == "delisted"
+    assert steam.store_pages_checked == []
+
+
+def test_successful_probe_does_not_check_the_store_page() -> None:
+    steam = FakeSteam({"query_summary": {"total_reviews": 3}})
+
+    assert probe_or_delisted(steam, 10, delisted={10}) == {
+        "total_reviews": 3,
+        "latest_timestamp_updated": None,
+    }
+    assert steam.store_pages_checked == []
 
 
 def test_write_inserts_new_games_and_shifts_previous_total(
@@ -217,3 +257,57 @@ def test_probes_every_night_the_games_that_need_it(
         stale,
         new_release,
     }
+
+
+def delisting(clickhouse: ClickHouseResource) -> dict[int, dict]:
+    rows = clickhouse.query(
+        "SELECT app_id, total_reviews, is_delisted, "
+        "checked_at > now() - INTERVAL 1 MINUTE AS checked_now FROM steam_review_counts"
+    )
+    return {row.pop("app_id"): row for row in rows}
+
+
+def test_write_marks_delisted_games_and_keeps_their_census(
+    clickhouse: ClickHouseResource,
+) -> None:
+    insert_game(clickhouse, 50, total_reviews=12_000, checked_days_ago=3)
+    known = {50}
+
+    write_census(clickhouse, {}, known, delisted=[50, 60])
+
+    assert delisting(clickhouse) == {
+        50: {"total_reviews": 12_000, "is_delisted": True, "checked_now": True},
+        60: {"total_reviews": None, "is_delisted": True, "checked_now": True},
+    }
+    assert known == {50, 60}
+
+
+def test_successful_probe_relists_the_game(clickhouse: ClickHouseResource) -> None:
+    insert_game(clickhouse, 70, delisted=True)
+
+    write_census(clickhouse, {70: {"total_reviews": 101}}, {70})
+
+    assert delisting(clickhouse)[70]["is_delisted"] is False
+
+
+def test_delisted_games_are_probed_on_their_day_only(
+    clickhouse: ClickHouseResource,
+) -> None:
+    today = app_id_for_day(clickhouse, today=True)
+    base = app_id_for_day(clickhouse, today=False)
+    hot, moved, not_backfilled, stale = (base + 7 * i for i in range(4))
+    insert_game(
+        clickhouse, today, total_reviews=CENSUS_HOT_TOTAL_REVIEWS, delisted=True
+    )
+    insert_game(
+        clickhouse,
+        hot,
+        total_reviews=CENSUS_HOT_TOTAL_REVIEWS,
+        prev_total_reviews=CENSUS_HOT_TOTAL_REVIEWS,
+        delisted=True,
+    )
+    insert_game(clickhouse, moved, total_reviews=101, delisted=True)
+    insert_game(clickhouse, not_backfilled, backfilled=False, delisted=True)
+    insert_game(clickhouse, stale, checked_days_ago=9, delisted=True)
+
+    assert due(clickhouse) == {today, stale}

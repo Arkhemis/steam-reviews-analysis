@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -12,6 +13,7 @@ from pydantic import PrivateAttr
 
 # Au-delà de ~250 ids, l'URL est trop longue (400).
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
+STORE_HOME_URL = "https://store.steampowered.com/"
 
 Lane = Literal["default", "items", "reviews"]
 
@@ -110,7 +112,8 @@ class SteamResource(ConfigurableResource):
         *,
         app_id: int,
         lane: Lane = "default",
-    ) -> dict[str, Any]:
+        read: Callable[[httpx.Response], Any] = httpx.Response.json,
+    ) -> Any:
         logger = get_dagster_logger()
         attempt = 0
         while True:
@@ -123,8 +126,10 @@ class SteamResource(ConfigurableResource):
                     )
                 if 400 <= resp.status_code < 500:
                     raise SteamApiError.from_response(app_id, resp)
-                resp.raise_for_status()
-                return resp.json()
+                # raise_for_status lève aussi sur un 3xx, que `read` interprète.
+                if not resp.is_redirect:
+                    resp.raise_for_status()
+                return read(resp)
             except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
                 attempt += 1
                 if attempt > self.max_retries:
@@ -167,6 +172,17 @@ class SteamResource(ConfigurableResource):
             lane="reviews",
         )
         return data.get("response", {})
+
+    def is_removed_from_store(self, app_id: int) -> bool:
+        """Fiche supprimée : la page redirige vers l'accueil (bloquée dans le pays, elle reste en 200)."""
+        return self._get(
+            f"{STORE_HOME_URL}app/{app_id}/",
+            {},
+            app_id=app_id,
+            read=lambda resp: (
+                resp.is_redirect and resp.headers.get("location") == STORE_HOME_URL
+            ),
+        )
 
     def get_events(
         self,
