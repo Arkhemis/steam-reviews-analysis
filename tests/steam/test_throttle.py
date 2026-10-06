@@ -7,25 +7,6 @@ from orchestration.steam import resources
 from orchestration.steam.resources import SteamResource
 
 
-class FakeClock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.now += seconds
-
-
-@pytest.fixture
-def clock(monkeypatch) -> FakeClock:
-    fake = FakeClock()
-    monkeypatch.setattr(resources.time, "monotonic", fake.monotonic)
-    monkeypatch.setattr(resources.time, "sleep", fake.sleep)
-    return fake
-
-
 def steam_with_transport(handler) -> SteamResource:
     steam = SteamResource(min_interval_seconds=0.1)
     steam.setup_for_execution(None)
