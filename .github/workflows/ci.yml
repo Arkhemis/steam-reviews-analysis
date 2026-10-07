@@ -43,7 +43,7 @@ jobs:
     # Le templater dbt se connecte pour compiler les modèles incrémentaux.
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:26.8.14.3
+        image: clickhouse/clickhouse-server:26.8.19.9
         env:
           CLICKHOUSE_USER: ci
           CLICKHOUSE_PASSWORD: ci
