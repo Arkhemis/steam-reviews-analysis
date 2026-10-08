@@ -4,16 +4,28 @@ CREATE DATABASE IF NOT EXISTS raw;
 -- ---------------------------------------------------------------------------
 -- Liste des jeux (source IGDB), une ligne par édition Steam
 -- ---------------------------------------------------------------------------
+-- parent_companies : groupe de tête des développeurs et éditeurs.
 CREATE TABLE IF NOT EXISTS raw.igdb_games (
-    igdb_id            UInt64,
-    steam_app_id       UInt32,
-    name               Nullable(String),
-    first_release_date Nullable(Date32),
-    genres             Array(String),
-    developers         Array(String),
-    publishers         Array(String),
-    cover_url          Nullable(String),
-    loaded_at          DateTime64(6, 'UTC') DEFAULT now64(6)
+    igdb_id              UInt64,
+    steam_app_id         UInt32,
+    name                 Nullable(String),
+    alternative_names    Array(String),
+    first_release_date   Nullable(Date32),
+    game_type            LowCardinality(Nullable(String)),
+    game_status          LowCardinality(Nullable(String)),
+    genres               Array(String),
+    themes               Array(String),
+    game_modes           Array(String),
+    player_perspectives  Array(String),
+    game_engines         Array(String),
+    developers           Array(String),
+    publishers           Array(String),
+    porting_companies    Array(String),
+    supporting_companies Array(String),
+    developer_countries  Array(String),
+    parent_companies     Array(String),
+    cover_url            Nullable(String),
+    loaded_at            DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
 ORDER BY (igdb_id, steam_app_id);
 

@@ -6,6 +6,12 @@ from pathlib import Path
 import httpx
 from dagster import ConfigurableResource, get_dagster_logger
 from pydantic import PrivateAttr
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 API_BASE_URL = "https://api.igdb.com/v4"
@@ -48,6 +54,16 @@ class IGDBResource(ConfigurableResource):
             "Accept": "application/json",
         }
 
+    @retry(
+        retry=retry_if_exception(
+            lambda e: (
+                isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
+            )
+        ),
+        wait=wait_exponential(multiplier=0.5, max=10),
+        stop=stop_after_attempt(5),
+        reraise=True,
+    )
     def get_dump_url(self, endpoint: str) -> str:
         resp = httpx.get(
             f"{API_BASE_URL}/dumps/{endpoint}",
