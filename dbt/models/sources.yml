@@ -8,7 +8,7 @@ sources:
 
     tables:
       - name: igdb_games
-        description: Jeux IGDB liés à Steam, une ligne par édition Steam, enrichis (genres, developers, publishers, cover).
+        description: Jeux IGDB liés à Steam, une ligne par édition Steam, enrichis (noms alternatifs, type, statut, genres, thèmes, modes, moteurs, sociétés, cover).
         data_tests:
           - dbt_utils.unique_combination_of_columns:
               arguments:
@@ -28,14 +28,36 @@ sources:
             description: Identifiant d'une édition Steam du jeu.
           - name: name
             description: Nom du jeu.
+          - name: alternative_names
+            description: Autres noms du jeu (acronymes, titres traduits ou d'origine).
           - name: first_release_date
             description: Date de première sortie du jeu.
+          - name: game_type
+            description: Type IGDB (Main Game, DLC, Bundle, Remake, Port…).
+          - name: game_status
+            description: Statut IGDB (Released, Early Access, Offline, Cancelled…), NULL si non renseigné.
           - name: genres
             description: Genres du jeu (noms résolus).
+          - name: themes
+            description: Thèmes du jeu (Horror, Survival, Open world…).
+          - name: game_modes
+            description: Modes de jeu (Single player, Multiplayer, Co-operative…).
+          - name: player_perspectives
+            description: Perspectives (First person, Third person, Bird view…).
+          - name: game_engines
+            description: Moteurs du jeu.
           - name: developers
             description: Studios développeurs (noms résolus depuis involved_companies).
           - name: publishers
             description: Éditeurs (noms résolus depuis involved_companies).
+          - name: porting_companies
+            description: Studios ayant porté le jeu.
+          - name: supporting_companies
+            description: Studios en soutien du développement.
+          - name: developer_countries
+            description: Pays des studios développeurs (ISO 3166-1 alpha-2).
+          - name: parent_companies
+            description: Groupe de tête des développeurs et éditeurs, quand ils en ont un.
           - name: cover_url
             description: URL de la jaquette du jeu (t_cover_big).
           - name: loaded_at
