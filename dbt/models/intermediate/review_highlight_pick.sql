@@ -4,7 +4,7 @@
     query_settings={'max_bytes_before_external_sort': 268435456},
 ) }}
 
--- En table à part : review_highlight hache ce top, pas toute la staging.
+-- En table à part : review_highlight joint ce top sans porter les textes dans les fenêtres.
 -- Une seule lecture de la staging : ClickHouse recalcule une CTE à chaque référence.
 WITH eligible_reviews AS (
 

@@ -4,8 +4,8 @@ models:
   - name: review_highlight_pick
     description: >
       Reviews retenues pour review_highlight, sans leur texte : une ligne par
-      review. Table à part : la jointure de review_highlight hache ce top,
-      plutôt que les 183 M lignes de steam_review.
+      review. Table à part : les fenêtres ne portent pas les textes, que
+      review_highlight récupère par fusion avec steam_review.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
