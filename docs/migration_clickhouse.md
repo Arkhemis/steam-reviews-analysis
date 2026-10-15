@@ -43,7 +43,7 @@ Durées et pics mémoire sur cet échantillon :
 | `marts.review_highlight` (jointure avec la staging) | 22 s | 1,14 Go | ~4 min, mémoire à surveiller |
 | `review_lexeme_count` (échantillonné) | 35 s | 1,17 Go | ~6 min |
 
-Aucune requête n'a dépassé 1,5 Go sous le plafond de 3 Go. Le chargement et le parse avancent en flux : leur mémoire ne grandit pas avec le volume. Les fenêtres et la jointure de `review_highlight`, si. À pleine échelle, elles doivent pouvoir déborder sur disque, via `max_bytes_before_external_sort` et `join_algorithm = 'grace_hash'`, et c'est à vérifier au premier build.
+Aucune requête n'a dépassé 1,5 Go sous le plafond de 3 Go. Le chargement et le parse avancent en flux : leur mémoire ne grandit pas avec le volume. Les fenêtres et la jointure de `review_highlight`, si. À pleine échelle, les fenêtres débordent sur disque via `max_bytes_before_external_sort`, et la jointure passe en `full_sorting_merge` sur la clé de tri commune, sans table de hachage.
 
 Lectures d'un jeu, avec `FINAL` :
 

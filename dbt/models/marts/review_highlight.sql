@@ -1,10 +1,11 @@
 -- Deux threads : chaque bloc inséré porte les textes des reviews.
+-- Fusion sur la clé de tri commune : ni table de hachage ni débordement de la staging.
 {{ config(
     order_by='(app_id, rank_in_game)',
-    query_settings={'max_threads': 2},
+    query_settings={'max_threads': 2, 'join_algorithm': 'full_sorting_merge'},
 ) }}
 
--- Le top est la table hachée : la staging défile.
+-- Clés dans l'ordre du tri : sinon la staging est retriée en entier.
 SELECT
     t.rank_in_game,
     t.pick,
@@ -29,4 +30,4 @@ SELECT
 
 FROM {{ ref('steam_review') }} AS s
 INNER JOIN {{ ref('review_highlight_pick') }} AS t
-    USING (recommendation_id, app_id, updated_at)
+    USING (app_id, recommendation_id, updated_at)
