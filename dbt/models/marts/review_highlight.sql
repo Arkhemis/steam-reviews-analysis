@@ -5,7 +5,7 @@
     query_settings={'max_threads': 2, 'join_algorithm': 'full_sorting_merge'},
 ) }}
 
--- updated_at hors du USING, sinon la staging est retriée en entier.
+-- Clés dans l'ordre du tri : sinon la staging est retriée en entier.
 SELECT
     t.rank_in_game,
     t.pick,
@@ -30,5 +30,4 @@ SELECT
 
 FROM {{ ref('steam_review') }} AS s
 INNER JOIN {{ ref('review_highlight_pick') }} AS t
-    USING (app_id, recommendation_id)
-WHERE s.updated_at = t.updated_at
+    USING (app_id, recommendation_id, updated_at)
