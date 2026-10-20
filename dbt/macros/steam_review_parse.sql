@@ -5,7 +5,8 @@ SELECT
 
     -- Calculés ici pour ne pas relire le texte en aval.
     toNullable(toUInt32(lengthUTF8(review_text))) AS review_text_length,
-    toBool(ifNull(match(review_text, '[✅☐]'), false)) AS is_generic,
+    -- Checklist (✅ / ☐) ou simple lien.
+    toBool(ifNull(match(review_text, '[✅☐]|^\\s*(?:https?://|www\\.)\\S+\\s*$'), false)) AS is_generic,
     toBool({{ has_profanity('review_text', 'language') }}) AS has_profanity
 
 FROM (

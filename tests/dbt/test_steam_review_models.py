@@ -211,3 +211,22 @@ def test_has_profanity(warehouse, language, text, expected) -> None:
     build(warehouse, incremental=False)
 
     assert reviews(warehouse, "has_profanity") == [{"has_profanity": expected}]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("☐ Graphics ✅ Good", True),
+        ("https://steamcommunity.com/id/someone/inventory/#730_2_35191107259", True),
+        ("  www.example.com/page \n", True),
+        ("Great game, see https://example.com for my build", False),
+        ("https://example.com https://example.org", False),
+        (None, False),
+    ],
+)
+def test_is_generic(warehouse, text, expected) -> None:
+    add_raw_reviews(warehouse, (1, 10, "2026-09-01", "2026-09-02", {"review": text}))
+
+    build(warehouse, incremental=False)
+
+    assert reviews(warehouse, "is_generic") == [{"is_generic": expected}]

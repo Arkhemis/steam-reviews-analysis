@@ -99,7 +99,7 @@ models:
                 where: "loaded_at > now() - INTERVAL 3 DAY"
         description: >
           Vrai si la review est mise en forme en checklist (✅ / ☐), un gabarit
-          récurrent qui produit peu de texte utile.
+          récurrent qui produit peu de texte utile, ou se réduit à un lien.
 
       - name: has_profanity
         data_type: "Bool"
