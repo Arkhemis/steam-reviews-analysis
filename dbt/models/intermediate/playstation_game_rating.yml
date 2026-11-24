@@ -14,3 +14,5 @@ models:
         description: Nombre de notes, tous concepts confondus.
       - name: playstation_platforms
         description: Plateformes couvertes par ces notes (PS4, PS5…). Un concept cross-gen n'a qu'une note pour les deux.
+      - name: playstation_concept_id
+        description: Concept le plus noté, celui vers lequel pointer sur le PS Store (store.playstation.com/concept/<id>).
