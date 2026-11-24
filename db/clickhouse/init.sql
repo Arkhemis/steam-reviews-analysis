@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS raw.playstation_store_ratings (
     concept_id     String,
     average_rating Float64,
     rating_count   UInt64,
+    platforms      Array(String),
     loaded_at      DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
 ORDER BY concept_id;
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS raw.xbox_store_ratings (
     product_id     String,
     average_rating Float64,
     rating_count   UInt64,
+    platforms      Array(String),
     loaded_at      DateTime64(6, 'UTC') DEFAULT now64(6)
 ) ENGINE = ReplacingMergeTree(loaded_at)
 ORDER BY product_id;

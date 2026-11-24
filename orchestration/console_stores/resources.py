@@ -36,19 +36,42 @@ transient_retry = retry(
 
 def playstation_rating_from_page(
     html: str, concept_id: str
-) -> tuple[float, int] | None:
-    """Note du produit par défaut du concept, lue dans le cache Apollo des widgets."""
+) -> tuple[float, int, list[str]] | None:
+    """Note et plateformes du produit par défaut du concept, lues dans le cache Apollo des widgets."""
+    rating = None
+    platforms: list[str] = []
     for match in WIDGET_DATA.finditer(html):
         cache: dict[str, Any] = json.loads(match.group(1)).get("cache", {})
         concept = cache.get(f"Concept:{concept_id}") or {}
         product = cache.get((concept.get("defaultProduct") or {}).get("__ref")) or {}
-        rating = product.get("starRating") or {}
-        if rating.get("totalRatingsCount"):
-            return rating["averageRating"], rating["totalRatingsCount"]
-    return None
+        star_rating = product.get("starRating") or {}
+        if star_rating.get("totalRatingsCount"):
+            rating = (star_rating["averageRating"], star_rating["totalRatingsCount"])
+        platforms = platforms or product.get("platforms") or []
+    return (*rating, platforms) if rating else None
 
 
-def xbox_ratings_from_catalog(payload: dict[str, Any]) -> dict[str, tuple[float, int]]:
+def xbox_platforms(product: dict[str, Any]) -> list[str]:
+    console_gens = {"ConsoleGen8": "Xbox One", "ConsoleGen9": "Xbox Series X|S"}
+    platforms = [
+        console_gens[gen]
+        for gen in (product.get("Properties") or {}).get("XboxConsoleGenCompatible")
+        or []
+        if gen in console_gens
+    ]
+    if any(
+        dependency.get("PlatformName") == "Windows.Desktop"
+        for availability in product.get("DisplaySkuAvailabilities", [])
+        for package in availability["Sku"]["Properties"].get("Packages") or []
+        for dependency in package.get("PlatformDependencies") or []
+    ):
+        platforms.append("PC")
+    return platforms
+
+
+def xbox_ratings_from_catalog(
+    payload: dict[str, Any],
+) -> dict[str, tuple[float, int, list[str]]]:
     ratings = {}
     for product in payload.get("Products", []):
         for market in product.get("MarketProperties", []):
@@ -59,6 +82,7 @@ def xbox_ratings_from_catalog(payload: dict[str, Any]) -> dict[str, tuple[float,
                     ratings[product["ProductId"]] = (
                         usage["AverageRating"],
                         usage["RatingCount"],
+                        xbox_platforms(product),
                     )
     return ratings
 
@@ -77,7 +101,9 @@ class ConsoleStoreResource(ConfigurableResource):
         )
 
     @transient_retry
-    def get_playstation_rating(self, concept_id: str) -> tuple[float, int] | None:
+    def get_playstation_rating(
+        self, concept_id: str
+    ) -> tuple[float, int, list[str]] | None:
         wait = self._next_playstation_ts - time.monotonic()
         if wait > 0:
             time.sleep(wait)
@@ -94,7 +120,9 @@ class ConsoleStoreResource(ConfigurableResource):
         return playstation_rating_from_page(resp.text, concept_id)
 
     @transient_retry
-    def get_xbox_ratings(self, product_ids: list[str]) -> dict[str, tuple[float, int]]:
+    def get_xbox_ratings(
+        self, product_ids: list[str]
+    ) -> dict[str, tuple[float, int, list[str]]]:
         resp = self._client.get(
             "https://displaycatalog.mp.microsoft.com/v7.0/products",
             params={

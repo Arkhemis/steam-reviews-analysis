@@ -45,8 +45,10 @@ SELECT
 
     psn.playstation_average_rating,
     psn.playstation_rating_count,
+    psn.playstation_platforms,
     xbox.xbox_average_rating,
-    xbox.xbox_rating_count
+    xbox.xbox_rating_count,
+    xbox.xbox_platforms
 
 FROM {{ ref('igdb_game') }} AS i
 LEFT JOIN {{ ref('game_review_count') }} AS grc

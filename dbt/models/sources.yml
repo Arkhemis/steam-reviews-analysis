@@ -202,6 +202,8 @@ sources:
             description: Note moyenne des joueurs, de 1 à 5 étoiles.
           - name: rating_count
             description: Nombre de notes.
+          - name: platforms
+            description: Plateformes du produit noté (PS4, PS5…), qui partagent sa note.
           - name: loaded_at
             description: Horodatage de chargement par Dagster.
 
@@ -221,5 +223,7 @@ sources:
             description: Note moyenne des joueurs, de 1 à 5 étoiles.
           - name: rating_count
             description: Nombre de notes.
+          - name: platforms
+            description: Plateformes du produit (Xbox One, Xbox Series X|S, PC).
           - name: loaded_at
             description: Horodatage de chargement par Dagster.

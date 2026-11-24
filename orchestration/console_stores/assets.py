@@ -5,15 +5,15 @@ from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, ass
 from orchestration.clickhouse import ClickHouseResource
 from orchestration.console_stores.resources import ConsoleStoreResource
 
-COLUMNS = ["average_rating", "rating_count"]
+COLUMNS = ["average_rating", "rating_count", "platforms"]
 
 
 @asset(
     group_name="ingest",
     deps=["igdb_games"],
     description=(
-        "Notes des joueurs du PS Store (US) des jeux liés à Steam par IGDB, un "
-        "septième des concepts chaque jour -> raw.playstation_store_ratings."
+        "Notes des joueurs du PS Store (US) des jeux liés à Steam par IGDB, avec "
+        "les plateformes du concept, un septième des concepts chaque jour -> raw.playstation_store_ratings."
     ),
 )
 def playstation_store_ratings(
@@ -67,7 +67,7 @@ def playstation_store_ratings(
     deps=["igdb_games"],
     description=(
         "Notes des joueurs du Microsoft Store (US) des jeux liés à Steam par "
-        "IGDB -> raw.xbox_store_ratings."
+        "IGDB, avec les plateformes du produit -> raw.xbox_store_ratings."
     ),
 )
 def xbox_store_ratings(

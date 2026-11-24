@@ -19,8 +19,13 @@ def widget(cache: dict) -> str:
     )
 
 
-def test_playstation_rating_is_the_default_product_one() -> None:
-    page = widget({"ROOT_QUERY": {}}) + widget(
+def test_playstation_rating_and_platforms_are_the_default_product_ones() -> None:
+    page = widget(
+        {
+            "Concept:10000333": {"defaultProduct": {"__ref": "Product:ER"}},
+            "Product:ER": {"platforms": ["PS4", "PS5"]},
+        }
+    ) + widget(
         {
             "Concept:10000333": {"defaultProduct": {"__ref": "Product:ER"}},
             "Product:ER": {
@@ -32,7 +37,11 @@ def test_playstation_rating_is_the_default_product_one() -> None:
         }
     )
 
-    assert playstation_rating_from_page(page, "10000333") == (4.71, 186865)
+    assert playstation_rating_from_page(page, "10000333") == (
+        4.71,
+        186865,
+        ["PS4", "PS5"],
+    )
 
 
 def test_playstation_concept_without_ratings() -> None:
@@ -69,6 +78,29 @@ def test_xbox_ratings_keep_the_all_time_window_of_rated_products() -> None:
         "Products": [
             {
                 "ProductId": "9P3J32CTXLRZ",
+                "Properties": {
+                    "XboxConsoleGenCompatible": ["ConsoleGen8", "ConsoleGen9"]
+                },
+                "DisplaySkuAvailabilities": [
+                    {
+                        "Sku": {
+                            "Properties": {
+                                "Packages": [
+                                    {
+                                        "PlatformDependencies": [
+                                            {"PlatformName": "Windows.Xbox"}
+                                        ]
+                                    },
+                                    {
+                                        "PlatformDependencies": [
+                                            {"PlatformName": "Windows.Desktop"}
+                                        ]
+                                    },
+                                ]
+                            }
+                        }
+                    }
+                ],
                 "MarketProperties": [
                     {
                         "UsageData": [
@@ -85,4 +117,6 @@ def test_xbox_ratings_keep_the_all_time_window_of_rated_products() -> None:
         ]
     }
 
-    assert xbox_ratings_from_catalog(payload) == {"9P3J32CTXLRZ": (4.5, 55511)}
+    assert xbox_ratings_from_catalog(payload) == {
+        "9P3J32CTXLRZ": (4.5, 55511, ["Xbox One", "Xbox Series X|S", "PC"])
+    }

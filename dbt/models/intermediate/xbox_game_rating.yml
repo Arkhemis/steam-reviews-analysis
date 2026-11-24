@@ -12,3 +12,5 @@ models:
         description: Note moyenne sur 5, pondérée par le nombre de notes de chaque édition.
       - name: xbox_rating_count
         description: Nombre de notes, toutes éditions confondues.
+      - name: xbox_platforms
+        description: Plateformes couvertes par ces notes (Xbox One, Xbox Series X|S, PC).
