@@ -37,8 +37,7 @@ run_launcher:
         - steam-reviews-analysis_dagster_compute_logs:/opt/dagster/dagster_home/compute_logs
       healthcheck:
         test: ["NONE"]
-      # Conservé pour run_monitoring. Purge :
-      # docker container prune --filter label=dagster/run_id --filter until=336h
+      # Conservé pour run_monitoring, purgé après 14 jours par deploy/deploy.sh.
       auto_remove: false
 
 # Borne la concurrence pour le rate limit Steam.
