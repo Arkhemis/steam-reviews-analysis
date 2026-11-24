@@ -20,7 +20,9 @@ SELECT
     i.supporting_companies AS supporting_companies,
     i.developer_countries AS developer_countries,
     i.parent_companies AS parent_companies,
-    i.cover_url AS cover_url
+    i.cover_url AS cover_url,
+    i.playstation_concept_ids AS playstation_concept_ids,
+    i.xbox_product_ids AS xbox_product_ids
 
 FROM {{ source('raw', 'igdb_games') }} AS i
 LEFT JOIN {{ source('raw', 'steam_review_counts') }} AS c

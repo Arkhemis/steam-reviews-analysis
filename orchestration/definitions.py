@@ -2,6 +2,8 @@ from dagster import Definitions, EnvVar
 from dagster_dbt import DbtCliResource
 
 from orchestration.clickhouse import ClickHouseResource
+from orchestration.console_stores import definitions as console_stores
+from orchestration.console_stores.resources import ConsoleStoreResource
 from orchestration.dbt import definitions as dbt_steam_reviews
 from orchestration.igdb import definitions as igdb
 from orchestration.igdb.resources import IGDBResource
@@ -14,6 +16,7 @@ from orchestration.steam.resources import SteamResource
 
 defs = Definitions.merge(
     igdb.defs,
+    console_stores.defs,
     steam.defs,
     dbt_steam_reviews.defs,
     Definitions(
@@ -28,6 +31,7 @@ defs = Definitions.merge(
                 password=EnvVar("CLICKHOUSE_PASSWORD").get_value(),
             ),
             "steam": SteamResource(),
+            "console_stores": ConsoleStoreResource(),
             "igdb": IGDBResource(
                 client_id=EnvVar("IGDB_CLIENT_ID").get_value(),
                 client_secret=EnvVar("IGDB_CLIENT_SECRET").get_value(),

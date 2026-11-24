@@ -62,6 +62,10 @@ sources:
             description: URL de la jaquette du jeu (t_cover_big).
           - name: loaded_at
             description: Horodatage de chargement par Dagster.
+          - name: playstation_concept_ids
+            description: Concepts du PS Store US liés au jeu.
+          - name: xbox_product_ids
+            description: Produits du Microsoft Store liés au jeu.
 
       - name: steam_review_counts
         description: Recensement du nombre de reviews par jeu Steam (compteurs agrégés).
@@ -179,5 +183,43 @@ sources:
               - not_null
           - name: payload
             description: Item JSON brut de IStoreBrowseService/GetItems (String).
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.
+
+      - name: playstation_store_ratings
+        description: Note moyenne des joueurs (sur 5) par concept du PS Store US.
+        config:
+          meta:
+            dagster:
+              asset_key: ['playstation_store_ratings']
+        columns:
+          - name: concept_id
+            description: Identifiant du concept PS Store (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: average_rating
+            description: Note moyenne des joueurs, de 1 à 5 étoiles.
+          - name: rating_count
+            description: Nombre de notes.
+          - name: loaded_at
+            description: Horodatage de chargement par Dagster.
+
+      - name: xbox_store_ratings
+        description: Note moyenne des joueurs (sur 5) par produit du Microsoft Store, marché US, depuis la sortie.
+        config:
+          meta:
+            dagster:
+              asset_key: ['xbox_store_ratings']
+        columns:
+          - name: product_id
+            description: Identifiant du produit Microsoft Store (clé primaire).
+            data_tests:
+              - unique
+              - not_null
+          - name: average_rating
+            description: Note moyenne des joueurs, de 1 à 5 étoiles.
+          - name: rating_count
+            description: Nombre de notes.
           - name: loaded_at
             description: Horodatage de chargement par Dagster.

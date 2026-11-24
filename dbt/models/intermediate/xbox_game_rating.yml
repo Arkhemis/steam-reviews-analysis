@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: xbox_game_rating
+    description: Note des joueurs du Microsoft Store par jeu IGDB, pour les jeux notés.
+    columns:
+      - name: igdb_id
+        data_tests:
+          - unique
+          - not_null
+      - name: xbox_average_rating
+        description: Note moyenne sur 5, pondérée par le nombre de notes de chaque édition.
+      - name: xbox_rating_count
+        description: Nombre de notes, toutes éditions confondues.
