@@ -41,7 +41,14 @@ SELECT
 
     review_agg.median_playtime_forever_minutes,
     round(100 * review_agg.pct_primarily_steam_deck, 1) AS pct_primarily_steam_deck,
-    round(100 * review_agg.pct_refunded, 1) AS pct_refunded
+    round(100 * review_agg.pct_refunded, 1) AS pct_refunded,
+
+    psn.playstation_average_rating,
+    psn.playstation_rating_count,
+    psn.playstation_platforms,
+    xbox.xbox_average_rating,
+    xbox.xbox_rating_count,
+    xbox.xbox_platforms
 
 FROM {{ ref('igdb_game') }} AS i
 LEFT JOIN {{ ref('game_review_count') }} AS grc
@@ -50,3 +57,7 @@ LEFT JOIN {{ ref('steam_review_agg') }} AS review_agg
     USING (steam_app_id)
 LEFT JOIN {{ ref('game_detail') }} AS g
     USING (steam_app_id)
+LEFT JOIN {{ ref('playstation_game_rating') }} AS psn
+    USING (igdb_id)
+LEFT JOIN {{ ref('xbox_game_rating') }} AS xbox
+    USING (igdb_id)

@@ -17,6 +17,7 @@ End-to-end data pipeline that ingests Steam games, reviews and store announcemen
 ```
 orchestration/      # Dagster code location
   igdb/             #   IGDB dumps: asset, resource, job, schedule
+  console_stores/   #   PS Store and Microsoft Store player ratings: assets + resource
   steam/            #   Steam: census, backfill, incremental, events + resource
   dbt/              #   dbt assets (one @dbt_assets over the whole project) + per-layer jobs
   jobs.py           #   daily_pipeline, the cross-domain job
@@ -34,6 +35,9 @@ tools/infra_map/    # local interactive map of the infra, lineage, orchestration
 ```mermaid
 flowchart LR
     IGDB[IGDB API\ndata dumps] -->|igdb_games| RAW1[(raw.igdb_games)]
+    RAW1 --> CONSOLE[playstation_store_ratings\nxbox_store_ratings]
+    CONSOLE --> RAW5[(raw.playstation_store_ratings\nraw.xbox_store_ratings)]
+    RAW5 --> STG
     RAW1 --> CENSUS[steam_review_counts\nGetAppReviews probe]
     CENSUS --> RAW2[(raw.steam_review_counts)]
     RAW2 --> BACKFILL[steam_reviews_backfill\ncursor pagination]
@@ -50,16 +54,17 @@ flowchart LR
 
 ### Ingestion (Dagster assets)
 
-1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`, `alternative_names`, `game_types`, `game_statuses`, `genres`, `themes`, `game_modes`, `player_perspectives`, `game_engines`, `companies`, `involved_companies`, `covers`), keeps only games linked to a `steam_app_id`, and inserts them into `raw.igdb_games` with resolved alternative names, type, status, genres, themes, modes, perspectives, engines, studios (role, country, parent group) and cover URL.
-2. **`steam_review_counts`** — probes each due game with one `GetAppReviews` request sorted by update: totals and score from `query_summary`, plus the `timestamp_updated` of the most recently edited review, the "has this game moved?" signal of the incremental. Games above 1 000 reviews, games whose total moved at the previous probe, games not backfilled yet and recent releases are probed every night; the rest once a week, on a fixed weekday per game.
-3. **`steam_reviews_backfill`** — first load of a game: paginates `IUserReviewsService/GetAppReviews` by cursor and writes the full payload of every review into `raw.steam_reviews`, stopping within a tolerance of the total read on page 1 (Steam never serves some of the reviews it counts).
-4. **`steam_reviews_incremental`** — nightly catch-up for games already backfilled whose latest `timestamp_updated` is past their checkpoint: walks the `updated`-sorted pages until it reaches the last seen `timestamp_updated`, so both new reviews and edits of old ones land as new versions.
-5. **`steam_events`** — store announcements (patch notes, updates, news) of games above the review threshold; recent page only for games already ingested, full history on `full_refresh`.
+1. **`igdb_games`** — downloads the IGDB data dumps (`games`, `external_games`, `alternative_names`, `game_types`, `game_statuses`, `genres`, `themes`, `game_modes`, `player_perspectives`, `game_engines`, `companies`, `involved_companies`, `covers`), keeps only games linked to a `steam_app_id`, and inserts them into `raw.igdb_games` with resolved alternative names, type, status, genres, themes, modes, perspectives, engines, studios (role, country, parent group), cover URL, and the game's PS Store concepts and Microsoft Store products.
+2. **`playstation_store_ratings`** and **`xbox_store_ratings`** — player ratings (out of 5, with their count and platforms) of those concepts and products. The PS Store has no public API: each concept page is read at one request per second, a seventh of them each night. The Microsoft Store catalog takes 100 products per request, so all of them are read every night.
+3. **`steam_review_counts`** — probes each due game with one `GetAppReviews` request sorted by update: totals and score from `query_summary`, plus the `timestamp_updated` of the most recently edited review, the "has this game moved?" signal of the incremental. Games above 1 000 reviews, games whose total moved at the previous probe, games not backfilled yet and recent releases are probed every night; the rest once a week, on a fixed weekday per game.
+4. **`steam_reviews_backfill`** — first load of a game: paginates `IUserReviewsService/GetAppReviews` by cursor and writes the full payload of every review into `raw.steam_reviews`, stopping within a tolerance of the total read on page 1 (Steam never serves some of the reviews it counts).
+5. **`steam_reviews_incremental`** — nightly catch-up for games already backfilled whose latest `timestamp_updated` is past their checkpoint: walks the `updated`-sorted pages until it reaches the last seen `timestamp_updated`, so both new reviews and edits of old ones land as new versions.
+6. **`steam_events`** — store announcements (patch notes, updates, news) of games above the review threshold; recent page only for games already ingested, full history on `full_refresh`.
 
 ### Transformation (dbt)
 
 - **staging** — `steam_review`, `steam_event`, `igdb_game`, `game_review_count`: flatten and type the raw JSON, and deduplicate reviews down to their latest version. `steam_review` is an append-only `ReplacingMergeTree` table: each night inserts the new versions, and merges keep the latest one — the raw review table alone is ~180 M rows.
-- **intermediate** — `steam_review_agg` (playtime medians, Steam Deck and refund shares), `language_review_score`, `steam_event_categorized`, and `review_lexeme_count` (the single NLP tokenization pass, tagged `nlp`).
+- **intermediate** — `steam_review_agg` (playtime medians, Steam Deck and refund shares), `playstation_game_rating` (per game, concepts weighted by their rating count, with the PlayStation platforms covered) and `xbox_game_rating` (per game, editions weighted by their rating count, with the Xbox and PC platforms covered), `language_review_score`, `steam_event_categorized`, and `review_lexeme_count` (the single NLP tokenization pass, tagged `nlp`).
 - **marts** — `game_stats`, `game_review_trend_daily`, its two rollups `catalogue_review_trend_daily` (one row per day, all games) and `game_window_score` (one row per game and window: week, previous week, 30 days, year to date), which spare a consumer from re-aggregating a year of `(game, day)`, `review_highlight` (per game, side and language: the 30 most helpful reviews, plus up to 10 crude and 10 funny ones for the duel), `review_window_highlight` (the five funniest and five most helpful recent reviews per window and language, one per game), `game_event_highlight`, `language_review_score_global`, and `game_distinctive_term` (log-odds with an informative Dirichlet prior, Monroe et al. 2008 — the vocabulary that sets a game apart from the corpus, positive and negative reviews separately; tagged `nlp`).
 
 ## Jobs and schedules

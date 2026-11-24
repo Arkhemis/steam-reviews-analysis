@@ -33,7 +33,9 @@ class LayerGroupedDbtTranslator(DagsterDbtTranslator):
 
 
 # Joignent deux branches d'ingestion : dans la définition principale, tout leur step les attendrait.
-BRIDGE_MODELS = "game_detail game_event_highlight"
+BRIDGE_MODELS = (
+    "game_detail game_event_highlight playstation_game_rating xbox_game_rating"
+)
 
 
 def _dbt_build(

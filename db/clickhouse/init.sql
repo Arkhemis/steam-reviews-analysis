@@ -25,9 +25,32 @@ CREATE TABLE IF NOT EXISTS raw.igdb_games (
     developer_countries  Array(String),
     parent_companies     Array(String),
     cover_url            Nullable(String),
-    loaded_at            DateTime64(6, 'UTC') DEFAULT now64(6)
+    loaded_at            DateTime64(6, 'UTC') DEFAULT now64(6),
+    playstation_concept_ids Array(String),
+    xbox_product_ids     Array(String)
 ) ENGINE = ReplacingMergeTree(loaded_at)
 ORDER BY (igdb_id, steam_app_id);
+
+-- ---------------------------------------------------------------------------
+-- Notes des joueurs sur les stores console, sur 5 étoiles
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw.playstation_store_ratings (
+    concept_id     String,
+    average_rating Float64,
+    rating_count   UInt64,
+    platforms      Array(String),
+    loaded_at      DateTime64(6, 'UTC') DEFAULT now64(6)
+) ENGINE = ReplacingMergeTree(loaded_at)
+ORDER BY concept_id;
+
+CREATE TABLE IF NOT EXISTS raw.xbox_store_ratings (
+    product_id     String,
+    average_rating Float64,
+    rating_count   UInt64,
+    platforms      Array(String),
+    loaded_at      DateTime64(6, 'UTC') DEFAULT now64(6)
+) ENGINE = ReplacingMergeTree(loaded_at)
+ORDER BY product_id;
 
 -- ---------------------------------------------------------------------------
 -- Recensement : reviews count par jeu

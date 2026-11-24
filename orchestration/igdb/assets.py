@@ -35,7 +35,14 @@ COLUMNS = [
     "developer_countries",
     "parent_companies",
     "cover_url",
+    "playstation_concept_ids",
+    "xbox_product_ids",
 ]
+
+# enum ExternalGameSource
+STEAM_SOURCE = 1
+MICROSOFT_SOURCE = 11
+PLAYSTATION_STORE_US_SOURCE = 36
 
 # Certains champs des dumps dépassent la limite CSV par défaut.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -60,19 +67,21 @@ def _labels_by_id(path: Path, column: str = "name") -> dict[str, str]:
     return labels
 
 
-def _steam_app_ids_from_external_dump(path: Path) -> dict[str, list[int]]:
-    STEAM_CATEGORY = 1  # enum ExternalGameCategory : steam = 1
-    mapping: dict[str, list[int]] = {}
+def _external_ids_from_dump(path: Path) -> dict[int, dict[str, list[str]]]:
+    """uids par source puis par jeu IGDB, pour Steam, le Microsoft Store et le PS Store."""
+    sources = (STEAM_SOURCE, MICROSOFT_SOURCE, PLAYSTATION_STORE_US_SOURCE)
+    mapping: dict[int, dict[str, list[str]]] = {source: {} for source in sources}
     for row in _read_dump(path):
-        category = (
-            row.get("category") or row.get("external_game_source") or ""
-        ).strip()
-        if not category.isdigit() or int(category) != STEAM_CATEGORY:
+        source = (row.get("category") or row.get("external_game_source") or "").strip()
+        if not source.isdigit() or int(source) not in mapping:
             continue
         game_id = row.get("game")
         uid = (row.get("uid") or "").strip()
-        if game_id is not None and uid.isdigit():
-            mapping.setdefault(game_id, []).append(int(uid))
+        if game_id is None or not uid:
+            continue
+        if int(source) != MICROSOFT_SOURCE and not uid.isdigit():
+            continue
+        mapping[int(source)].setdefault(game_id, []).append(uid)
     return mapping
 
 
@@ -95,8 +104,9 @@ def _country_alpha_2(numeric: str) -> str | None:
         "Liste des jeux IGDB et leur steam_app_id, via les data dumps IGDB "
         "(external_games + games), enrichie des noms alternatifs, du type et "
         "du statut, des genres, thèmes, modes de jeu, perspectives et moteurs, "
-        "des sociétés impliquées (rôle, pays, groupe), de la cover et de la "
-        "date de sortie. Insertion dans raw.igdb_games."
+        "des sociétés impliquées (rôle, pays, groupe), de la cover, de la "
+        "date de sortie et des ids PS Store et Microsoft Store. Insertion dans "
+        "raw.igdb_games."
     ),
 )
 def igdb_games(
@@ -108,8 +118,9 @@ def igdb_games(
         tmp_dir = Path(tmp)
 
         external_path = igdb.download_dump("external_games", tmp_dir)
-        steam_by_game = _steam_app_ids_from_external_dump(external_path)
+        external_ids = _external_ids_from_dump(external_path)
         external_path.unlink()
+        steam_by_game = external_ids[STEAM_SOURCE]
         context.log.info(f"IGDB : {len(steam_by_game)} jeux avec un app_id Steam")
 
         alternative_names_path = igdb.download_dump("alternative_names", tmp_dir)
@@ -227,7 +238,7 @@ def igdb_games(
             batch.extend(
                 (
                     int(igdb_id),
-                    steam_app_id,
+                    int(steam_app_id),
                     row.get("name"),
                     list(dict.fromkeys(alternative_names.get(igdb_id, []))),
                     first_release_date,
@@ -245,6 +256,14 @@ def igdb_games(
                     list(dict.fromkeys(developer_countries)),
                     list(dict.fromkeys(parent_companies)),
                     cover_url,
+                    list(
+                        dict.fromkeys(
+                            external_ids[PLAYSTATION_STORE_US_SOURCE].get(igdb_id, [])
+                        )
+                    ),
+                    list(
+                        dict.fromkeys(external_ids[MICROSOFT_SOURCE].get(igdb_id, []))
+                    ),
                 )
                 for steam_app_id in dict.fromkeys(steam_app_ids)
             )
