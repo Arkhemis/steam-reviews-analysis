@@ -14,3 +14,5 @@ models:
         description: Nombre de notes, toutes éditions confondues.
       - name: xbox_platforms
         description: Plateformes couvertes par ces notes (Xbox One, Xbox Series X|S, PC).
+      - name: xbox_product_id
+        description: Produit le plus noté, celui vers lequel pointer sur le Microsoft Store.

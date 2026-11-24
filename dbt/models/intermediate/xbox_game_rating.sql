@@ -5,7 +5,8 @@ SELECT
     i.igdb_id AS igdb_id,
     round(sum(r.average_rating * r.rating_count) / sum(r.rating_count), 2) AS xbox_average_rating,
     sum(r.rating_count) AS xbox_rating_count,
-    arraySort(groupUniqArrayArray(r.platforms)) AS xbox_platforms
+    arraySort(groupUniqArrayArray(r.platforms)) AS xbox_platforms,
+    argMax(product_id, r.rating_count) AS xbox_product_id
 
 FROM {{ ref('igdb_game') }} AS i
 ARRAY JOIN i.xbox_product_ids AS product_id
