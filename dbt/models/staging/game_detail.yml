@@ -70,3 +70,11 @@ models:
 
       - name: release_from_early_access_date
         description: Date de sortie de l'accès anticipé, quand Steam la connaît.
+
+      - name: steam_developers
+        description: Développeurs affichés sur la fiche Steam, vide quand Steam n'en donne pas.
+
+      - name: steam_publishers
+        description: >
+          Éditeurs affichés sur la fiche Steam, vide quand Steam n'en donne pas.
+          Contrairement à ceux d'IGDB, sans les éditeurs régionaux.

@@ -217,7 +217,10 @@ class SteamResource(ConfigurableResource):
                     {
                         "ids": [{"appid": app_id} for app_id in app_ids],
                         "context": {"country_code": country_code},
-                        "data_request": {"include_release": True},
+                        "data_request": {
+                            "include_release": True,
+                            "include_basic_info": True,
+                        },
                     }
                 )
             },

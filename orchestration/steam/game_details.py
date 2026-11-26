@@ -21,7 +21,7 @@ ORDER BY app_id
     deps=["steam_review_counts"],
     description=(
         "Fiches store Steam (type d'app, jeu parent des DLC, early access, dates "
-        "de sortie) de tous les jeux recensés -> raw.steam_game_details."
+        "de sortie, développeurs et éditeurs) de tous les jeux recensés -> raw.steam_game_details."
     ),
 )
 def steam_game_details(
