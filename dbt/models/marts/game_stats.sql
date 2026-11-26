@@ -25,6 +25,8 @@ SELECT
     g.parent_steam_app_id,
     g.price_usd,
     g.app_type,
+    g.steam_developers,
+    g.steam_publishers,
     g.is_free,
     g.is_early_access,
     g.is_coming_soon,

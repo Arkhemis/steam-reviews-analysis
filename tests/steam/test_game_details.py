@@ -28,6 +28,11 @@ def test_get_store_items_sends_every_id_with_a_country():
     assert requests[0]["ids"] == [{"appid": 730}, {"appid": 570}]
     # Sans country_code, Steam renvoie une réponse vide.
     assert requests[0]["context"]["country_code"] == "US"
+    # basic_info porte les développeurs et éditeurs de la fiche.
+    assert requests[0]["data_request"] == {
+        "include_release": True,
+        "include_basic_info": True,
+    }
 
 
 def test_get_store_items_rejects_an_empty_response_without_retrying():

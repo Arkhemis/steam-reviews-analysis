@@ -38,7 +38,12 @@ SELECT
         AS original_release_date,
     toDateTime(
         nullIf(JSONExtract(payload, 'release', 'release_from_early_access_date', 'Nullable(Int64)'), 0), 'UTC'
-    ) AS release_from_early_access_date
+    ) AS release_from_early_access_date,
+
+    arrayMap(c -> JSONExtractString(c, 'name'), JSONExtractArrayRaw(payload, 'basic_info', 'developers'))
+        AS steam_developers,
+    arrayMap(c -> JSONExtractString(c, 'name'), JSONExtractArrayRaw(payload, 'basic_info', 'publishers'))
+        AS steam_publishers
 
 FROM (
     SELECT
