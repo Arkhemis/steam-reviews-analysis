@@ -6,7 +6,15 @@
 
 -- En table à part : review_highlight joint ce top sans porter les textes dans les fenêtres.
 -- Une seule lecture de la staging : ClickHouse recalcule une CTE à chaque référence.
-WITH eligible_reviews AS (
+WITH dlc AS (
+
+    SELECT steam_app_id
+    FROM {{ ref('game_detail') }}
+    WHERE app_type = 'dlc'
+
+),
+
+eligible_reviews AS (
 
     SELECT
         recommendation_id,
@@ -20,7 +28,14 @@ WITH eligible_reviews AS (
         has_profanity
     FROM {{ ref('steam_review') }}
     WHERE
-        author_playtime_at_review_minutes > 120
+        (
+            author_playtime_at_review_minutes > 120
+            -- Steam ne compte pas le temps de jeu d'un DLC : il arrive NULL.
+            OR (
+                author_playtime_at_review_minutes IS NULL
+                AND app_id IN (SELECT dlc.steam_app_id FROM dlc)
+            )
+        )
         AND review_text_length > {{ var('min_review_length', 20) }}
         AND NOT is_generic
 
