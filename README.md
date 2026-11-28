@@ -12,21 +12,6 @@
 
 End-to-end data pipeline that ingests Steam games, reviews and store announcements to derive statistics from them (sentiment over time, review trends, distinctive vocabulary per game, comparisons between games). A personal project, meant to work both as a practical tool and as a technical showcase of a modern pipeline: API ingestion → ClickHouse warehouse → dbt transformation, all orchestrated, scheduled and tested by Dagster.
 
-## The website: [steam.reviews](https://steam.reviews)
-
-[![steam.reviews home page](docs/images/website-home.png)](https://steam.reviews)
-
-The marts built here power [steam.reviews](https://steam.reviews), a free, ad-free site about Steam reviews (~196 M reviews, ~138 k games, 31 languages):
-
-- **Home** — the best games of the year and of the week, comebacks, freefalls, the funniest and most helpful recent reviews, and the daily review volume of the whole catalogue.
-- **Game pages** (`/games/<app id>`) — Steam score overall and per window (week, 30 days, year to date), daily review trend, median playtime, review highlights, score by language, store announcements, PS Store and Microsoft Store ratings, and similar games.
-- **Charts** — rankings: most reviewed, best and worst rated, trending, most polarised, recently released, hidden gems, most despised.
-- **Language map** — a 3D globe of review scores by language, across the catalogue or for a single game.
-- **Studios** — a developer or publisher's catalogue, with comparison charts.
-- **Battle** — two games head to head: score, playtime, refunds, Steam Deck share, and what each camp wrote.
-
-The site is a separate Next.js project that only reads ClickHouse (`marts.*`, plus a few `intermediate` and `raw` tables). It runs as the `website` service of `docker-compose.prod.yml`, behind Caddy, and is deployed with the rest of the stack.
-
 ## Repo structure
 
 ```
@@ -131,6 +116,21 @@ uv run dbt build --project-dir dbt --profiles-dir dbt
 ```bash
 uv run python tools/infra_map/serve.py --open   # http://127.0.0.1:8765
 ```
+
+## The website: [steam.reviews](https://steam.reviews)
+
+[![steam.reviews home page](docs/images/website-home.png)](https://steam.reviews)
+
+The marts built here power [steam.reviews](https://steam.reviews), a free, ad-free site about Steam reviews (~196 M reviews, ~138 k games, 31 languages):
+
+- **Home** — the best games of the year and of the week, comebacks, freefalls, the funniest and most helpful recent reviews, and the daily review volume of the whole catalogue.
+- **Game pages** (`/games/<app id>`) — Steam score overall and per window (week, 30 days, year to date), daily review trend, median playtime, review highlights, score by language, store announcements, PS Store and Microsoft Store ratings, and similar games.
+- **Charts** — rankings: most reviewed, best and worst rated, trending, most polarised, recently released, hidden gems, most despised.
+- **Language map** — a 3D globe of review scores by language, across the catalogue or for a single game.
+- **Studios** — a developer or publisher's catalogue, with comparison charts.
+- **Battle** — two games head to head: score, playtime, refunds, Steam Deck share, and what each camp wrote.
+
+The site is a separate Next.js project that only reads ClickHouse (`marts.*`, plus a few `intermediate` and `raw` tables). It runs as the `website` service of `docker-compose.prod.yml`, behind Caddy, and is deployed with the rest of the stack.
 
 ## Progress
 
